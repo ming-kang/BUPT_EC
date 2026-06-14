@@ -28,6 +28,11 @@ The public API currently used by the frontend is:
 
 - `GET /api/get_data`
 
+Operational endpoints:
+
+- `GET /healthz`: process liveness check.
+- `GET /readyz`: runtime readiness check, including JW credential configuration, last login/refresh errors, and cache status.
+
 Successful responses contain a `date`, refresh timestamps, stale status, campuses, buildings, rooms, and class-period nodes.
 
 ## Requirements
@@ -46,6 +51,10 @@ JW_USERNAME=your_username
 JW_PASSWORD=your_password
 # Optional debug fallback only. Leave empty for automatic HTTP login.
 JW_TOKEN=
+# Optional listen address. Use 127.0.0.1:8080 behind Nginx.
+APP_ADDR=127.0.0.1:8080
+# Gin runtime mode. Use release in production.
+GIN_MODE=release
 ```
 
 Variables:
@@ -54,6 +63,9 @@ Variables:
 - `JW_PASSWORD`: BUPT teaching affairs password.
 - `JW_TOKEN`: optional emergency/debug token override. Leave it empty for normal automatic login.
 - `APP_ADDR`: optional listen address. Use `127.0.0.1:8080` when running behind Nginx.
+- `GIN_MODE`: Gin runtime mode. Use `release` in production.
+
+Startup validates that either `JW_TOKEN` or both `JW_USERNAME` and `JW_PASSWORD` are configured.
 
 Do not commit real credentials, tokens, cookies, logs, or private config files.
 
@@ -89,10 +101,13 @@ http://127.0.0.1:8080/
 Useful checks:
 
 ```bash
-go test ./...
 cd frontend && pnpm lint
 cd frontend && pnpm build
+cd ..
+go test ./...
 ```
+
+The repository root embeds `frontend/dist`, so run the frontend build before full-root Go test/build commands if `frontend/dist` is missing.
 
 ## Production Build
 
@@ -117,7 +132,7 @@ Run it with a `.env` file in the same directory, or provide the variables throug
 ./bupt-ec
 ```
 
-By default, the server listens on `:8080`. Set `APP_ADDR=127.0.0.1:8080` when a reverse proxy handles public traffic.
+By default, the server listens on `:8080`. Set `APP_ADDR=127.0.0.1:8080` and `GIN_MODE=release` when a reverse proxy handles public traffic.
 
 ## Releases
 
@@ -140,7 +155,7 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-The workflow can also be triggered manually from the Actions tab (`workflow_dispatch`) for a dry-run. The server does not need Go, Node.js, or pnpm to consume release assets.
+The workflow can also be triggered manually from the Actions tab (`workflow_dispatch`) for a dry-run. Dry-runs build and upload the release assets as workflow artifacts but do not publish a GitHub Release. Published and dry-run assets include build provenance attestations. The server does not need Go, Node.js, or pnpm to consume release assets.
 
 ## Server Deployment
 
@@ -181,8 +196,9 @@ The script interactively asks for:
 - BUPT teaching affairs username and password
 - optional token override
 - backend listen address, default `127.0.0.1:8080`
+- Gin mode, default `release`
 
-It then installs required system packages, downloads the matching Linux release for `amd64` or `arm64`, writes `/etc/bupt-ec/bupt-ec.env`, configures `systemd`, configures Nginx on ports `80` and `443`, and starts the service.
+It then installs required system packages, downloads the matching Linux release for `amd64` or `arm64`, writes `/etc/bupt-ec/bupt-ec.env`, configures a hardened `systemd` unit, configures Nginx on ports `80` and `443`, and starts the service. The installed binary is root-owned so the service user cannot rewrite its executable; only `/opt/bupt-ec/run_log` is writable by the service user.
 
 To upgrade later, rerun the same command. Existing configuration is reused as defaults, and the password can be kept by pressing Enter at the password prompt.
 
@@ -201,6 +217,8 @@ curl -fsSL https://your-ipv6-reachable.example/install.sh | \
 ```
 
 The custom directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz`; `checksums.txt` is optional but recommended.
+
+Custom `DOWNLOAD_BASE_URL` values must use HTTPS by default. For trusted local mirrors only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow a non-HTTPS mirror.
 
 The service can be managed with:
 

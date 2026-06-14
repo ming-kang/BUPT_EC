@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="bupt-ec"
 SERVICE_NAME="bupt-ec"
 DEFAULT_REPO="ming-kang/BUPT_EC"
 GITHUB_HOST="github.com"
@@ -15,6 +14,7 @@ NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 APP_USER="bupt-ec"
 APP_GROUP="bupt-ec"
 DEFAULT_APP_ADDR="127.0.0.1:8080"
+DEFAULT_GIN_MODE="release"
 TTY="/dev/tty"
 
 if [[ "${EUID}" -ne 0 ]]; then
@@ -35,6 +35,7 @@ CURRENT_JW_USERNAME=""
 CURRENT_JW_PASSWORD=""
 CURRENT_JW_TOKEN=""
 CURRENT_APP_ADDR=""
+CURRENT_GIN_MODE=""
 CURRENT_DOWNLOAD_BASE_URL=""
 
 if [[ -f "${ENV_FILE}" ]]; then
@@ -50,6 +51,7 @@ if [[ -f "${ENV_FILE}" ]]; then
   CURRENT_JW_PASSWORD="${JW_PASSWORD:-}"
   CURRENT_JW_TOKEN="${JW_TOKEN:-}"
   CURRENT_APP_ADDR="${APP_ADDR:-}"
+  CURRENT_GIN_MODE="${GIN_MODE:-}"
   CURRENT_DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-}"
 fi
 
@@ -104,10 +106,94 @@ prompt_secret() {
   fi
 }
 
+prompt_optional_secret() {
+  local label="$1"
+  local has_existing="$2"
+  local value
+
+  if [[ "${has_existing}" == "true" ]]; then
+    read -r -s -p "${label} [keep existing]: " value < "${TTY}"
+  else
+    read -r -s -p "${label} (optional): " value < "${TTY}"
+  fi
+  echo
+  printf "%s" "${value}"
+}
+
 shell_quote() {
   printf "'"
   printf "%s" "$1" | sed "s/'/'\\\\''/g"
   printf "'"
+}
+
+validate_repo() {
+  local repo="$1"
+  if [[ ! "${repo}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then
+    echo "Invalid GitHub repository: ${repo}" >&2
+    exit 1
+  fi
+}
+
+validate_domain() {
+  local domain="$1"
+  if [[ ! "${domain}" =~ ^[A-Za-z0-9.-]+$ || "${domain}" == .* || "${domain}" == *. || "${domain}" == *..* ]]; then
+    echo "Invalid domain name: ${domain}" >&2
+    exit 1
+  fi
+}
+
+validate_absolute_path() {
+  local label="$1"
+  local path="$2"
+  if [[ "${path}" != /* ]]; then
+    echo "${label} must be an absolute path: ${path}" >&2
+    exit 1
+  fi
+  if [[ "${path}" == *";"* || "${path}" =~ [[:space:]] ]]; then
+    echo "${label} must not contain whitespace or semicolons: ${path}" >&2
+    exit 1
+  fi
+}
+
+validate_gin_mode() {
+  local mode="$1"
+  if [[ "${mode}" != "release" && "${mode}" != "debug" && "${mode}" != "test" ]]; then
+    echo "GIN_MODE must be release, debug, or test: ${mode}" >&2
+    exit 1
+  fi
+}
+
+validate_app_addr() {
+  local app_addr="$1"
+  local port
+
+  if [[ "${app_addr}" == :* || "${app_addr}" == *"/"* || "${app_addr}" == *";"* || "${app_addr}" =~ [[:space:]] || ! "${app_addr}" =~ :[0-9]{1,5}$ ]]; then
+    echo "Invalid backend listen address: ${app_addr}" >&2
+    exit 1
+  fi
+
+  port="${app_addr##*:}"
+  if (( port < 1 || port > 65535 )); then
+    echo "Backend listen port is out of range: ${port}" >&2
+    exit 1
+  fi
+}
+
+validate_download_base_url() {
+  local url="$1"
+  if [[ "${url}" == *";"* || "${url}" =~ [[:space:]] ]]; then
+    echo "DOWNLOAD_BASE_URL must not contain whitespace or semicolons: ${url}" >&2
+    exit 1
+  fi
+  if [[ -z "${url}" || "${url}" =~ ^https:// ]]; then
+    return
+  fi
+  if [[ "${ALLOW_INSECURE_DOWNLOAD_BASE_URL:-false}" == "true" ]]; then
+    echo "Warning: using non-HTTPS DOWNLOAD_BASE_URL because ALLOW_INSECURE_DOWNLOAD_BASE_URL=true." >&2
+    return
+  fi
+  echo "DOWNLOAD_BASE_URL must use https://. Set ALLOW_INSECURE_DOWNLOAD_BASE_URL=true only for a trusted local mirror." >&2
+  exit 1
 }
 
 detect_arch() {
@@ -219,8 +305,14 @@ install_binary() {
   fi
 
   mkdir -p "${INSTALL_DIR}/run_log"
+
+  # Install the binary as root-owned so the running service cannot rewrite
+  # its own executable. Only the log directory is owned by the service user.
   install -m 0755 "${binary_path}" "${INSTALL_DIR}/bupt-ec"
-  chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}"
+  chown root:root "${INSTALL_DIR}" "${INSTALL_DIR}/bupt-ec"
+  chmod 0755 "${INSTALL_DIR}"
+  chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}/run_log"
+  chmod 0750 "${INSTALL_DIR}/run_log"
 }
 
 write_env() {
@@ -232,7 +324,8 @@ write_env() {
   local password="$6"
   local token="$7"
   local app_addr="$8"
-  local download_base_url="$9"
+  local gin_mode="$9"
+  local download_base_url="${10}"
 
   mkdir -p "${CONFIG_DIR}"
   cat > "${ENV_FILE}" <<EOF
@@ -244,6 +337,7 @@ JW_USERNAME=$(shell_quote "${username}")
 JW_PASSWORD=$(shell_quote "${password}")
 JW_TOKEN=$(shell_quote "${token}")
 APP_ADDR=$(shell_quote "${app_addr}")
+GIN_MODE=$(shell_quote "${gin_mode}")
 DOWNLOAD_BASE_URL=$(shell_quote "${download_base_url}")
 EOF
   chmod 0600 "${ENV_FILE}"
@@ -266,10 +360,22 @@ EnvironmentFile=${ENV_FILE}
 ExecStart=${INSTALL_DIR}/bupt-ec
 Restart=always
 RestartSec=5
+UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
+PrivateDevices=true
 ProtectHome=true
 ProtectSystem=full
+ProtectClock=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallArchitectures=native
 ReadWritePaths=${INSTALL_DIR}/run_log
 
 [Install]
@@ -288,6 +394,8 @@ write_nginx_site() {
 
   mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
   cat > "${NGINX_SITE}" <<EOF
+limit_req_zone \$binary_remote_addr zone=bupt_ec_api:10m rate=30r/m;
+
 server {
     listen 80;
     listen [::]:80;
@@ -304,9 +412,31 @@ server {
     ssl_certificate_key ${ssl_key};
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
+
+    location /api/ {
+        limit_req zone=bupt_ec_api burst=20 nodelay;
+        proxy_pass http://${app_addr};
+        proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 30s;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
     location / {
         proxy_pass http://${app_addr};
         proxy_http_version 1.1;
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 15s;
+        proxy_read_timeout 30s;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -320,7 +450,8 @@ EOF
 }
 
 main() {
-  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr download_base_url tmp_dir archive
+  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr gin_mode download_base_url tmp_dir archive
+  local has_password has_token
 
   repo="${REPO:-${CURRENT_RELEASE_REPO:-${DEFAULT_REPO}}}"
   # Default to the rolling 'nightly' release (rewritten on every push to main).
@@ -335,16 +466,36 @@ main() {
   ssl_key="$(prompt_required "SSL private key path" "${SSL_KEY:-${CURRENT_SSL_KEY:-/etc/letsencrypt/live/${domain}/privkey.pem}}")"
   username="$(prompt_required "BUPT JW username" "${JW_USERNAME:-${CURRENT_JW_USERNAME}}")"
 
-  password_input="$(prompt_secret "BUPT JW password" "$([[ -n "${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}" ]] && echo true || echo false)")"
+  has_password=false
+  if [[ -n "${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}" ]]; then
+    has_password=true
+  fi
+  password_input="$(prompt_secret "BUPT JW password" "${has_password}")"
   if [[ -n "${password_input}" ]]; then
     password="${password_input}"
   else
     password="${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}"
   fi
 
-  token="$(prompt "JW token override, usually leave empty" "${JW_TOKEN:-${CURRENT_JW_TOKEN}}")"
+  has_token=false
+  if [[ -n "${JW_TOKEN:-${CURRENT_JW_TOKEN}}" ]]; then
+    has_token=true
+  fi
+  token="$(prompt_optional_secret "JW token override, usually leave empty" "${has_token}")"
+  if [[ -z "${token}" ]]; then
+    token="${JW_TOKEN:-${CURRENT_JW_TOKEN}}"
+  fi
   app_addr="$(prompt_required "Backend listen address" "${APP_ADDR:-${CURRENT_APP_ADDR:-${DEFAULT_APP_ADDR}}}")"
+  gin_mode="$(prompt_required "Gin mode" "${GIN_MODE:-${CURRENT_GIN_MODE:-${DEFAULT_GIN_MODE}}}")"
   download_base_url="${DOWNLOAD_BASE_URL:-${CURRENT_DOWNLOAD_BASE_URL}}"
+
+  validate_repo "${repo}"
+  validate_domain "${domain}"
+  validate_absolute_path "SSL certificate path" "${ssl_cert}"
+  validate_absolute_path "SSL private key path" "${ssl_key}"
+  validate_app_addr "${app_addr}"
+  validate_gin_mode "${gin_mode}"
+  validate_download_base_url "${download_base_url}"
 
   if [[ ! -f "${ssl_cert}" ]]; then
     echo "SSL certificate not found: ${ssl_cert}" >&2
@@ -361,7 +512,7 @@ main() {
 
   install_packages
   create_user
-  write_env "${repo}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${download_base_url}"
+  write_env "${repo}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
   download_release "${repo}" "${version}" "${arch}" "${tmp_dir}" "${download_base_url}"
   archive="${tmp_dir}/bupt-ec-linux-${arch}.tar.gz"
   install_binary "${archive}" "${tmp_dir}"
