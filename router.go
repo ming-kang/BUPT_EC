@@ -3,10 +3,11 @@ package main
 import (
 	"BUPT_EC/logs"
 	"embed"
-	"github.com/gin-contrib/static"
-	"github.com/gin-gonic/gin"
 	"io/fs"
 	"net/http"
+
+	"github.com/gin-contrib/static"
+	"github.com/gin-gonic/gin"
 )
 
 //go:embed frontend/dist
@@ -17,10 +18,11 @@ type embedFileSystem struct {
 }
 
 func (e embedFileSystem) Exists(prefix string, path string) bool {
-	_, err := e.Open(path)
+	file, err := e.Open(path)
 	if err != nil {
 		return false
 	}
+	_ = file.Close()
 	return true
 }
 
@@ -35,10 +37,13 @@ func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
 }
 
 func SetRouter(r *gin.Engine) {
-	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
+	r.GET("/healthz", Healthz)
+	r.GET("/readyz", Readyz)
 
 	apiGroup := r.Group("/api").Use(logs.SetNewContextForGinContext)
 	{
 		apiGroup.GET("/get_data", GetData)
 	}
+
+	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
 }

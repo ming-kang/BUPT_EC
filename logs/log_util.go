@@ -1,11 +1,11 @@
 package logs
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"github.com/gin-gonic/gin"
-	"golang.org/x/net/context"
 	"io"
 	"log"
 	"os"
@@ -20,10 +20,12 @@ const (
 func Init(isMain bool) {
 	if isMain {
 		stdoutWriter := os.Stdout
-		os.Mkdir("run_log", 0755)
-		fileWriter, err := os.OpenFile("run_log/ec.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0755)
+		if err := os.MkdirAll("run_log", 0750); err != nil {
+			log.Fatalf("create log directory failed: %v", err)
+		}
+		fileWriter, err := os.OpenFile("run_log/ec.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0640)
 		if err != nil {
-			log.Fatalf("create file log.txt failed: %v", err)
+			log.Fatalf("create log file run_log/ec.log failed: %v", err)
 		}
 		defaultLogger = log.New(io.MultiWriter(stdoutWriter, fileWriter), "", log.Ldate|log.Lmicroseconds)
 	} else {
@@ -33,7 +35,7 @@ func Init(isMain bool) {
 }
 
 func SetNewContextForGinContext(c *gin.Context) {
-	newCtx := GenNewContext()
+	newCtx := GenNewContext(c.Request.Context())
 	c.Set("ctx", newCtx)
 	c.Writer.Header().Set("LogID", GetLogIDFromContext(newCtx))
 }
@@ -68,8 +70,11 @@ func GenLogID() string {
 	return str
 }
 
-func GenNewContext() context.Context {
-	return context.WithValue(context.Background(), LogIDKey, GenLogID())
+func GenNewContext(parent context.Context) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithValue(parent, LogIDKey, GenLogID())
 }
 
 func GetLogIDFromContext(ctx context.Context) string {
@@ -82,9 +87,21 @@ func GetLogIDFromContext(ctx context.Context) string {
 		return ""
 	}
 
-	return v.(string)
+	logID, ok := v.(string)
+	if !ok {
+		return ""
+	}
+	return logID
 }
 
 func GetContextFromGinContext(c *gin.Context) context.Context {
-	return c.MustGet("ctx").(context.Context)
+	if c == nil || c.Request == nil {
+		return GenNewContext(context.Background())
+	}
+	if raw, ok := c.Get("ctx"); ok {
+		if ctx, ok := raw.(context.Context); ok {
+			return ctx
+		}
+	}
+	return GenNewContext(c.Request.Context())
 }

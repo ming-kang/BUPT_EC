@@ -1,9 +1,10 @@
 package logs
 
 import (
+	"context"
 	"fmt"
-	"golang.org/x/net/context"
 	"log"
+	"os"
 	"path"
 	"runtime"
 )
@@ -23,19 +24,21 @@ func GetCallerInfo() (info string) {
 }
 
 func CtxInfo(ctx context.Context, format string, v ...interface{}) {
-	defaultLogger.SetPrefix("[INFO] ")
-	logID := GetLogIDFromContext(ctx)
-	defaultLogger.Printf(GetCallerInfo()+" "+logID+" "+format, v...)
+	writeLog(ctx, "INFO", format, v...)
 }
 
 func CtxWarn(ctx context.Context, format string, v ...interface{}) {
-	defaultLogger.SetPrefix("[Warn] ")
-	logID := GetLogIDFromContext(ctx)
-	defaultLogger.Printf(GetCallerInfo()+" "+logID+" "+format, v...)
+	writeLog(ctx, "WARN", format, v...)
 }
 
 func CtxError(ctx context.Context, format string, v ...interface{}) {
-	defaultLogger.SetPrefix("[Error] ")
+	writeLog(ctx, "ERROR", format, v...)
+}
+
+func writeLog(ctx context.Context, level string, format string, v ...interface{}) {
+	if defaultLogger == nil {
+		defaultLogger = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds)
+	}
 	logID := GetLogIDFromContext(ctx)
-	defaultLogger.Printf(GetCallerInfo()+" "+logID+" "+format, v...)
+	defaultLogger.Printf("[%s] %s %s "+format, append([]interface{}{level, GetCallerInfo(), logID}, v...)...)
 }
