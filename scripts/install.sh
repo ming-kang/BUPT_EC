@@ -323,7 +323,9 @@ main() {
   local repo version arch domain ssl_cert ssl_key username password_input password token app_addr download_base_url tmp_dir archive
 
   repo="${REPO:-${CURRENT_RELEASE_REPO:-${DEFAULT_REPO}}}"
-  version="${VERSION:-latest}"
+  # Default to the rolling 'nightly' release (rewritten on every push to main).
+  # Set VERSION=v0.1.0 (or any semver tag) to install a specific stable release.
+  version="${VERSION:-nightly}"
 
   echo "BUPT_EC installer"
   echo
