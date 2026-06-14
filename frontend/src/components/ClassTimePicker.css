@@ -1,0 +1,28 @@
+.class-time-picker {
+    margin-bottom: 15px;
+}
+
+/* 手机横屏 */
+@media (max-width: 767px) {
+    .class-time-picker .ant-card-body {
+        padding: 12px;
+    }
+
+    .class-time-picker .ant-btn {
+        width: 40px !important;
+        margin: 1px !important;
+    }
+}
+
+/* 小屏手机 */
+@media (max-width: 479px) {
+    .class-time-picker .ant-card-body {
+        padding: 10px;
+    }
+
+    .class-time-picker .ant-btn {
+        width: 36px !important;
+        margin: 1px !important;
+        font-size: 0.8em;
+    }
+}

@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@8.15.9 --activate
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Build frontend
+        run: pnpm build
+        working-directory: frontend
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Build release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p build release
+
+          for goarch in amd64 arm64; do
+            package_dir="EmptyClassroom-linux-${goarch}"
+            rm -rf "build/${package_dir}"
+            mkdir -p "build/${package_dir}"
+
+            CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
+              go build -o "build/${package_dir}/EmptyClassroom" -v ./
+
+            cp .env.example README.md scripts/install.sh "build/${package_dir}/"
+            chmod +x "build/${package_dir}/install.sh"
+            tar -C build -czf "release/${package_dir}.tar.gz" "${package_dir}"
+          done
+
+          cp scripts/install.sh release/install.sh
+          chmod +x release/install.sh
+          (cd release && sha256sum EmptyClassroom-linux-*.tar.gz > checksums.txt)
+
+      - name: Create GitHub Release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            release/EmptyClassroom-linux-amd64.tar.gz \
+            release/EmptyClassroom-linux-arm64.tar.gz \
+            release/checksums.txt \
+            release/install.sh \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

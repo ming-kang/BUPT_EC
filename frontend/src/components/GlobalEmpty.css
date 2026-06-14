@@ -1,0 +1,10 @@
+.global-empty {
+    margin-bottom: 15px;
+}
+
+/* 手机端 */
+@media (max-width: 767px) {
+    .global-empty .ant-empty-description {
+        font-size: 0.9em;
+    }
+}

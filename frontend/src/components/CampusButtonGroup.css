@@ -1,0 +1,49 @@
+.campus-button-group {
+    margin-bottom: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.campus-button-group .ant-radio-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+}
+
+/* 平板 */
+@media (max-width: 1024px) {
+    .campus-button-group .ant-radio-group {
+        max-width: 100%;
+    }
+}
+
+/* 手机 */
+@media (max-width: 767px) {
+    .campus-button-group {
+        gap: 6px;
+    }
+
+    .campus-button-group .ant-radio-group {
+        max-width: 100%;
+    }
+
+    .campus-button-group .ant-radio-button-wrapper {
+        padding: 0 8px;
+        font-size: 0.85em;
+    }
+}
+
+/* 小屏手机 */
+@media (max-width: 479px) {
+    .campus-button-group {
+        gap: 4px;
+    }
+
+    .campus-button-group .ant-radio-button-wrapper {
+        padding: 0 6px;
+        font-size: 0.8em;
+    }
+}
