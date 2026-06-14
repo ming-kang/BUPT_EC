@@ -19,12 +19,12 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Set up pnpm
         run: |
           corepack enable
-          corepack prepare pnpm@8.15.9 --activate
+          corepack prepare pnpm@9.15.0 --activate
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -37,7 +37,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.25"
 
       - name: Build release assets
         shell: bash
