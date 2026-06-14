@@ -1,6 +1,6 @@
-# EmptyClassroom
+# BUPT_EC
 
-EmptyClassroom is a lightweight BUPT empty-classroom query service. It shows today's available classrooms for the Xitucheng and Shahe campuses by querying the BUPT teaching affairs system directly from a Go backend.
+BUPT_EC is a lightweight BUPT empty-classroom query service. It shows today's available classrooms for the Xitucheng and Shahe campuses by querying the BUPT teaching affairs system directly from a Go backend.
 
 The current version no longer uses a local timetable database. Classroom availability comes from the official same-day `todayClassrooms` endpoint, and the backend obtains the required teaching affairs token automatically through a pure HTTP login flow.
 
@@ -108,13 +108,13 @@ cd ..
 Then build the Go binary:
 
 ```bash
-go build -o EmptyClassroom -v ./
+go build -o bupt-ec -v ./
 ```
 
 Run it with a `.env` file in the same directory, or provide the variables through your process manager:
 
 ```bash
-./EmptyClassroom
+./bupt-ec
 ```
 
 By default, the server listens on `:8080`. Set `APP_ADDR=127.0.0.1:8080` when a reverse proxy handles public traffic.
@@ -130,8 +130,8 @@ git push origin v0.1.0
 
 The workflow builds the frontend, embeds it into Linux binaries, and uploads:
 
-- `EmptyClassroom-linux-amd64.tar.gz`
-- `EmptyClassroom-linux-arm64.tar.gz`
+- `bupt-ec-linux-amd64.tar.gz`
+- `bupt-ec-linux-arm64.tar.gz`
 - `checksums.txt`
 - `install.sh`
 
@@ -150,18 +150,18 @@ Assumptions:
 Run the latest installer from a release:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/EmptyClassroom/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
 ```
 
 On IPv6-only servers that cannot reach GitHub directly, fetch the installer through `gh-v6.com`:
 
 ```bash
-curl -fsSL https://gh-v6.com/ming-kang/EmptyClassroom/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
 ```
 
 The script interactively asks for:
 
-- GitHub repository, default `ming-kang/EmptyClassroom`
+- GitHub repository, default `ming-kang/BUPT_EC`
 - domain name
 - SSL certificate path
 - SSL private key path
@@ -169,15 +169,15 @@ The script interactively asks for:
 - optional token override
 - backend listen address, default `127.0.0.1:8080`
 
-It then installs required system packages, downloads the latest matching Linux release for `amd64` or `arm64`, writes `/etc/empty-classroom/empty-classroom.env`, configures `systemd`, configures Nginx on ports `80` and `443`, and starts the service.
+It then installs required system packages, downloads the latest matching Linux release for `amd64` or `arm64`, writes `/etc/bupt-ec/bupt-ec.env`, configures `systemd`, configures Nginx on ports `80` and `443`, and starts the service.
 
 To upgrade later, rerun the same command. Existing configuration is reused as defaults, and the password can be kept by pressing Enter at the password prompt.
 
 You can install a specific version or a fork by setting environment variables:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/EmptyClassroom/releases/latest/download/install.sh | \
-  sudo REPO=ming-kang/EmptyClassroom VERSION=v0.1.0 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
+  sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.0 bash
 ```
 
 Some IPv6-only servers cannot reach GitHub release downloads because GitHub's main release download endpoints may not be IPv6 reachable from every network. The installer automatically falls back to `gh-v6.com` when direct GitHub access fails. If the installer itself cannot be downloaded from GitHub, use the `gh-v6.com` installer command above. If both GitHub and `gh-v6.com` are unavailable, mirror the release files to an IPv6-reachable HTTPS directory and set `DOWNLOAD_BASE_URL`:
@@ -187,14 +187,14 @@ curl -fsSL https://your-ipv6-reachable.example/install.sh | \
   sudo DOWNLOAD_BASE_URL=https://your-ipv6-reachable.example/releases/v0.1.0 bash
 ```
 
-The custom directory must contain `EmptyClassroom-linux-amd64.tar.gz` or `EmptyClassroom-linux-arm64.tar.gz`; `checksums.txt` is optional but recommended.
+The custom directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz`; `checksums.txt` is optional but recommended.
 
 The service can be managed with:
 
 ```bash
-sudo systemctl status empty-classroom
-sudo systemctl restart empty-classroom
-sudo journalctl -u empty-classroom -f
+sudo systemctl status bupt-ec
+sudo systemctl restart bupt-ec
+sudo journalctl -u bupt-ec -f
 ```
 
 ### Manual Systemd Deployment
@@ -204,8 +204,8 @@ A manual Linux deployment can use `systemd`.
 Example directory:
 
 ```text
-/opt/empty-classroom/
-  EmptyClassroom
+/opt/bupt-ec/
+  bupt-ec
   .env
 ```
 
@@ -213,17 +213,17 @@ Example service file:
 
 ```ini
 [Unit]
-Description=EmptyClassroom
+Description=BUPT_EC
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/empty-classroom
-ExecStart=/opt/empty-classroom/EmptyClassroom
+WorkingDirectory=/opt/bupt-ec
+ExecStart=/opt/bupt-ec/bupt-ec
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/empty-classroom/.env
+EnvironmentFile=/opt/bupt-ec/bupt-ec.env
 
 [Install]
 WantedBy=multi-user.target
@@ -233,8 +233,8 @@ Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now empty-classroom
-sudo systemctl status empty-classroom
+sudo systemctl enable --now bupt-ec
+sudo systemctl status bupt-ec
 ```
 
 If you want to expose it through a domain, put Nginx or another reverse proxy in front of `127.0.0.1:8080`.

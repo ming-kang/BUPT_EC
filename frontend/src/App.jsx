@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
 import BuildingPicker from "./components/BuildingPicker";
 import ClassTimePicker from "./components/ClassTimePicker";
-import EmptyClassroomTable from "./components/EmptyClassroomTable";
+import TodayClassroomTable from "./components/TodayClassroomTable";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 
@@ -124,7 +124,7 @@ function App() {
             canSelectAllDay={canSelectAllDay}
             isDark={isDark}
           />
-          <EmptyClassroomTable
+          <TodayClassroomTable
             todayData={resp}
             selectedCampus={selectedCampus}
             selectedBuildings={selectedBuildings}

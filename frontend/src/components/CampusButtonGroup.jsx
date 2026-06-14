@@ -120,7 +120,7 @@ function CampusButtonGroup(props) {
             项目已开源：
             <Button
               onClick={() =>
-                window.open("https://github.com/ming-kang/EmptyClassroom")
+                window.open("https://github.com/ming-kang/BUPT_EC")
               }
               icon={<GithubOutlined />}
               size="small"

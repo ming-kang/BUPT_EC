@@ -66,10 +66,10 @@ jobs:
           path: frontend/dist
 
       - name: Build
-        run: go build -o EmptyClassroom -v ./
+        run: go build -o bupt-ec -v ./
 
       - name: Archive app artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: EmptyClassroom
-          path: EmptyClassroom
+          name: bupt-ec
+        path: bupt-ec

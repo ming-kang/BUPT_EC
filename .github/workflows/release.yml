@@ -46,12 +46,12 @@ jobs:
           mkdir -p build release
 
           for goarch in amd64 arm64; do
-            package_dir="EmptyClassroom-linux-${goarch}"
+            package_dir="bupt-ec-linux-${goarch}"
             rm -rf "build/${package_dir}"
             mkdir -p "build/${package_dir}"
 
             CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
-              go build -o "build/${package_dir}/EmptyClassroom" -v ./
+              go build -o "build/${package_dir}/bupt-ec" -v ./
 
             cp .env.example README.md scripts/install.sh "build/${package_dir}/"
             chmod +x "build/${package_dir}/install.sh"
@@ -60,7 +60,7 @@ jobs:
 
           cp scripts/install.sh release/install.sh
           chmod +x release/install.sh
-          (cd release && sha256sum EmptyClassroom-linux-*.tar.gz > checksums.txt)
+          (cd release && sha256sum bupt-ec-linux-*.tar.gz > checksums.txt)
 
       - name: Create GitHub Release
         shell: bash
@@ -68,8 +68,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            release/EmptyClassroom-linux-amd64.tar.gz \
-            release/EmptyClassroom-linux-arm64.tar.gz \
+            release/bupt-ec-linux-amd64.tar.gz \
+            release/bupt-ec-linux-arm64.tar.gz \
             release/checksums.txt \
             release/install.sh \
             --title "${GITHUB_REF_NAME}" \

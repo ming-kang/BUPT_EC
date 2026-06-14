@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="empty-classroom"
-SERVICE_NAME="empty-classroom"
-DEFAULT_REPO="ming-kang/EmptyClassroom"
+APP_NAME="bupt-ec"
+SERVICE_NAME="bupt-ec"
+DEFAULT_REPO="ming-kang/BUPT_EC"
 GITHUB_HOST="github.com"
 GITHUB_IPV6_PROXY_HOST="gh-v6.com"
-INSTALL_DIR="/opt/empty-classroom"
-CONFIG_DIR="/etc/empty-classroom"
-ENV_FILE="${CONFIG_DIR}/empty-classroom.env"
+INSTALL_DIR="/opt/bupt-ec"
+CONFIG_DIR="/etc/bupt-ec"
+ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 NGINX_SITE="/etc/nginx/sites-available/${SERVICE_NAME}.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
-APP_USER="empty-classroom"
-APP_GROUP="empty-classroom"
+APP_USER="bupt-ec"
+APP_GROUP="bupt-ec"
 DEFAULT_APP_ADDR="127.0.0.1:8080"
 TTY="/dev/tty"
 
@@ -187,7 +187,7 @@ download_release() {
   local arch="$3"
   local work_dir="$4"
   local download_base_url="$5"
-  local package_name="EmptyClassroom-linux-${arch}.tar.gz"
+  local package_name="bupt-ec-linux-${arch}.tar.gz"
   local base_url
 
   base_url="$(resolve_download_base_url "${repo}" "${version}" "${download_base_url}")"
@@ -212,14 +212,14 @@ install_binary() {
   mkdir -p "${extract_dir}"
   tar -xzf "${archive}" -C "${extract_dir}"
 
-  binary_path="$(find "${extract_dir}" -type f -name EmptyClassroom | head -n 1)"
+  binary_path="$(find "${extract_dir}" -type f -name bupt-ec | head -n 1)"
   if [[ -z "${binary_path}" ]]; then
-    echo "Release archive does not contain EmptyClassroom binary." >&2
+    echo "Release archive does not contain bupt-ec binary." >&2
     exit 1
   fi
 
   mkdir -p "${INSTALL_DIR}/run_log"
-  install -m 0755 "${binary_path}" "${INSTALL_DIR}/EmptyClassroom"
+  install -m 0755 "${binary_path}" "${INSTALL_DIR}/bupt-ec"
   chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}"
 }
 
@@ -253,7 +253,7 @@ EOF
 write_systemd_service() {
   cat > "${SERVICE_FILE}" <<EOF
 [Unit]
-Description=EmptyClassroom
+Description=BUPT_EC
 After=network-online.target
 Wants=network-online.target
 
@@ -263,7 +263,7 @@ User=${APP_USER}
 Group=${APP_GROUP}
 WorkingDirectory=${INSTALL_DIR}
 EnvironmentFile=${ENV_FILE}
-ExecStart=${INSTALL_DIR}/EmptyClassroom
+ExecStart=${INSTALL_DIR}/bupt-ec
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -325,7 +325,7 @@ main() {
   repo="${REPO:-${CURRENT_RELEASE_REPO:-${DEFAULT_REPO}}}"
   version="${VERSION:-latest}"
 
-  echo "EmptyClassroom installer"
+  echo "BUPT_EC installer"
   echo
   repo="$(prompt_required "GitHub repository" "${repo}")"
   domain="$(prompt_required "Domain name" "${DOMAIN:-${CURRENT_DOMAIN}}")"
@@ -361,7 +361,7 @@ main() {
   create_user
   write_env "${repo}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${download_base_url}"
   download_release "${repo}" "${version}" "${arch}" "${tmp_dir}" "${download_base_url}"
-  archive="${tmp_dir}/EmptyClassroom-linux-${arch}.tar.gz"
+  archive="${tmp_dir}/bupt-ec-linux-${arch}.tar.gz"
   install_binary "${archive}" "${tmp_dir}"
   write_systemd_service
   write_nginx_site "${domain}" "${ssl_cert}" "${ssl_key}" "${app_addr}"
@@ -370,7 +370,7 @@ main() {
   systemctl reload nginx
 
   echo
-  echo "EmptyClassroom is installed."
+  echo "BUPT_EC is installed."
   echo "URL: https://${domain}/"
   echo "Service: systemctl status ${SERVICE_NAME}"
   echo "Upgrade later: rerun this installer."

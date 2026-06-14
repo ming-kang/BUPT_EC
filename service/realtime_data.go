@@ -1,11 +1,11 @@
 package service
 
 import (
-	"EmptyClassroom/cache"
-	"EmptyClassroom/config"
-	"EmptyClassroom/logs"
-	"EmptyClassroom/service/model"
-	"EmptyClassroom/utils"
+	"BUPT_EC/cache"
+	"BUPT_EC/config"
+	"BUPT_EC/logs"
+	"BUPT_EC/service/model"
+	"BUPT_EC/utils"
 	"context"
 	"crypto/aes"
 	"encoding/base64"

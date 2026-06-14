@@ -1,8 +1,8 @@
 package main
 
 import (
-	"EmptyClassroom/logs"
-	"EmptyClassroom/service"
+	"BUPT_EC/logs"
+	"BUPT_EC/service"
 	"github.com/gin-gonic/gin"
 )
 

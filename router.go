@@ -1,7 +1,7 @@
 package main
 
 import (
-	"EmptyClassroom/logs"
+	"BUPT_EC/logs"
 	"embed"
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"

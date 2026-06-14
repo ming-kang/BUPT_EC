@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"EmptyClassroom/logs"
+	"BUPT_EC/logs"
 	"bytes"
 	"context"
 	"io"

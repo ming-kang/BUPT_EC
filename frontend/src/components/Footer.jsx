@@ -8,7 +8,7 @@ function Footer() {
       © 2022-2026 ming-kang
       <Button
         onClick={() =>
-          window.open("https://github.com/ming-kang/EmptyClassroom")
+          window.open("https://github.com/ming-kang/BUPT_EC")
         }
         type="text"
         icon={<GithubOutlined />}

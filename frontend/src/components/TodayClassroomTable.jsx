@@ -1,9 +1,9 @@
 import PropTypes from "prop-types";
 import { Card, Descriptions, Empty, Modal, Table, Button, Tag } from "antd";
 import { useMemo, useState } from "react";
-import "./EmptyClassroomTable.css";
+import "./TodayClassroomTable.css";
 
-function EmptyClassroomTable(props) {
+function TodayClassroomTable(props) {
   const [modalTitle, setModalTitle] = useState("");
   const [modalContent, setModalContent] = useState([]);
   const [openModal, setOpenModal] = useState(false);
@@ -51,7 +51,7 @@ function EmptyClassroomTable(props) {
   ) {
     return (
       <Card
-        className="empty-classroom-table responsive-card compact-card"
+        className="today-classroom-table responsive-card compact-card"
         style={{
           boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
         }}
@@ -137,7 +137,7 @@ function EmptyClassroomTable(props) {
   ];
 
   return (
-    <div className="empty-classroom-table">
+    <div className="today-classroom-table">
       <Card
         className="responsive-card"
         style={{
@@ -181,7 +181,7 @@ function EmptyClassroomTable(props) {
   );
 }
 
-EmptyClassroomTable.propTypes = {
+TodayClassroomTable.propTypes = {
   todayData: PropTypes.object,
   selectedCampus: PropTypes.string,
   selectedBuildings: PropTypes.array,
@@ -189,4 +189,4 @@ EmptyClassroomTable.propTypes = {
   setIsError: PropTypes.func,
 };
 
-export default EmptyClassroomTable;
+export default TodayClassroomTable;

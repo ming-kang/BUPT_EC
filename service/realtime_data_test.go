@@ -1,9 +1,9 @@
 package service
 
 import (
-	"EmptyClassroom/cache"
-	"EmptyClassroom/config"
-	"EmptyClassroom/logs"
+	"BUPT_EC/cache"
+	"BUPT_EC/config"
+	"BUPT_EC/logs"
 	"context"
 	"os"
 	"testing"

@@ -1,4 +1,4 @@
-module EmptyClassroom
+module BUPT_EC
 
 go 1.21.5
 
