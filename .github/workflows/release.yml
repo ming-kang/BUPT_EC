@@ -4,14 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  build-frontend:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -27,50 +27,98 @@ jobs:
           corepack prepare pnpm@9.15.0 --activate
 
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
         working-directory: frontend
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
-        run: pnpm build
         working-directory: frontend
+        run: pnpm build
+
+      - name: Upload frontend dist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+  build-go:
+    needs: build-frontend
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goarch: [amd64, arm64]
+    env:
+      CGO_ENABLED: 0
+      GOOS: linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Go
         uses: actions/setup-go@f111f3307d8850f501ac008e886eec1fd1932a34 # v5.3.0
         with:
           go-version: "1.25"
 
-      - name: Build release assets
-        shell: bash
+      - name: Download frontend dist
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Build Go binary
+        env:
+          GOARCH: ${{ matrix.goarch }}
         run: |
           set -euo pipefail
-          mkdir -p build release
+          mkdir -p "build/bupt-ec-linux-${GOARCH}"
+          go build -o "build/bupt-ec-linux-${GOARCH}/bupt-ec" -v ./
 
-          for goarch in amd64 arm64; do
-            package_dir="bupt-ec-linux-${goarch}"
-            rm -rf "build/${package_dir}"
-            mkdir -p "build/${package_dir}"
+      - name: Upload Go binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bupt-ec-linux-${{ matrix.goarch }}
+          path: build/bupt-ec-linux-${{ matrix.goarch }}/bupt-ec
 
-            CGO_ENABLED=0 GOOS=linux GOARCH="${goarch}" \
-              go build -o "build/${package_dir}/bupt-ec" -v ./
+  release:
+    needs: build-go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-            cp .env.example README.md scripts/install.sh "build/${package_dir}/"
-            chmod +x "build/${package_dir}/install.sh"
-            tar -C build -czf "release/${package_dir}.tar.gz" "${package_dir}"
+      - name: Download Linux amd64 binary
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: bupt-ec-linux-amd64
+          path: release/bupt-ec-linux-amd64
+
+      - name: Download Linux arm64 binary
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: bupt-ec-linux-arm64
+          path: release/bupt-ec-linux-arm64
+
+      - name: Compose release assets
+        run: |
+          set -euo pipefail
+          cd release
+          for arch in amd64 arm64; do
+            cp ../.env.example ../README.md ../scripts/install.sh "bupt-ec-linux-${arch}/"
+            chmod +x "bupt-ec-linux-${arch}/install.sh"
+            tar -czf "bupt-ec-linux-${arch}.tar.gz" "bupt-ec-linux-${arch}"
           done
-
-          cp scripts/install.sh release/install.sh
-          chmod +x release/install.sh
-          (cd release && sha256sum bupt-ec-linux-*.tar.gz > checksums.txt)
+          cp ../scripts/install.sh install.sh
+          chmod +x install.sh
+          sha256sum bupt-ec-linux-*.tar.gz > checksums.txt
+          ls -la
 
       - name: Create GitHub Release
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            release/bupt-ec-linux-amd64.tar.gz \
-            release/bupt-ec-linux-arm64.tar.gz \
-            release/checksums.txt \
-            release/install.sh \
-            --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            release/bupt-ec-linux-amd64.tar.gz
+            release/bupt-ec-linux-arm64.tar.gz
+            release/checksums.txt
+            release/install.sh

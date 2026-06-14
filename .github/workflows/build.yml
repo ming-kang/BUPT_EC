@@ -42,7 +42,7 @@ jobs:
     strategy:
       matrix:
         goos: [linux]
-        goarch: [amd64]
+        goarch: [amd64, arm64]
 
     env:
       CGO_ENABLED: 0
@@ -72,4 +72,4 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: bupt-ec
-        path: bupt-ec
+          path: bupt-ec
