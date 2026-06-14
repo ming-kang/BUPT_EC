@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, `handler.go`, and `init.go`. Domain logic is under `service/` (with JSON shapes in `service/model/`), shared helpers under `utils/`, caching under `cache/`, logging under `logs/`, and runtime configuration loading under `config/`. The frontend lives in `frontend/src/`, with reusable components in `frontend/src/components/`, static assets in `frontend/src/assets/`, and public static files in `frontend/public/`. Deployment automation lives in `scripts/install.sh`; CI and release definitions live under `.github/workflows/`, automated dependency updates under `.github/dependabot.yml`. The release artifacts are `bupt-ec-linux-amd64.tar.gz` and `bupt-ec-linux-arm64.tar.gz`; on a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
+This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, `handler.go`, and `init.go`. Domain logic is under `service/` (with JSON shapes in `service/model/`), shared helpers under `utils/`, caching under `cache/`, logging under `logs/`, and runtime configuration loading under `config/`. The frontend lives in `frontend/src/`, with reusable components in `frontend/src/components/`, static assets in `frontend/src/assets/`, and public static files in `frontend/public/`. Deployment automation lives in `scripts/install.sh`; CI and release definitions live under `.github/workflows/`. Dependencies are managed manually (no Dependabot). The release artifacts are `bupt-ec-linux-amd64.tar.gz` and `bupt-ec-linux-arm64.tar.gz`; on a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
 
 ## Build, Test, and Development Commands
 - `go run ./` starts the backend locally. `JW_USERNAME` and `JW_PASSWORD` (or `JW_TOKEN`) must be set; the backend reads them from a `.env` file via `godotenv`. Build `frontend/dist/` first if it is missing because the backend embeds it via `//go:embed frontend/dist` in `router.go`.
@@ -11,7 +11,7 @@ This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vit
 - `cd frontend; pnpm dev` starts the Vite development server; it proxies `/api` to `http://localhost:8080` (see `frontend/vite.config.js`).
 - `cd frontend; pnpm build` creates `frontend/dist/` for backend static serving and CI artifacts.
 - `cd frontend; pnpm lint` runs ESLint for JS/JSX files.
-- Pushing a `v*` tag triggers the `Release` workflow, which builds Linux `amd64`/`arm64` archives plus `bupt-ec-linux-*.tar.gz`, `checksums.txt`, and `install.sh` from the bundled binary (see "Release Process" below).
+- Pushing to `main` (or a `v*` tag, or `workflow_dispatch`) triggers the `Release` workflow, which builds Linux `amd64`/`arm64` archives plus `bupt-ec-linux-*.tar.gz`, `checksums.txt`, and `install.sh` from the bundled binary (see "Release Process" below).
 
 ## Architecture and Data Flow
 - Single public endpoint: `GET /api/get_data`, defined in `router.go` and implemented by `handler.go` → `service.GetData` → `service.GetTodayClassrooms`.
@@ -45,27 +45,38 @@ This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vit
 
 ## Release Process
 
-Releases are cut by pushing a `v*` tag. The `Release` workflow (`.github/workflows/release.yml`) runs three jobs in sequence:
+The `Release` workflow (`.github/workflows/release.yml`) is fully automatic. There are two trigger paths producing two different release flavors.
+
+### Triggers
+
+| Trigger | What happens |
+|---|---|
+| `git push origin main` | Builds and publishes the rolling `nightly` **prerelease** (overwritten on every push) |
+| `git tag v0.1.0 && git push origin v0.1.0` | Builds and publishes the immutable `v0.1.0` stable release |
+| Actions tab → `Run workflow` | Manual run for the current `main` HEAD (dry-run) |
+
+### Workflow jobs
+
+All three triggers run the same three jobs in sequence:
 
 1. `build-frontend` builds the React app with pnpm 9 and Node 22, then uploads `frontend/dist/` as an artifact named `frontend-dist`.
 2. `build-go` (matrix `amd64` + `arm64`) downloads the frontend artifact and compiles the Go 1.25 binary for each architecture, uploading each as `bupt-ec-linux-${goarch}`.
-3. `release` downloads the binaries, wraps each one with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, and publishes a GitHub Release via `softprops/action-gh-release`.
+3. `release` downloads the binaries, wraps each one with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, and publishes via `softprops/action-gh-release`. The publish step branches on `github.ref_type`:
+   - `tag`: creates a stable release at that semver tag.
+   - `branch` (main push): deletes the previous `nightly` release and tag with `gh release delete nightly --cleanup-tag`, then re-creates a `nightly` prerelease in its place.
 
-To cut a release:
+### Resulting releases
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-Then watch the `Actions` tab. The release will appear at `https://github.com/ming-kang/BUPT_EC/releases/tag/v0.1.0` with these assets:
+Both release flavors publish the same four assets:
 
 - `bupt-ec-linux-amd64.tar.gz`
 - `bupt-ec-linux-arm64.tar.gz`
 - `checksums.txt`
 - `install.sh`
 
-The release workflow can also be triggered manually from the Actions tab (`workflow_dispatch`) for dry-runs without pushing a tag. The install script (`scripts/install.sh`) downloads the matching tarball, so the assets above must keep their exact filenames and directory layout:
+The `nightly` prerelease URL is `https://github.com/ming-kang/BUPT_EC/releases/tag/nightly`. A `v*` stable release URL is `https://github.com/ming-kang/BUPT_EC/releases/tag/<tag>`.
+
+The install script (`scripts/install.sh`) downloads the matching tarball, so the assets above must keep their exact filenames and directory layout:
 
 ```
 bupt-ec-linux-${arch}/
@@ -77,18 +88,18 @@ bupt-ec-linux-${arch}/
 
 ## Toolchain Versions
 
-Pinned via the workflows and `go.mod`; Dependabot (`.github/dependabot.yml`) opens weekly PRs for minor and patch updates.
+Pinned via the workflows and `go.mod`. No Dependabot; bump dependencies by hand when needed.
 
 - Go: 1.25 (per `go.mod` `go` directive and `actions/setup-go` `go-version`)
 - Node: 22 LTS (per `actions/setup-node` `node-version` in both workflows)
 - pnpm: 9.15.x (per `corepack prepare` in both workflows, lockfile v9 in `frontend/pnpm-lock.yaml`)
-- All `actions/*` and `softprops/action-gh-release` are pinned to 40-character commit SHAs (see comments in the workflow YAMLs) for supply-chain safety. Use Dependabot PRs or the `git ls-remote` query below to bump them:
+- All `actions/*` and `softprops/action-gh-release` are pinned to 40-character commit SHAs (see comments in the workflow YAMLs) for supply-chain safety. To bump a pin, find the new SHA for the target tag with `git ls-remote`:
 
   ```bash
   git ls-remote https://github.com/actions/checkout.git refs/tags/v4
   ```
 
-- Dependabot (`.github/dependabot.yml`) is configured for `github-actions`, `npm` (frontend), and `gomod` ecosystems, all on a weekly schedule grouped into single PRs by minor/patch version.
+  Update the comment and the `uses:` ref in the workflow, then commit.
 
 ## Security & Configuration Tips
 - Do not commit real `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, generated logs, or private config data. Use `.env.example` as the template for local secrets.

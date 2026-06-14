@@ -32,9 +32,9 @@ Successful responses contain a `date`, refresh timestamps, stale status, campuse
 
 ## Requirements
 
-- Go 1.21+
-- Node.js 18+
-- pnpm
+- Go 1.25+ (per `go.mod`; workflow builds with the same version)
+- Node.js 22 LTS (per the CI workflows)
+- pnpm 9.15.x (enable via `corepack enable && corepack prepare pnpm@9.15.0 --activate`)
 - A valid BUPT teaching affairs account
 
 ## Configuration
@@ -121,25 +121,30 @@ By default, the server listens on `:8080`. Set `APP_ADDR=127.0.0.1:8080` when a 
 
 ## Releases
 
-GitHub Releases are created automatically by the `Release` workflow when you push a version tag:
+GitHub Releases are produced automatically by the `Release` workflow (`.github/workflows/release.yml`). Two release flavors exist:
 
-```bash
-git tag v0.1.0
-git push origin v0.1.0
-```
+- **`nightly` prerelease**: refreshed on every `git push origin main`. Use this for the freshest main build.
+- **`vX.Y.Z` stable release**: created when you push a `v*` tag. Immutable; use this for reproducible deployments.
 
-The workflow builds the frontend, embeds it into Linux binaries, and uploads:
+Both flavors publish the same four assets:
 
 - `bupt-ec-linux-amd64.tar.gz`
 - `bupt-ec-linux-arm64.tar.gz`
 - `checksums.txt`
 - `install.sh`
 
-The server does not need Go, Node.js, or pnpm when using release assets.
+To cut a stable release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The workflow can also be triggered manually from the Actions tab (`workflow_dispatch`) for a dry-run. The server does not need Go, Node.js, or pnpm to consume release assets.
 
 ## Server Deployment
 
-The recommended deployment path is the one-command installer on Debian/Ubuntu servers.
+The recommended deployment path is the one-command installer on Debian/Ubuntu servers. The installer defaults to fetching the rolling `nightly` prerelease (the freshest `main` build); set `VERSION=vX.Y.Z` to install a specific stable release.
 
 Assumptions:
 
@@ -147,16 +152,24 @@ Assumptions:
 - SSL certificate and private key already exist on the server.
 - The server can reach GitHub and the BUPT teaching affairs service over the network.
 
-Run the latest installer from a release:
+Install the freshest `main` build (rolling `nightly`):
+
+```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | sudo bash
+```
+
+Or pin a specific stable release:
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+# or
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.0/install.sh | sudo bash
 ```
 
 On IPv6-only servers that cannot reach GitHub directly, fetch the installer through `gh-v6.com`:
 
 ```bash
-curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | sudo bash
 ```
 
 The script interactively asks for:
@@ -169,14 +182,14 @@ The script interactively asks for:
 - optional token override
 - backend listen address, default `127.0.0.1:8080`
 
-It then installs required system packages, downloads the latest matching Linux release for `amd64` or `arm64`, writes `/etc/bupt-ec/bupt-ec.env`, configures `systemd`, configures Nginx on ports `80` and `443`, and starts the service.
+It then installs required system packages, downloads the matching Linux release for `amd64` or `arm64`, writes `/etc/bupt-ec/bupt-ec.env`, configures `systemd`, configures Nginx on ports `80` and `443`, and starts the service.
 
 To upgrade later, rerun the same command. Existing configuration is reused as defaults, and the password can be kept by pressing Enter at the password prompt.
 
 You can install a specific version or a fork by setting environment variables:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | \
   sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.0 bash
 ```
 
