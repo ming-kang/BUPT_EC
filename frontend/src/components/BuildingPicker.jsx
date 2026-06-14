@@ -3,14 +3,14 @@ import { Button, Card } from "antd";
 import "./BuildingPicker.css";
 
 function BuildingPicker(props) {
-  if (props.todayData.code !== 0 || props.selectedCampus === "") {
+  if (!props.selectedCampusData) {
     return null;
   }
 
-  const campus = props.todayData.data?.campuses?.find(
-    (item) => item.id === props.selectedCampus
-  );
-  const buildings = campus?.buildings || [];
+  const selectedBuildings = props.selectedBuildings || [];
+  const buildings = Array.isArray(props.selectedCampusData.buildings)
+    ? props.selectedCampusData.buildings
+    : [];
 
   return (
     <Card
@@ -18,24 +18,23 @@ function BuildingPicker(props) {
         boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
       }}
       className="building-picker responsive-card"
-      bodyStyle={{}}
     >
       {buildings.map((building) => (
         <Button
-          key={props.selectedCampus + building.name}
+          key={`${props.selectedCampusData.id}-${building.name}`}
           type={
-            props.selectedBuildings.includes(building.name)
+            selectedBuildings.includes(building.name)
               ? "primary"
               : "outline"
           }
           onClick={() => {
-            if (props.selectedBuildings.includes(building.name)) {
+            if (selectedBuildings.includes(building.name)) {
               props.setSelectedBuildings(
-                props.selectedBuildings.filter((x) => x !== building.name)
+                selectedBuildings.filter((x) => x !== building.name)
               );
             } else {
               props.setSelectedBuildings([
-                ...props.selectedBuildings,
+                ...selectedBuildings,
                 building.name,
               ]);
             }
@@ -52,10 +51,9 @@ function BuildingPicker(props) {
 }
 
 BuildingPicker.propTypes = {
-  todayData: PropTypes.object,
+  selectedCampusData: PropTypes.object,
   selectedBuildings: PropTypes.array,
   setSelectedBuildings: PropTypes.func,
-  selectedCampus: PropTypes.string,
 };
 
 export default BuildingPicker;

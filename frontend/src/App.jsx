@@ -1,18 +1,17 @@
 import "./App.css";
 import logo from "./assets/logo.png";
 import { Alert, ConfigProvider, Spin, Typography, theme } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
 import BuildingPicker from "./components/BuildingPicker";
 import ClassTimePicker from "./components/ClassTimePicker";
 import TodayClassroomTable from "./components/TodayClassroomTable";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
+import useTodayClassrooms from "./useTodayClassrooms";
 
 function App() {
-  const [spining, setSpining] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [resp, setResp] = useState({ code: 1, msg: "加载中" });
+  const { resp, spinning, isError, retry } = useTodayClassrooms();
   const [selectedCampus, setSelectedCampus] = useState("");
   const [selectedBuildings, setSelectedBuildings] = useState([]);
   const [selectedClassTimes, setSelectedClassTimes] = useState([]);
@@ -21,6 +20,18 @@ function App() {
   const [isDark, setIsDark] = useState(false);
 
   const { Title } = Typography;
+
+  const campuses = useMemo(
+    () =>
+      resp.code === 0 && Array.isArray(resp.data?.campuses)
+        ? resp.data.campuses
+        : [],
+    [resp]
+  );
+  const selectedCampusData = useMemo(
+    () => campuses.find((campus) => campus.id === selectedCampus) || null,
+    [campuses, selectedCampus]
+  );
 
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
@@ -41,19 +52,6 @@ function App() {
     mql.addEventListener("change", matchMode);
     matchMode(mql);
 
-    fetch("/api/get_data")
-      .then((response) => response.json())
-      .then((data) => {
-        setResp(data);
-        setIsError(data.code !== 0);
-        setSpining(false);
-      })
-      .catch(() => {
-        setIsError(true);
-        setResp({ code: 500, msg: "数据获取失败，请稍后重试" });
-        setSpining(false);
-      });
-
     setShowClassTime(localStorage.getItem("showClassTime") !== "false");
     setCanSelectAllDay(localStorage.getItem("canSelectAllDay") === "true");
 
@@ -62,16 +60,30 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (campuses.length === 0) {
+      if (selectedCampus !== "") {
+        setSelectedCampus("");
+        setSelectedBuildings([]);
+        setSelectedClassTimes([]);
+      }
+      return;
+    }
+
+    if (!campuses.some((campus) => campus.id === selectedCampus)) {
+      setSelectedCampus(campuses[0].id);
+      setSelectedBuildings([]);
+      setSelectedClassTimes([]);
+    }
+  }, [campuses, selectedCampus]);
+
   return (
     <ConfigProvider
       theme={{
-        algorithm:
-          localStorage.getItem("darkMode") === "true"
-            ? theme.darkAlgorithm
-            : theme.defaultAlgorithm,
+        algorithm: isDark ? theme.darkAlgorithm : theme.defaultAlgorithm,
       }}
     >
-      <Spin spinning={spining}>
+      <Spin spinning={spinning}>
         <div className="App">
           <img src={logo} className="logo" alt="BUPT" />
           <Title
@@ -99,6 +111,7 @@ function App() {
             />
           ) : null}
           <CampusButtonGroup
+            campuses={campuses}
             todayData={resp}
             selectedCampus={selectedCampus}
             setSelectedCampus={setSelectedCampus}
@@ -110,28 +123,25 @@ function App() {
             setCanSelectAllDay={setCanSelectAllDay}
           />
           <BuildingPicker
-            todayData={resp}
+            selectedCampusData={selectedCampusData}
             selectedBuildings={selectedBuildings}
             setSelectedBuildings={setSelectedBuildings}
-            selectedCampus={selectedCampus}
           />
           <ClassTimePicker
-            todayData={resp}
+            selectedCampusData={selectedCampusData}
+            todayDate={resp.data?.date}
             selectedClassTimes={selectedClassTimes}
             setSelectedClassTimes={setSelectedClassTimes}
-            selectedCampus={selectedCampus}
             showClassTime={showClassTime}
             canSelectAllDay={canSelectAllDay}
             isDark={isDark}
           />
           <TodayClassroomTable
-            todayData={resp}
-            selectedCampus={selectedCampus}
+            selectedCampusData={selectedCampusData}
             selectedBuildings={selectedBuildings}
             selectedClassTimes={selectedClassTimes}
-            setIsError={setIsError}
           />
-          <GlobalEmpty todayData={resp} isError={isError} />
+          <GlobalEmpty todayData={resp} isError={isError} onRetry={retry} />
           <Footer />
         </div>
       </Spin>

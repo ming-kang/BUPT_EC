@@ -1,11 +1,12 @@
 import PropTypes from "prop-types";
 import { Button, Divider, Modal, Radio, Switch, Typography } from "antd";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { GithubOutlined, SettingOutlined } from "@ant-design/icons";
 import "./CampusButtonGroup.css";
 
 function CampusButtonGroup(props) {
   const {
+    campuses,
     todayData,
     selectedCampus,
     setSelectedCampus,
@@ -16,25 +17,7 @@ function CampusButtonGroup(props) {
     canSelectAllDay,
     setCanSelectAllDay,
   } = props;
-  const [campusList, setCampusList] = useState([]);
   const [openSettingModal, setOpenSettingModal] = useState(false);
-
-  useEffect(() => {
-    if (todayData.code !== 0) {
-      return;
-    }
-
-    const list = [...(todayData.data?.campuses || [])];
-    setCampusList(list);
-    if (selectedCampus === "" && list.length > 0) {
-      setSelectedCampus(list[0].id);
-    }
-  }, [
-    todayData.code,
-    todayData.data?.campuses,
-    selectedCampus,
-    setSelectedCampus,
-  ]);
 
   return (
     <div className="campus-button-group">
@@ -48,7 +31,7 @@ function CampusButtonGroup(props) {
         buttonStyle="solid"
         size="middle"
       >
-        {campusList.map((campus) => (
+        {campuses.map((campus) => (
           <Radio.Button value={campus.id} key={campus.id}>
             {campus.name}
           </Radio.Button>
@@ -120,7 +103,11 @@ function CampusButtonGroup(props) {
             项目已开源：
             <Button
               onClick={() =>
-                window.open("https://github.com/ming-kang/BUPT_EC")
+                window.open(
+                  "https://github.com/ming-kang/BUPT_EC",
+                  "_blank",
+                  "noopener,noreferrer"
+                )
               }
               icon={<GithubOutlined />}
               size="small"
@@ -135,6 +122,12 @@ function CampusButtonGroup(props) {
 }
 
 CampusButtonGroup.propTypes = {
+  campuses: PropTypes.arrayOf(
+    PropTypes.shape({
+      id: PropTypes.string.isRequired,
+      name: PropTypes.string.isRequired,
+    })
+  ).isRequired,
   todayData: PropTypes.object.isRequired,
   selectedCampus: PropTypes.string,
   setSelectedCampus: PropTypes.func,

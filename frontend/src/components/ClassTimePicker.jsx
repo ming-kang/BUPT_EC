@@ -3,19 +3,19 @@ import { Button, Card } from "antd";
 import "./ClassTimePicker.css";
 
 function ClassTimePicker(props) {
-  if (props.todayData.code !== 0 || props.selectedCampus === "") {
+  if (!props.selectedCampusData) {
     return null;
   }
 
-  const campus = props.todayData.data?.campuses?.find(
-    (item) => item.id === props.selectedCampus
-  );
-  const options = campus?.nodes || [];
+  const selectedClassTimes = props.selectedClassTimes || [];
+  const options = Array.isArray(props.selectedCampusData.nodes)
+    ? props.selectedCampusData.nodes
+    : [];
   const nowTime = new Date().toTimeString().slice(0, 5);
-  const isToday = props.todayData.data?.date === formatLocalDate(new Date());
+  const isToday = props.todayDate === formatLocalDate(new Date());
 
   const normalizedOptions = options.map((item) => {
-    const [, endTime = ""] = item.time.split("-");
+    const [, endTime = ""] = String(item.time || "").split("-");
     return {
       ...item,
       disabled:
@@ -29,7 +29,7 @@ function ClassTimePicker(props) {
     const selectable = normalizedOptions.filter((item) => !item.disabled);
     return (
       selectable.length > 0 &&
-      selectable.every((item) => props.selectedClassTimes.includes(item.node))
+      selectable.every((item) => selectedClassTimes.includes(item.node))
     );
   }
 
@@ -44,7 +44,7 @@ function ClassTimePicker(props) {
   }
 
   function renderTime(time, index) {
-    const [start, end] = time.split("-");
+    const [start = "", end = ""] = String(time || "").split("-");
     return index === 0 ? start : end;
   }
 
@@ -54,7 +54,6 @@ function ClassTimePicker(props) {
       style={{
         boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
       }}
-      bodyStyle={{}}
     >
       <div
         style={{
@@ -67,18 +66,18 @@ function ClassTimePicker(props) {
           <Button
             key={item.node}
             type={
-              props.selectedClassTimes.includes(item.node)
+              selectedClassTimes.includes(item.node)
                 ? "primary"
                 : "outline"
             }
             onClick={() => {
-              if (props.selectedClassTimes.includes(item.node)) {
+              if (selectedClassTimes.includes(item.node)) {
                 props.setSelectedClassTimes(
-                  props.selectedClassTimes.filter((node) => node !== item.node)
+                  selectedClassTimes.filter((node) => node !== item.node)
                 );
               } else {
                 props.setSelectedClassTimes([
-                  ...props.selectedClassTimes,
+                  ...selectedClassTimes,
                   item.node,
                 ]);
               }
@@ -148,10 +147,10 @@ function formatLocalDate(date) {
 }
 
 ClassTimePicker.propTypes = {
-  todayData: PropTypes.object,
+  selectedCampusData: PropTypes.object,
+  todayDate: PropTypes.string,
   selectedClassTimes: PropTypes.array,
   setSelectedClassTimes: PropTypes.func,
-  selectedCampus: PropTypes.string,
   showClassTime: PropTypes.bool,
   canSelectAllDay: PropTypes.bool,
   isDark: PropTypes.bool,

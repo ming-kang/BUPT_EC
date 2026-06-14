@@ -7,46 +7,63 @@ function TodayClassroomTable(props) {
   const [modalTitle, setModalTitle] = useState("");
   const [modalContent, setModalContent] = useState([]);
   const [openModal, setOpenModal] = useState(false);
+  const selectedBuildings = useMemo(
+    () => (Array.isArray(props.selectedBuildings) ? props.selectedBuildings : []),
+    [props.selectedBuildings]
+  );
+  const selectedClassTimes = useMemo(
+    () =>
+      Array.isArray(props.selectedClassTimes) ? props.selectedClassTimes : [],
+    [props.selectedClassTimes]
+  );
 
-  const campus = useMemo(() => {
-    if (props.todayData.code !== 0) {
-      return null;
-    }
-    return props.todayData.data?.campuses?.find(
-      (item) => item.id === props.selectedCampus
-    );
-  }, [props.selectedCampus, props.todayData.code, props.todayData.data]);
+  const buildings = useMemo(
+    () =>
+      Array.isArray(props.selectedCampusData?.buildings)
+        ? props.selectedCampusData.buildings
+        : [],
+    [props.selectedCampusData]
+  );
 
   const emptyClassrooms = useMemo(() => {
     if (
-      !campus ||
-      props.selectedBuildings.length === 0 ||
-      props.selectedClassTimes.length === 0
+      !props.selectedCampusData ||
+      selectedBuildings.length === 0 ||
+      selectedClassTimes.length === 0
     ) {
       return [];
     }
 
-    return campus.buildings
-      .filter((building) => props.selectedBuildings.includes(building.name))
+    return buildings
+      .filter((building) => selectedBuildings.includes(building.name))
       .flatMap((building) =>
-        building.rooms.map((room) => ({
+        (Array.isArray(building.rooms) ? building.rooms : []).map((room) => ({
           ...room,
           building: building.name,
         }))
       )
       .filter((room) =>
-        props.selectedClassTimes.every((node) => room.free_nodes.includes(node))
+        selectedClassTimes.every((node) =>
+          Array.isArray(room.free_nodes)
+            ? room.free_nodes.includes(node)
+            : false
+        )
       )
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
-  }, [campus, props.selectedBuildings, props.selectedClassTimes]);
+  }, [
+    buildings,
+    props.selectedCampusData,
+    selectedBuildings,
+    selectedClassTimes,
+  ]);
 
-  if (props.todayData.code !== 0 || props.selectedCampus === "") {
+  if (!props.selectedCampusData) {
     return null;
   }
 
   if (
-    props.selectedBuildings.length === 0 ||
-    props.selectedClassTimes.length === 0 ||
+    selectedBuildings.length === 0 ||
+    selectedClassTimes.length === 0 ||
     emptyClassrooms.length === 0
   ) {
     return (
@@ -55,16 +72,15 @@ function TodayClassroomTable(props) {
         style={{
           boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
         }}
-        bodyStyle={{}}
       >
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
-            props.selectedBuildings.length === 0
-              ? props.selectedClassTimes.length === 0
+            selectedBuildings.length === 0
+              ? selectedClassTimes.length === 0
                 ? "请选择教学楼和上课时间"
                 : "请选择教学楼"
-              : props.selectedClassTimes.length === 0
+              : selectedClassTimes.length === 0
               ? "请选择上课时间"
               : "没有符合条件的空教室"
           }
@@ -74,7 +90,7 @@ function TodayClassroomTable(props) {
   }
 
   function showClassroomInfo(room) {
-    const freeTimes = room.free_times
+    const freeTimes = (Array.isArray(room.free_times) ? room.free_times : [])
       .map((item) => `${String(item.node).padStart(2, "0")} ${item.time}`)
       .join("，");
     setModalTitle(room.display_name);
@@ -124,8 +140,8 @@ function TodayClassroomTable(props) {
       align: "center",
       render: (nodes) => (
         <>
-          {nodes
-            .filter((node) => props.selectedClassTimes.includes(node))
+          {(Array.isArray(nodes) ? nodes : [])
+            .filter((node) => selectedClassTimes.includes(node))
             .map((node) => (
               <Tag key={node} bordered={false}>
                 {String(node).padStart(2, "0")}
@@ -143,8 +159,10 @@ function TodayClassroomTable(props) {
         style={{
           boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
         }}
-        bodyStyle={{
-          padding: "0px",
+        styles={{
+          body: {
+            padding: "0px",
+          },
         }}
       >
         <Table
@@ -154,7 +172,7 @@ function TodayClassroomTable(props) {
           bordered={false}
           tableLayout="auto"
           size="small"
-          rowKey={(record) => record.display_name}
+          rowKey={(record) => `${record.building}-${record.display_name}`}
           style={{
             width: "100%",
           }}
@@ -182,11 +200,9 @@ function TodayClassroomTable(props) {
 }
 
 TodayClassroomTable.propTypes = {
-  todayData: PropTypes.object,
-  selectedCampus: PropTypes.string,
+  selectedCampusData: PropTypes.object,
   selectedBuildings: PropTypes.array,
   selectedClassTimes: PropTypes.array,
-  setIsError: PropTypes.func,
 };
 
 export default TodayClassroomTable;

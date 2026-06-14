@@ -1,9 +1,9 @@
 import PropTypes from "prop-types";
-import { Card, Empty } from "antd";
+import { Button, Card, Empty } from "antd";
 import "./GlobalEmpty.css";
 
 function GlobalEmpty(props) {
-  if (props.todayData.code == 0) {
+  if (props.todayData.code === 0) {
     return null;
   }
 
@@ -13,7 +13,6 @@ function GlobalEmpty(props) {
       style={{
         boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
       }}
-      bodyStyle={{}}
     >
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -23,7 +22,9 @@ function GlobalEmpty(props) {
               "数据获取失败，请刷新重试，若一直失败，可以点击上方按钮反馈"
             : "加载中"
         }
-      />
+      >
+        {props.isError ? <Button onClick={props.onRetry}>重试</Button> : null}
+      </Empty>
     </Card>
   );
 }
@@ -31,6 +32,7 @@ function GlobalEmpty(props) {
 GlobalEmpty.propTypes = {
   todayData: PropTypes.object.isRequired,
   isError: PropTypes.bool.isRequired,
+  onRetry: PropTypes.func,
 };
 
 export default GlobalEmpty;
