@@ -167,6 +167,41 @@ Assumptions:
 - SSL certificate and private key already exist on the server.
 - The server can reach GitHub and the BUPT teaching affairs service over the network.
 
+### New VPS checklist with an existing certificate
+
+The installer runs in an existing-certificate mode: it configures Nginx to use a certificate that is already present, but it does **not** request or renew TLS certificates for you. On a fresh VPS, prepare the host in this order:
+
+1. Use a Debian/Ubuntu server, or another apt-based system supported by the installer.
+2. Point your domain at the server before installing. For example, create an `A` record for the VPS IPv4 address and, if available, an `AAAA` record for the VPS IPv6 address.
+3. Open inbound TCP ports `80` and `443` in the cloud firewall/security group and in the host firewall if one is enabled.
+4. Obtain a certificate before running the installer. A common Let's Encrypt standalone flow is:
+
+   ```bash
+   sudo apt-get update
+   sudo apt-get install -y certbot
+   sudo certbot certonly --standalone -d ec.example.com
+   ```
+
+   The standalone challenge needs port `80` to be reachable and not occupied by another process while the certificate is issued. If you use DNS validation, a commercial certificate, or another certificate manager, that is also fine as long as you know the final certificate and private-key paths.
+
+5. For a default Let's Encrypt certificate, the paths are usually:
+
+   ```text
+   /etc/letsencrypt/live/ec.example.com/fullchain.pem
+   /etc/letsencrypt/live/ec.example.com/privkey.pem
+   ```
+
+   You can verify them before installation:
+
+   ```bash
+   sudo test -f /etc/letsencrypt/live/ec.example.com/fullchain.pem
+   sudo test -f /etc/letsencrypt/live/ec.example.com/privkey.pem
+   ```
+
+6. Run the BUPT_EC installer. When prompted for the SSL certificate and private-key paths, accept the defaults if they match your domain and certificate layout, or enter your custom paths.
+
+The installer writes its own Nginx site for BUPT_EC and checks that the certificate files exist before proceeding. Certificate renewal remains the responsibility of your certificate manager, such as Certbot's renewal timer. If the renewed files stay at the same paths, rerunning the installer is not required for renewal alone; reloading Nginx after renewal is enough.
+
 Install the freshest `main` build (rolling `nightly`):
 
 ```bash
