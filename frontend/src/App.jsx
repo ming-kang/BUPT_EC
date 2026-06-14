@@ -1,5 +1,4 @@
 import "./App.css";
-import logo from "./assets/logo.png";
 import { Alert, ConfigProvider, Spin, Typography, theme } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
@@ -9,6 +8,16 @@ import TodayClassroomTable from "./components/TodayClassroomTable";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
+
+const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+
+function formatDateWithWeekday(dateStr) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return dateStr;
+  const [, y, m, d] = match;
+  const date = new Date(Number(y), Number(m) - 1, Number(d));
+  return `${dateStr} · ${WEEKDAY_LABELS[date.getDay()]}`;
+}
 
 function App() {
   const { resp, spinning, isError, retry } = useTodayClassrooms();
@@ -71,7 +80,9 @@ function App() {
     }
 
     if (!campuses.some((campus) => campus.id === selectedCampus)) {
-      setSelectedCampus(campuses[0].id);
+      const preferred =
+        campuses.find((campus) => campus.name === "沙河") || campuses[0];
+      setSelectedCampus(preferred.id);
       setSelectedBuildings([]);
       setSelectedClassTimes([]);
     }
@@ -85,18 +96,14 @@ function App() {
     >
       <Spin spinning={spinning}>
         <div className="App">
-          <img src={logo} className="logo" alt="BUPT" />
-          <Title
-            level={3}
-            style={{
-              marginBottom: "6px",
-            }}
-          >
-            BUPT 今日空教室
-          </Title>
+          <div className="app-header">
+            <Title level={3} className="app-title">
+              BUPT 今日空教室
+            </Title>
+          </div>
           {resp.code === 0 && resp.data?.date ? (
             <div className="today-caption">
-              {resp.data.date} · 教务系统当天数据
+              {formatDateWithWeekday(resp.data.date)}
             </div>
           ) : null}
           {resp.code === 0 && resp.data?.stale ? (

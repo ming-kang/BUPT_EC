@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { Card, Descriptions, Empty, Modal, Table, Button, Tag } from "antd";
+import { Card, Descriptions, Empty, Modal, Table, Tag } from "antd";
 import { useMemo, useState } from "react";
 import "./TodayClassroomTable.css";
 
@@ -67,12 +67,7 @@ function TodayClassroomTable(props) {
     emptyClassrooms.length === 0
   ) {
     return (
-      <Card
-        className="today-classroom-table responsive-card compact-card"
-        style={{
-          boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
-        }}
-      >
+      <Card className="today-classroom-table responsive-card compact-card">
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
           description={
@@ -114,16 +109,15 @@ function TodayClassroomTable(props) {
       dataIndex: "display_name",
       align: "center",
       render: (_, record) => (
-        <span style={{ display: "flex", justifyContent: "center" }}>
-          <Button
-            size="small"
-            onClick={() => {
-              showClassroomInfo(record);
-            }}
-          >
-            {record.display_name}
-          </Button>
-        </span>
+        <button
+          type="button"
+          className="room-name"
+          onClick={() => {
+            showClassroomInfo(record);
+          }}
+        >
+          {record.display_name}
+        </button>
       ),
     },
     {
@@ -156,12 +150,9 @@ function TodayClassroomTable(props) {
     <div className="today-classroom-table">
       <Card
         className="responsive-card"
-        style={{
-          boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
-        }}
         styles={{
           body: {
-            padding: "0px",
+            padding: 0,
           },
         }}
       >

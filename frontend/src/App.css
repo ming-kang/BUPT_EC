@@ -1,31 +1,38 @@
 .App {
-    height: 100%;
-    padding: 0 16px;
+    min-height: 100%;
+    padding: 32px 20px 48px;
     text-align: center;
-    max-width: 1200px;
+    max-width: 1120px;
     margin: 0 auto;
     box-sizing: border-box;
 }
 
-.logo {
-    width: 7em;
-    margin: 0 auto;
-    display: block;
-    margin-top: -2em;
-    margin-bottom: -2em;
+.app-header {
+    margin-bottom: 6px;
+}
+
+.app-header .app-title {
+    margin: 0 !important;
+    font-weight: 600;
+    letter-spacing: 0.2px;
 }
 
 .today-caption {
-    color: #666;
+    color: rgba(0, 0, 0, 0.55);
     font-size: 0.9em;
-    margin-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+body.dark .today-caption {
+    color: rgba(255, 255, 255, 0.55);
 }
 
 .stale-alert {
     max-width: 960px;
     width: min(960px, 100%);
-    margin-bottom: 15px;
+    margin: 0 auto 16px;
     text-align: left;
+    border-radius: var(--bupt-ec-radius-md) !important;
 }
 
 .responsive-card {
@@ -34,27 +41,36 @@
     max-width: 960px;
     width: 100%;
     box-sizing: border-box;
+    border-radius: var(--bupt-ec-radius-md) !important;
+    box-shadow: var(--bupt-ec-shadow-card) !important;
 }
 
 .compact-card {
     max-width: 520px;
 }
 
-.control-card-body {
-    max-width: none;
+.app-footer {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    margin-top: 32px;
+    color: rgba(0, 0, 0, 0.45);
+    font-size: 0.85em;
+}
+
+body.dark .app-footer {
+    color: rgba(255, 255, 255, 0.45);
 }
 
 /* 平板 (768px - 1024px) */
 @media (max-width: 1024px) {
     .App {
-        padding: 0 20px;
+        padding: 24px 20px 40px;
     }
 
+    .responsive-card,
     .stale-alert {
-        max-width: 100%;
-    }
-
-    .responsive-card {
         max-width: 100%;
     }
 }
@@ -62,55 +78,27 @@
 /* 手机横屏 (480px - 767px) */
 @media (max-width: 767px) {
     .App {
-        padding: 0 12px;
-    }
-
-    .logo {
-        width: 5em;
-        margin-top: -1.5em;
-        margin-bottom: -1.5em;
+        padding: 20px 14px 32px;
     }
 
     .today-caption {
         font-size: 0.85em;
-        margin-bottom: 10px;
+        margin-bottom: 14px;
     }
 
     .stale-alert {
-        max-width: 100%;
-        font-size: 0.85em;
-    }
-
-    .responsive-card {
-        max-width: 100%;
-    }
-
-    .compact-card {
-        max-width: 100%;
+        font-size: 0.9em;
     }
 }
 
 /* 手机竖屏 (<480px) */
 @media (max-width: 479px) {
     .App {
-        padding: 0 8px;
-    }
-
-    .logo {
-        width: 4em;
-        margin-top: -1em;
-        margin-bottom: -1em;
+        padding: 16px 10px 24px;
     }
 
     .today-caption {
         font-size: 0.8em;
-        margin-bottom: 8px;
-    }
-}
-
-/* Footer 响应式 */
-@media (max-width: 767px) {
-    .App .footer.ant-typography {
-        font-size: 0.85em;
+        margin-bottom: 12px;
     }
 }

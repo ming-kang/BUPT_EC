@@ -8,12 +8,7 @@ function GlobalEmpty(props) {
   }
 
   return (
-    <Card
-      className="global-empty responsive-card compact-card"
-      style={{
-        boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
-      }}
-    >
+    <Card className="global-empty responsive-card compact-card">
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={

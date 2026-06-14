@@ -49,92 +49,62 @@ function ClassTimePicker(props) {
   }
 
   return (
-    <Card
-      className="class-time-picker responsive-card"
-      style={{
-        boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          justifyContent: "center",
-        }}
-      >
-        {normalizedOptions.map((item) => (
-          <Button
-            key={item.node}
-            type={
-              selectedClassTimes.includes(item.node)
-                ? "primary"
-                : "outline"
-            }
-            onClick={() => {
-              if (selectedClassTimes.includes(item.node)) {
-                props.setSelectedClassTimes(
-                  selectedClassTimes.filter((node) => node !== item.node)
-                );
-              } else {
-                props.setSelectedClassTimes([
-                  ...selectedClassTimes,
-                  item.node,
-                ]);
-              }
-            }}
-            style={{
-              borderRadius: "0px",
-              width: "45px",
-              margin: "2px",
-              height: props.showClassTime ? "45px" : "30px",
-              padding: "0px",
-              color: item.disabled
-                ? props.isDark
-                  ? "#ffffff73"
-                  : "#00000073"
-                : null,
-            }}
-            disabled={item.disabled}
-          >
-            <div>
-              {props.showClassTime ? (
-                <div
-                  style={{
-                    fontSize: "0.7em",
-                    marginBottom: "-0.5em",
-                  }}
-                >
-                  {renderTime(item.time, 0)}
-                </div>
-              ) : null}
-              {String(item.node).padStart(2, "0")}
-              {props.showClassTime ? (
-                <div
-                  style={{
-                    fontSize: "0.7em",
-                    marginTop: "-0.5em",
-                  }}
-                >
-                  {renderTime(item.time, 1)}
-                </div>
-              ) : null}
-            </div>
-          </Button>
-        ))}
+    <Card className="class-time-picker responsive-card">
+      {normalizedOptions.map((item) => (
         <Button
-          type={isAllChecked() ? "primary" : "outline"}
-          onClick={onCheckAllChange}
-          style={{
-            borderRadius: "0px",
-            width: "45px",
-            margin: "2px",
-            height: props.showClassTime ? "45px" : "30px",
-            padding: "0px",
+          key={item.node}
+          type={selectedClassTimes.includes(item.node) ? "primary" : "outline"}
+          className={props.showClassTime ? "time-slot-show-time" : ""}
+          onClick={() => {
+            if (selectedClassTimes.includes(item.node)) {
+              props.setSelectedClassTimes(
+                selectedClassTimes.filter((node) => node !== item.node)
+              );
+            } else {
+              props.setSelectedClassTimes([...selectedClassTimes, item.node]);
+            }
           }}
+          style={{
+            color: item.disabled
+              ? props.isDark
+                ? "rgba(255,255,255,0.45)"
+                : "rgba(0,0,0,0.45)"
+              : undefined,
+          }}
+          disabled={item.disabled}
         >
-          {isAllChecked() ? "全不选" : "全选"}
+          <div>
+            {props.showClassTime ? (
+              <div
+                style={{
+                  fontSize: "0.7em",
+                  marginBottom: "-0.5em",
+                }}
+              >
+                {renderTime(item.time, 0)}
+              </div>
+            ) : null}
+            {String(item.node).padStart(2, "0")}
+            {props.showClassTime ? (
+              <div
+                style={{
+                  fontSize: "0.7em",
+                  marginTop: "-0.5em",
+                }}
+              >
+                {renderTime(item.time, 1)}
+              </div>
+            ) : null}
+          </div>
         </Button>
-      </div>
+      ))}
+      <Button
+        type={isAllChecked() ? "primary" : "outline"}
+        className={`select-all-btn ${props.showClassTime ? "time-slot-show-time" : ""}`}
+        onClick={onCheckAllChange}
+      >
+        {isAllChecked() ? "全不选" : "全选"}
+      </Button>
     </Card>
   );
 }

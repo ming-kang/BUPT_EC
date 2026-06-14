@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
-import { Button, Divider, Modal, Radio, Switch, Typography } from "antd";
-import { useState } from "react";
+import { Button, Divider, Modal, Switch, Typography } from "antd";
+import { Fragment, useState } from "react";
 import { GithubOutlined, SettingOutlined } from "@ant-design/icons";
 import "./CampusButtonGroup.css";
 
@@ -18,29 +18,34 @@ function CampusButtonGroup(props) {
     setCanSelectAllDay,
   } = props;
   const [openSettingModal, setOpenSettingModal] = useState(false);
+  const settingsSplitIndex = Math.floor(campuses.length / 2);
 
   return (
     <div className="campus-button-group">
-      <Radio.Group
-        value={selectedCampus}
-        onChange={(e) => {
-          setSelectedCampus(e.target.value);
-          setSelectedBuildings([]);
-          setSelectedClassTimes([]);
-        }}
-        buttonStyle="solid"
-        size="middle"
-      >
-        {campuses.map((campus) => (
-          <Radio.Button value={campus.id} key={campus.id}>
-            {campus.name}
-          </Radio.Button>
+      <div className="campus-buttons">
+        {campuses.map((campus, index) => (
+          <Fragment key={campus.id}>
+            {index === settingsSplitIndex ? (
+              <Button
+                className="settings-trigger"
+                icon={<SettingOutlined />}
+                onClick={() => setOpenSettingModal(true)}
+                aria-label="设置"
+              />
+            ) : null}
+            <Button
+              type={selectedCampus === campus.id ? "primary" : "default"}
+              onClick={() => {
+                setSelectedCampus(campus.id);
+                setSelectedBuildings([]);
+                setSelectedClassTimes([]);
+              }}
+            >
+              {campus.name}
+            </Button>
+          </Fragment>
         ))}
-      </Radio.Group>
-      <Button
-        icon={<SettingOutlined />}
-        onClick={() => setOpenSettingModal(true)}
-      />
+      </div>
       <Modal
         title="设置"
         open={openSettingModal}
@@ -51,7 +56,14 @@ function CampusButtonGroup(props) {
         }}
       >
         <div>
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
             <Switch
               checked={showClassTime}
               onChange={(v) => {
@@ -60,11 +72,16 @@ function CampusButtonGroup(props) {
               }}
               size="small"
             />
-            <Typography.Title level={5} style={{ margin: 8 }}>
-              显示课程时间
-            </Typography.Title>
+            <Typography.Text>显示课程时间</Typography.Text>
           </div>
-          <div style={{ display: "flex", alignItems: "center" }}>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              marginBottom: 12,
+            }}
+          >
             <Switch
               checked={canSelectAllDay}
               onChange={(v) => {
@@ -73,23 +90,13 @@ function CampusButtonGroup(props) {
               }}
               size="small"
             />
-            <Typography.Title level={5} style={{ margin: 8 }}>
-              全选时包含已结束节次
-            </Typography.Title>
+            <Typography.Text>全选时包含已结束节次</Typography.Text>
           </div>
           <Divider />
-          <div
-            style={{
-              lineHeight: "2em",
-            }}
-          >
+          <div style={{ lineHeight: "1.9em", color: "rgba(0,0,0,0.65)" }}>
             数据来源：教务系统当天空闲教室接口
           </div>
-          <div
-            style={{
-              lineHeight: "2em",
-            }}
-          >
+          <div style={{ lineHeight: "1.9em", color: "rgba(0,0,0,0.65)" }}>
             当前数据刷新时间：
             {todayData.data?.updated_at
               ? new Date(todayData.data.updated_at).toLocaleString()
@@ -97,7 +104,11 @@ function CampusButtonGroup(props) {
           </div>
           <div
             style={{
-              lineHeight: "2em",
+              lineHeight: "1.9em",
+              color: "rgba(0,0,0,0.65)",
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
             }}
           >
             项目已开源：
@@ -111,6 +122,7 @@ function CampusButtonGroup(props) {
               }
               icon={<GithubOutlined />}
               size="small"
+              type="link"
             >
               Github
             </Button>

@@ -1,49 +1,65 @@
 .campus-button-group {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
+}
+
+.campus-buttons {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
 }
 
-.campus-button-group .ant-radio-group {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
+.campus-buttons .ant-btn {
+    min-width: 6em;
+    border-radius: var(--bupt-ec-radius-sm);
+    transition: transform 0.15s ease, background-color 0.15s ease,
+        box-shadow 0.15s ease;
 }
 
-/* 平板 */
+.campus-buttons .ant-btn:hover {
+    transform: translateY(-1px);
+}
+
+.campus-buttons .settings-trigger {
+    min-width: 0;
+    width: 32px;
+    padding: 0;
+    color: rgba(0, 0, 0, 0.55);
+}
+
+body.dark .campus-buttons .settings-trigger {
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.campus-buttons .settings-trigger:hover {
+    color: var(--ant-color-primary, #1677ff);
+}
+
 @media (max-width: 1024px) {
-    .campus-button-group .ant-radio-group {
+    .campus-buttons {
         max-width: 100%;
     }
 }
 
-/* 手机 */
 @media (max-width: 767px) {
-    .campus-button-group {
+    .campus-buttons {
+        gap: 8px;
+    }
+
+    .campus-buttons > .ant-btn:not(.settings-trigger) {
+        padding: 0 14px;
+        font-size: 0.9em;
+    }
+}
+
+@media (max-width: 479px) {
+    .campus-buttons {
         gap: 6px;
     }
 
-    .campus-button-group .ant-radio-group {
-        max-width: 100%;
-    }
-
-    .campus-button-group .ant-radio-button-wrapper {
-        padding: 0 8px;
+    .campus-buttons > .ant-btn:not(.settings-trigger) {
+        padding: 0 10px;
         font-size: 0.85em;
-    }
-}
-
-/* 小屏手机 */
-@media (max-width: 479px) {
-    .campus-button-group {
-        gap: 4px;
-    }
-
-    .campus-button-group .ant-radio-button-wrapper {
-        padding: 0 6px;
-        font-size: 0.8em;
     }
 }

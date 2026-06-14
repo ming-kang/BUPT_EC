@@ -4,8 +4,8 @@ import { GithubOutlined } from "@ant-design/icons";
 function Footer() {
   const { Text } = Typography;
   return (
-    <Text className="footer">
-      © 2022-2026 ming-kang
+    <div className="app-footer">
+      <Text type="secondary">© 2026~ ming-kang</Text>
       <Button
         onClick={() =>
           window.open(
@@ -15,9 +15,11 @@ function Footer() {
           )
         }
         type="text"
+        size="small"
         icon={<GithubOutlined />}
-      ></Button>
-    </Text>
+        aria-label="GitHub"
+      />
+    </div>
   );
 }
 

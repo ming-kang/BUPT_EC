@@ -2,6 +2,17 @@ import PropTypes from "prop-types";
 import { Button, Card } from "antd";
 import "./BuildingPicker.css";
 
+const BUILDING_ALIASES = {
+  未来学习大楼: "主楼",
+};
+
+function displayBuildingName(name) {
+  if (typeof name !== "string") return name;
+  const trimmed = name.trim();
+  if (BUILDING_ALIASES[trimmed]) return BUILDING_ALIASES[trimmed];
+  return /^\d+$/.test(trimmed) ? `教${trimmed}` : name;
+}
+
 function BuildingPicker(props) {
   if (!props.selectedCampusData) {
     return null;
@@ -13,37 +24,22 @@ function BuildingPicker(props) {
     : [];
 
   return (
-    <Card
-      style={{
-        boxShadow: "0 12px 32px 4px #0000000a, 0 8px 20px #00000014",
-      }}
-      className="building-picker responsive-card"
-    >
+    <Card className="building-picker responsive-card">
       {buildings.map((building) => (
         <Button
           key={`${props.selectedCampusData.id}-${building.name}`}
-          type={
-            selectedBuildings.includes(building.name)
-              ? "primary"
-              : "outline"
-          }
+          type={selectedBuildings.includes(building.name) ? "primary" : "outline"}
           onClick={() => {
             if (selectedBuildings.includes(building.name)) {
               props.setSelectedBuildings(
                 selectedBuildings.filter((x) => x !== building.name)
               );
             } else {
-              props.setSelectedBuildings([
-                ...selectedBuildings,
-                building.name,
-              ]);
+              props.setSelectedBuildings([...selectedBuildings, building.name]);
             }
           }}
-          style={{
-            borderRadius: "0px",
-          }}
         >
-          {building.name}
+          {displayBuildingName(building.name)}
         </Button>
       ))}
     </Card>

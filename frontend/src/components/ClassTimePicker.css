@@ -1,28 +1,75 @@
 .class-time-picker {
-    margin-bottom: 15px;
+    margin-bottom: 16px;
 }
 
-/* 手机横屏 */
+.class-time-picker .ant-card-body {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    padding: 16px;
+}
+
+.class-time-picker .ant-btn {
+    border-radius: var(--bupt-ec-radius-sm) !important;
+    width: 48px;
+    height: 32px;
+    margin: 0 !important;
+    padding: 0;
+    font-variant-numeric: tabular-nums;
+    transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.class-time-picker .ant-btn.time-slot-show-time {
+    height: 48px;
+}
+
+.class-time-picker .ant-btn:hover {
+    transform: translateY(-1px);
+}
+
+.class-time-picker .select-all-btn {
+    background-color: transparent !important;
+    border-style: dashed !important;
+    color: rgba(0, 0, 0, 0.55) !important;
+}
+
+body.dark .class-time-picker .select-all-btn {
+    color: rgba(255, 255, 255, 0.55) !important;
+}
+
+.class-time-picker .select-all-btn.ant-btn-primary {
+    border-style: solid !important;
+    color: #fff !important;
+}
+
 @media (max-width: 767px) {
     .class-time-picker .ant-card-body {
         padding: 12px;
     }
 
     .class-time-picker .ant-btn {
-        width: 40px !important;
-        margin: 1px !important;
+        width: 42px;
+        height: 30px;
+    }
+
+    .class-time-picker .ant-btn.time-slot-show-time {
+        height: 44px;
     }
 }
 
-/* 小屏手机 */
 @media (max-width: 479px) {
     .class-time-picker .ant-card-body {
         padding: 10px;
     }
 
     .class-time-picker .ant-btn {
-        width: 36px !important;
-        margin: 1px !important;
-        font-size: 0.8em;
+        width: 38px;
+        height: 28px;
+        font-size: 0.85em;
+    }
+
+    .class-time-picker .ant-btn.time-slot-show-time {
+        height: 42px;
     }
 }
