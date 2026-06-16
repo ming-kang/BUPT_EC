@@ -1,13 +1,16 @@
 import "./App.css";
 import { Alert, ConfigProvider, Spin, Typography, theme } from "antd";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
 import BuildingPicker from "./components/BuildingPicker";
 import ClassTimePicker from "./components/ClassTimePicker";
-import TodayClassroomTable from "./components/TodayClassroomTable";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
+
+const TodayClassroomTable = lazy(
+  () => import("./components/TodayClassroomTable")
+);
 
 const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
@@ -143,11 +146,15 @@ function App() {
             canSelectAllDay={canSelectAllDay}
             isDark={isDark}
           />
-          <TodayClassroomTable
-            selectedCampusData={selectedCampusData}
-            selectedBuildings={selectedBuildings}
-            selectedClassTimes={selectedClassTimes}
-          />
+          {selectedCampusData ? (
+            <Suspense fallback={null}>
+              <TodayClassroomTable
+                selectedCampusData={selectedCampusData}
+                selectedBuildings={selectedBuildings}
+                selectedClassTimes={selectedClassTimes}
+              />
+            </Suspense>
+          ) : null}
           <GlobalEmpty todayData={resp} isError={isError} onRetry={retry} />
           <Footer />
         </div>
