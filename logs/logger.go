@@ -7,10 +7,13 @@ import (
 	"os"
 	"path"
 	"runtime"
+	"sync"
 )
 
 var (
-	defaultLogger *log.Logger
+	defaultLogger   *log.Logger
+	defaultLoggerMu sync.RWMutex
+	callerEnabled   bool
 )
 
 func GetCallerInfo() (info string) {
@@ -36,9 +39,25 @@ func CtxError(ctx context.Context, format string, v ...interface{}) {
 }
 
 func writeLog(ctx context.Context, level string, format string, v ...interface{}) {
-	if defaultLogger == nil {
-		defaultLogger = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds)
+	defaultLoggerMu.RLock()
+	logger := defaultLogger
+	includeCaller := callerEnabled
+	defaultLoggerMu.RUnlock()
+
+	if logger == nil {
+		defaultLoggerMu.Lock()
+		if defaultLogger == nil {
+			defaultLogger = log.New(os.Stdout, "", log.Ldate|log.Lmicroseconds)
+		}
+		logger = defaultLogger
+		includeCaller = callerEnabled
+		defaultLoggerMu.Unlock()
 	}
+
 	logID := GetLogIDFromContext(ctx)
-	defaultLogger.Printf("[%s] %s %s "+format, append([]interface{}{level, GetCallerInfo(), logID}, v...)...)
+	if includeCaller {
+		logger.Printf("[%s] %s %s "+format, append([]interface{}{level, GetCallerInfo(), logID}, v...)...)
+		return
+	}
+	logger.Printf("[%s] %s "+format, append([]interface{}{level, logID}, v...)...)
 }

@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -40,16 +41,41 @@ const (
 	jwRequestTimeout      = 12 * time.Second
 	classroomFreshTTL     = 5 * time.Minute
 	classroomRefreshLimit = 30 * time.Second
+	staleRefreshWait      = 300 * time.Millisecond
+	staleRefreshBackoff   = 30 * time.Second
 )
 
 var (
 	ErrNoTodayCache = errors.New("no today classroom cache")
 
 	tokenManager = &TokenManager{}
-	refreshGroup = singleflight.Group{}
 
 	roomPattern = regexp.MustCompile(`^(.+)[(（](\d+)[)）]$`)
+
+	nowFunc                  = time.Now
+	queryCampusForRefresh    = queryCampus
+	queryCampusWithTokenFunc = queryCampusWithToken
+	refreshTokenFunc         = (*TokenManager).refreshToken
 )
+
+var (
+	refreshStateMu     sync.Mutex
+	refreshInFlight    bool
+	refreshAttempt     *classroomRefreshAttempt
+	nextRefreshAllowed time.Time
+	lastRefreshError   error
+	refreshWorkers     sync.WaitGroup
+)
+
+type classroomRefreshAttempt struct {
+	done   chan struct{}
+	result classroomRefreshResult
+}
+
+type classroomRefreshResult struct {
+	value *model.TodayClassrooms
+	err   error
+}
 
 type TokenManager struct {
 	mu          sync.Mutex
@@ -127,8 +153,9 @@ var (
 )
 
 func ResetRuntimeStateForTest() {
+	refreshWorkers.Wait()
 	tokenManager = &TokenManager{}
-	refreshGroup = singleflight.Group{}
+	resetRefreshState()
 	runtimeStatusMu.Lock()
 	runtimeStatus = RuntimeStatus{}
 	runtimeStatusMu.Unlock()
@@ -148,38 +175,150 @@ func QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
 	return refreshTodayClassrooms(ctx)
 }
 
+func StartClassroomWarmup() {
+	go func() {
+		attempt, started := startClassroomRefresh(nowFunc())
+		if !started {
+			return
+		}
+		<-attempt.done
+	}()
+}
+
 func GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	if cached, ok := getCachedTodayClassrooms(); ok && !cached.ExpiresAt.Before(time.Now()) {
-		resp := cloneTodayClassrooms(cached)
-		resp.Stale = false
-		resp.Error = nil
-		return resp, nil
+	now := nowFunc()
+	if cached, ok := getCachedTodayClassrooms(); ok {
+		if !cached.ExpiresAt.Before(now) {
+			return classroomResponse(cached, false, nil), nil
+		}
+		if now.Before(cached.StaleUntil) {
+			return getStaleTodayClassrooms(ctx, cached, now), nil
+		}
 	}
 
-	value, err, _ := refreshGroup.Do(TodayCacheKey, func() (interface{}, error) {
-		refreshCtx, cancel := context.WithTimeout(ctx, classroomRefreshLimit)
+	attempt, started := startClassroomRefresh(now)
+	if !started {
+		if err := getLastRefreshError(); err != nil {
+			return nil, err
+		}
+		return nil, ErrNoTodayCache
+	}
+	select {
+	case <-attempt.done:
+		return classroomResponseFromRefresh(attempt.result)
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+func getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
+	attempt, started := startClassroomRefresh(now)
+	if !started {
+		return classroomResponse(cached, true, staleAPIError(getLastRefreshError()))
+	}
+
+	timer := time.NewTimer(staleRefreshWait)
+	defer timer.Stop()
+
+	select {
+	case <-attempt.done:
+		if attempt.result.err == nil {
+			fresh, err := classroomResponseFromRefresh(attempt.result)
+			if err == nil {
+				return fresh
+			}
+			return classroomResponse(cached, true, staleAPIError(err))
+		}
+		return classroomResponse(cached, true, staleAPIError(attempt.result.err))
+	case <-timer.C:
+		return classroomResponse(cached, true, nil)
+	case <-ctx.Done():
+		return classroomResponse(cached, true, nil)
+	}
+}
+
+func startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
+	refreshStateMu.Lock()
+	if refreshInFlight {
+		attempt := refreshAttempt
+		refreshStateMu.Unlock()
+		return attempt, true
+	}
+
+	if !nextRefreshAllowed.IsZero() && now.Before(nextRefreshAllowed) {
+		refreshStateMu.Unlock()
+		return nil, false
+	}
+
+	refreshInFlight = true
+	attempt := &classroomRefreshAttempt{done: make(chan struct{})}
+	refreshAttempt = attempt
+	refreshWorkers.Add(1)
+	refreshStateMu.Unlock()
+
+	go func() {
+		defer refreshWorkers.Done()
+		refreshCtx, cancel := context.WithTimeout(context.Background(), classroomRefreshLimit)
 		defer cancel()
-		return refreshTodayClassrooms(refreshCtx)
-	})
+
+		today, err := refreshTodayClassrooms(refreshCtx)
+		finishClassroomRefresh(attempt, classroomRefreshResult{value: today, err: err})
+	}()
+	return attempt, true
+}
+
+func finishClassroomRefresh(attempt *classroomRefreshAttempt, result classroomRefreshResult) {
+	refreshStateMu.Lock()
+	defer refreshStateMu.Unlock()
+
+	attempt.result = result
+	if refreshAttempt == attempt {
+		refreshInFlight = false
+		refreshAttempt = nil
+	}
+	if result.err != nil {
+		lastRefreshError = result.err
+		nextRefreshAllowed = nowFunc().Add(staleRefreshBackoff)
+	} else {
+		lastRefreshError = nil
+		nextRefreshAllowed = time.Time{}
+	}
+	close(attempt.done)
+}
+
+func resetRefreshState() {
+	refreshStateMu.Lock()
+	defer refreshStateMu.Unlock()
+	refreshInFlight = false
+	refreshAttempt = nil
+	nextRefreshAllowed = time.Time{}
+	lastRefreshError = nil
+}
+
+func getLastRefreshError() error {
+	refreshStateMu.Lock()
+	defer refreshStateMu.Unlock()
+	return lastRefreshError
+}
+
+func classroomResponseFromRefresh(result classroomRefreshResult) (*model.TodayClassrooms, error) {
+	if result.err != nil {
+		return nil, result.err
+	}
+	if result.value == nil {
+		return nil, newJWError(jwErrorParse, "classroom refresh", nil, "unexpected refresh result")
+	}
+	return classroomResponse(result.value, false, nil), nil
+}
+
+func staleAPIError(err error) *model.APIError {
 	if err == nil {
-		fresh, ok := value.(*model.TodayClassrooms)
-		if !ok || fresh == nil {
-			return nil, newJWError(jwErrorParse, "classroom refresh", nil, "unexpected refresh result")
-		}
-		return cloneTodayClassrooms(fresh), nil
+		return nil
 	}
-
-	if cached, ok := getCachedTodayClassrooms(); ok && time.Now().Before(cached.StaleUntil) {
-		resp := cloneTodayClassrooms(cached)
-		resp.Stale = true
-		resp.Error = &model.APIError{
-			Type:    classifyError(err),
-			Message: "教务系统暂时不可用，当前展示的是今天最后一次成功刷新数据",
-		}
-		return resp, nil
+	return &model.APIError{
+		Type:    classifyError(err),
+		Message: "教务系统暂时不可用，当前展示的是今天最后一次成功刷新数据",
 	}
-
-	return nil, err
 }
 
 func refreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
@@ -196,28 +335,36 @@ func refreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error)
 }
 
 func doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	now := time.Now()
+	now := nowFunc()
+	campuses := config.GetConfig().Campuses
 	today := &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(classroomFreshTTL),
 		StaleUntil: endOfDay(now),
 		Stale:      false,
-		Campuses:   []model.CampusInfo{},
+		Campuses:   make([]model.CampusInfo, len(campuses)),
 		Error:      nil,
 	}
 
-	for _, campusConfig := range config.GetConfig().Campuses {
-		jwRows, err := queryCampus(ctx, campusConfig.ID, false)
-		if err != nil {
-			return nil, err
-		}
-		campus := buildCampusInfo(campusConfig, jwRows)
-		today.Campuses = append(today.Campuses, campus)
+	group, groupCtx := errgroup.WithContext(ctx)
+	for i, campusConfig := range campuses {
+		i, campusConfig := i, campusConfig
+		group.Go(func() error {
+			jwRows, err := queryCampusForRefresh(groupCtx, campusConfig.ID, false)
+			if err != nil {
+				return err
+			}
+			today.Campuses[i] = buildCampusInfo(campusConfig, jwRows)
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
 
 	cache.SetCache(TodayCacheKey, today, time.Until(today.StaleUntil))
-	return cloneTodayClassrooms(today), nil
+	return classroomResponse(today, false, nil), nil
 }
 
 func queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
@@ -226,7 +373,7 @@ func queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]mod
 		return nil, err
 	}
 
-	rows, err := queryCampusWithToken(ctx, campusID, token)
+	rows, err := queryCampusWithTokenFunc(ctx, campusID, token)
 	if err == nil {
 		return rows, nil
 	}
@@ -234,11 +381,12 @@ func queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]mod
 		return nil, err
 	}
 
+	tokenManager.clearTokenIfCurrent(token)
 	token, refreshErr := tokenManager.EnsureToken(ctx, true)
 	if refreshErr != nil {
 		return nil, errors.Join(err, refreshErr)
 	}
-	rows, retryErr := queryCampusWithToken(ctx, campusID, token)
+	rows, retryErr := queryCampusWithTokenFunc(ctx, campusID, token)
 	if retryErr != nil {
 		return nil, errors.Join(err, retryErr)
 	}
@@ -282,12 +430,7 @@ func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (stri
 		}
 	}
 
-	flightKey := "jw-token"
-	if forceRefresh {
-		flightKey = "jw-token-force"
-	}
-
-	value, err, _ := m.tokenGroup.Do(flightKey, func() (interface{}, error) {
+	value, err, _ := m.tokenGroup.Do("jw-token", func() (interface{}, error) {
 		if !forceRefresh {
 			if token := os.Getenv(LoginTokenKey); token != "" {
 				m.setToken(token)
@@ -299,7 +442,9 @@ func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (stri
 		}
 
 		startedAt := time.Now()
-		token, err := m.refreshToken(ctx)
+		loginCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
+		defer cancel()
+		token, err := refreshTokenFunc(m, loginCtx)
 		if err != nil {
 			recordLoginFailure(err)
 			logs.CtxWarn(ctx, "jw login failed after %s: %v", time.Since(startedAt), err)
@@ -329,7 +474,9 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		if apiURL := m.cachedAPIURL(); apiURL != "" {
 			return apiURL, nil
 		}
-		apiURL, err := m.fetchAPIURL(ctx)
+		apiCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
+		defer cancel()
+		apiURL, err := m.fetchAPIURL(apiCtx)
 		if err != nil {
 			return "", err
 		}
@@ -356,6 +503,14 @@ func (m *TokenManager) setToken(token string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.token = token
+}
+
+func (m *TokenManager) clearTokenIfCurrent(token string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.token == token {
+		m.token = ""
+	}
 }
 
 func (m *TokenManager) cachedAPIURL() string {
@@ -447,7 +602,7 @@ func (m *TokenManager) fetchAPIURL(ctx context.Context) (string, error) {
 }
 
 func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo) model.CampusInfo {
-	buildingMap := map[string]map[string]*model.RoomInfo{}
+	buildingMap := map[string]map[string]*roomAccumulator{}
 	nodeRooms := map[int]map[string]struct{}{}
 	nodeTimes := map[int]string{}
 
@@ -468,21 +623,21 @@ func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo)
 			}
 			nodeRooms[node][displayName] = struct{}{}
 			if _, exists := buildingMap[buildingName]; !exists {
-				buildingMap[buildingName] = map[string]*model.RoomInfo{}
+				buildingMap[buildingName] = map[string]*roomAccumulator{}
 			}
 			room := buildingMap[buildingName][displayName]
 			if room == nil {
-				room = &model.RoomInfo{
+				room = &roomAccumulator{
 					Name:        roomName,
 					DisplayName: displayName,
 					Capacity:    capacity,
-					FreeNodes:   []int{},
-					FreeTimes:   []model.FreeTime{},
+					FreeNodes:   map[int]struct{}{},
+					FreeTimes:   map[model.FreeTime]struct{}{},
 				}
 				buildingMap[buildingName][displayName] = room
 			}
-			room.FreeNodes = append(room.FreeNodes, node)
-			room.FreeTimes = append(room.FreeTimes, model.FreeTime{Node: node, Time: row.NodeTime})
+			room.FreeNodes[node] = struct{}{}
+			room.FreeTimes[model.FreeTime{Node: node, Time: row.NodeTime}] = struct{}{}
 		}
 	}
 
@@ -514,16 +669,7 @@ func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo)
 		roomMap := buildingMap[buildingName]
 		rooms := make([]model.RoomInfo, 0, len(roomMap))
 		for _, room := range roomMap {
-			sort.Ints(room.FreeNodes)
-			room.FreeNodes = uniqueInts(room.FreeNodes)
-			sort.Slice(room.FreeTimes, func(i, j int) bool {
-				if room.FreeTimes[i].Node != room.FreeTimes[j].Node {
-					return room.FreeTimes[i].Node < room.FreeTimes[j].Node
-				}
-				return room.FreeTimes[i].Time < room.FreeTimes[j].Time
-			})
-			room.FreeTimes = uniqueFreeTimes(room.FreeTimes)
-			rooms = append(rooms, *room)
+			rooms = append(rooms, room.toRoomInfo())
 		}
 		sort.Slice(rooms, func(i, j int) bool {
 			return rooms[i].DisplayName < rooms[j].DisplayName
@@ -542,6 +688,41 @@ func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo)
 	}
 }
 
+type roomAccumulator struct {
+	Name        string
+	DisplayName string
+	Capacity    int
+	FreeNodes   map[int]struct{}
+	FreeTimes   map[model.FreeTime]struct{}
+}
+
+func (r *roomAccumulator) toRoomInfo() model.RoomInfo {
+	freeNodes := make([]int, 0, len(r.FreeNodes))
+	for node := range r.FreeNodes {
+		freeNodes = append(freeNodes, node)
+	}
+	sort.Ints(freeNodes)
+
+	freeTimes := make([]model.FreeTime, 0, len(r.FreeTimes))
+	for freeTime := range r.FreeTimes {
+		freeTimes = append(freeTimes, freeTime)
+	}
+	sort.Slice(freeTimes, func(i, j int) bool {
+		if freeTimes[i].Node != freeTimes[j].Node {
+			return freeTimes[i].Node < freeTimes[j].Node
+		}
+		return freeTimes[i].Time < freeTimes[j].Time
+	})
+
+	return model.RoomInfo{
+		Name:        r.Name,
+		DisplayName: r.DisplayName,
+		Capacity:    r.Capacity,
+		FreeNodes:   freeNodes,
+		FreeTimes:   freeTimes,
+	}
+}
+
 func parseRoom(raw string) (string, string, string, int, bool) {
 	raw = strings.TrimSpace(raw)
 	matches := roomPattern.FindStringSubmatch(raw)
@@ -551,36 +732,6 @@ func parseRoom(raw string) (string, string, string, int, bool) {
 	capacity, _ := strconv.Atoi(matches[2])
 	buildingName, roomName := splitRoomName(matches[1])
 	return buildingName, roomName, buildingName + "-" + roomName, capacity, true
-}
-
-func uniqueInts(values []int) []int {
-	if len(values) < 2 {
-		return values
-	}
-	write := 1
-	for read := 1; read < len(values); read++ {
-		if values[read] == values[read-1] {
-			continue
-		}
-		values[write] = values[read]
-		write++
-	}
-	return values[:write]
-}
-
-func uniqueFreeTimes(values []model.FreeTime) []model.FreeTime {
-	if len(values) < 2 {
-		return values
-	}
-	write := 1
-	for read := 1; read < len(values); read++ {
-		if values[read].Node == values[read-1].Node && values[read].Time == values[read-1].Time {
-			continue
-		}
-		values[write] = values[read]
-		write++
-	}
-	return values[:write]
 }
 
 func splitRoomName(name string) (string, string) {
@@ -632,35 +783,23 @@ func getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
 	if !ok || cached == nil {
 		return nil, false
 	}
-	if cached.Date != time.Now().Format("2006-01-02") {
+	if cached.Date != nowFunc().Format("2006-01-02") {
 		return nil, false
 	}
 	return cached, true
 }
 
-func cloneTodayClassrooms(in *model.TodayClassrooms) *model.TodayClassrooms {
+func classroomResponse(in *model.TodayClassrooms, stale bool, apiErr *model.APIError) *model.TodayClassrooms {
 	if in == nil {
 		return nil
 	}
 	out := *in
-	out.Campuses = make([]model.CampusInfo, len(in.Campuses))
-	for i, campus := range in.Campuses {
-		out.Campuses[i] = campus
-		out.Campuses[i].Nodes = append([]model.NodeInfo(nil), campus.Nodes...)
-		out.Campuses[i].Buildings = make([]model.BuildingInfo, len(campus.Buildings))
-		for j, building := range campus.Buildings {
-			out.Campuses[i].Buildings[j] = building
-			out.Campuses[i].Buildings[j].Rooms = make([]model.RoomInfo, len(building.Rooms))
-			for k, room := range building.Rooms {
-				out.Campuses[i].Buildings[j].Rooms[k] = room
-				out.Campuses[i].Buildings[j].Rooms[k].FreeNodes = append([]int(nil), room.FreeNodes...)
-				out.Campuses[i].Buildings[j].Rooms[k].FreeTimes = append([]model.FreeTime(nil), room.FreeTimes...)
-			}
-		}
-	}
-	if in.Error != nil {
-		errCopy := *in.Error
+	out.Stale = stale
+	if apiErr != nil {
+		errCopy := *apiErr
 		out.Error = &errCopy
+	} else {
+		out.Error = nil
 	}
 	return &out
 }
@@ -804,7 +943,7 @@ func recordRefreshFailure(err error) {
 
 func GetRuntimeStatus() RuntimeStatus {
 	status := snapshotRuntimeStatus()
-	now := time.Now()
+	now := nowFunc()
 	if cached, ok := getCachedTodayClassrooms(); ok {
 		status.CacheAvailable = true
 		status.CacheFresh = !cached.ExpiresAt.Before(now)
@@ -812,6 +951,11 @@ func GetRuntimeStatus() RuntimeStatus {
 		status.CacheDate = cached.Date
 	}
 	return status
+}
+
+func HasUsableTodayCache() bool {
+	cached, ok := getCachedTodayClassrooms()
+	return ok && nowFunc().Before(cached.StaleUntil)
 }
 
 func snapshotRuntimeStatus() RuntimeStatus {

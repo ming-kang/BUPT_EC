@@ -2,9 +2,11 @@ package main
 
 import (
 	"BUPT_EC/logs"
+	"compress/gzip"
 	"embed"
 	"io/fs"
 	"net/http"
+	"strings"
 
 	"github.com/gin-contrib/static"
 	"github.com/gin-gonic/gin"
@@ -37,6 +39,8 @@ func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
 }
 
 func SetRouter(r *gin.Engine) {
+	r.Use(gzipMiddleware())
+
 	r.GET("/healthz", Healthz)
 	r.GET("/readyz", Readyz)
 
@@ -46,4 +50,41 @@ func SetRouter(r *gin.Engine) {
 	}
 
 	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
+}
+
+type gzipResponseWriter struct {
+	gin.ResponseWriter
+	writer *gzip.Writer
+}
+
+func (w gzipResponseWriter) Write(data []byte) (int, error) {
+	w.Header().Del("Content-Length")
+	return w.writer.Write(data)
+}
+
+func (w gzipResponseWriter) WriteString(data string) (int, error) {
+	w.Header().Del("Content-Length")
+	return w.writer.Write([]byte(data))
+}
+
+func gzipMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request.URL.Path == "/healthz" || c.Request.URL.Path == "/readyz" {
+			c.Next()
+			return
+		}
+		if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+			c.Next()
+			return
+		}
+
+		gz := gzip.NewWriter(c.Writer)
+		defer gz.Close()
+
+		c.Header("Content-Encoding", "gzip")
+		c.Header("Vary", "Accept-Encoding")
+		c.Writer.Header().Del("Content-Length")
+		c.Writer = gzipResponseWriter{ResponseWriter: c.Writer, writer: gz}
+		c.Next()
+	}
 }

@@ -15,8 +15,8 @@ func GetData(c *gin.Context) {
 
 	todayData, err := service.GetTodayClassrooms(ctx)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"code": http.StatusInternalServerError,
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"code": http.StatusServiceUnavailable,
 			"msg":  service.SafeErrorMessage(err),
 			"data": nil,
 		})
@@ -36,8 +36,9 @@ func Healthz(c *gin.Context) {
 func Readyz(c *gin.Context) {
 	status := service.GetRuntimeStatus()
 	configured := config.HasJWCredentials()
+	ready := configured && service.HasUsableTodayCache()
 	code := http.StatusOK
-	if !configured {
+	if !ready {
 		code = http.StatusServiceUnavailable
 	}
 

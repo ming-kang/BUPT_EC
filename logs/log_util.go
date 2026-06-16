@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -18,14 +20,20 @@ const (
 )
 
 func Init(isMain bool) {
+	defaultLoggerMu.Lock()
+	defer defaultLoggerMu.Unlock()
+	callerEnabled = os.Getenv("LOG_CALLER") == "1" || strings.EqualFold(os.Getenv("LOG_CALLER"), "true")
 	if isMain {
 		stdoutWriter := os.Stdout
 		if err := os.MkdirAll("run_log", 0750); err != nil {
 			log.Fatalf("create log directory failed: %v", err)
 		}
-		fileWriter, err := os.OpenFile("run_log/ec.log", os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0640)
-		if err != nil {
-			log.Fatalf("create log file run_log/ec.log failed: %v", err)
+		fileWriter := &lumberjack.Logger{
+			Filename:   "run_log/ec.log",
+			MaxSize:    10,
+			MaxBackups: 5,
+			MaxAge:     30,
+			Compress:   true,
 		}
 		defaultLogger = log.New(io.MultiWriter(stdoutWriter, fileWriter), "", log.Ldate|log.Lmicroseconds)
 	} else {
