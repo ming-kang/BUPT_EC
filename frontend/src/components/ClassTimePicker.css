@@ -28,19 +28,14 @@
     transform: translateY(-1px);
 }
 
-.class-time-picker .select-all-btn {
+.class-time-picker .select-all-btn:not(.ant-btn-primary) {
     background-color: transparent !important;
     border-style: dashed !important;
     color: rgba(0, 0, 0, 0.55) !important;
 }
 
-body.dark .class-time-picker .select-all-btn {
+body.dark .class-time-picker .select-all-btn:not(.ant-btn-primary) {
     color: rgba(255, 255, 255, 0.55) !important;
-}
-
-.class-time-picker .select-all-btn.ant-btn-primary {
-    border-style: solid !important;
-    color: #fff !important;
 }
 
 @media (max-width: 767px) {

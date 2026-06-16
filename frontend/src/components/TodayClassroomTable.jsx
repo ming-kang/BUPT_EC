@@ -1,11 +1,12 @@
 import PropTypes from "prop-types";
-import { Card, Descriptions, Empty, Modal, Table, Tag } from "antd";
+import { Card, Empty, Modal, Table, Tag } from "antd";
 import { useMemo, useState } from "react";
 import "./TodayClassroomTable.css";
 
 function TodayClassroomTable(props) {
   const [modalTitle, setModalTitle] = useState("");
-  const [modalContent, setModalContent] = useState([]);
+  const [modalCapacity, setModalCapacity] = useState("");
+  const [modalFreeTimes, setModalFreeTimes] = useState([]);
   const [openModal, setOpenModal] = useState(false);
   const selectedBuildings = useMemo(
     () => (Array.isArray(props.selectedBuildings) ? props.selectedBuildings : []),
@@ -85,20 +86,11 @@ function TodayClassroomTable(props) {
   }
 
   function showClassroomInfo(room) {
-    const freeTimes = (Array.isArray(room.free_times) ? room.free_times : [])
-      .map((item) => `${String(item.node).padStart(2, "0")} ${item.time}`)
-      .join("，");
     setModalTitle(room.display_name);
-    setModalContent([
-      {
-        key: "座位数",
-        value: room.capacity || "未知",
-      },
-      {
-        key: "空闲节次",
-        value: freeTimes,
-      },
-    ]);
+    setModalCapacity(room.capacity || "未知");
+    setModalFreeTimes(
+      Array.isArray(room.free_times) ? room.free_times : []
+    );
     setOpenModal(true);
   }
 
@@ -178,13 +170,41 @@ function TodayClassroomTable(props) {
           setOpenModal(false);
         }}
       >
-        <Descriptions column={1} size="small" layout="vertical">
-          {modalContent.map((item, index) => (
-            <Descriptions.Item key={index} label={item.key}>
-              {item.value}
-            </Descriptions.Item>
-          ))}
-        </Descriptions>
+        <div className="room-info">
+          <div className="room-info__capacity">
+            <span className="room-info__capacity-label">座位数：</span>
+            <span className="room-info__capacity-value">{modalCapacity}</span>
+          </div>
+          <div className="room-info__section-title">空闲节次</div>
+          <div className="room-info__table-wrap">
+            <table className="room-info__table">
+              <thead>
+                <tr>
+                  <th className="room-info__col-node">节次</th>
+                  <th className="room-info__col-time">时间</th>
+                </tr>
+              </thead>
+              <tbody>
+                {modalFreeTimes.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="room-info__empty">
+                      暂无空闲节次
+                    </td>
+                  </tr>
+                ) : (
+                  modalFreeTimes.map((item) => (
+                    <tr key={item.node}>
+                      <td className="room-info__col-node">
+                        {String(item.node).padStart(2, "0")}
+                      </td>
+                      <td className="room-info__col-time">{item.time}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </Modal>
     </div>
   );

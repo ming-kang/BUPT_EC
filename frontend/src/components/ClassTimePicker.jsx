@@ -122,7 +122,7 @@ function ClassTimePicker(props) {
         className={`select-all-btn ${props.showClassTime ? "time-slot-show-time" : ""}`}
         onClick={onCheckAllChange}
       >
-        {isAllChecked() ? "全不选" : "全选"}
+        {isAllChecked() ? "取消" : "全选"}
       </Button>
     </Card>
   );
