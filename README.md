@@ -205,7 +205,7 @@ The installer writes its own Nginx site for BUPT_EC and checks that the certific
 Install the freshest `main` build (rolling `nightly`):
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
 ```
 
 Or pin a specific stable release:
@@ -219,7 +219,7 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.0/install
 On IPv6-only servers that cannot reach GitHub directly, fetch the installer through `gh-v6.com`:
 
 ```bash
-curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | sudo bash
+curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
 ```
 
 The script interactively asks for:
@@ -228,8 +228,7 @@ The script interactively asks for:
 - domain name
 - SSL certificate path
 - SSL private key path
-- BUPT teaching affairs username and password
-- optional token override
+- BUPT teaching affairs username and password, or an optional token override
 - backend listen address, default `127.0.0.1:8080`
 - Gin mode, default `release`
 
@@ -240,7 +239,7 @@ To upgrade later, rerun the same command. Existing configuration is reused as de
 You can install a specific version or a fork by setting environment variables:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/nightly/download/install.sh | \
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | \
   sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.0 bash
 ```
 
@@ -272,7 +271,9 @@ Example directory:
 ```text
 /opt/bupt-ec/
   bupt-ec
-  .env
+
+/etc/bupt-ec/
+  bupt-ec.env
 ```
 
 Example service file:
@@ -289,7 +290,7 @@ WorkingDirectory=/opt/bupt-ec
 ExecStart=/opt/bupt-ec/bupt-ec
 Restart=always
 RestartSec=5
-EnvironmentFile=/opt/bupt-ec/bupt-ec.env
+EnvironmentFile=/etc/bupt-ec/bupt-ec.env
 
 [Install]
 WantedBy=multi-user.target

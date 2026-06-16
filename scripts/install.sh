@@ -464,19 +464,6 @@ main() {
   domain="$(prompt_required "Domain name" "${DOMAIN:-${CURRENT_DOMAIN}}")"
   ssl_cert="$(prompt_required "SSL certificate path" "${SSL_CERT:-${CURRENT_SSL_CERT:-/etc/letsencrypt/live/${domain}/fullchain.pem}}")"
   ssl_key="$(prompt_required "SSL private key path" "${SSL_KEY:-${CURRENT_SSL_KEY:-/etc/letsencrypt/live/${domain}/privkey.pem}}")"
-  username="$(prompt_required "BUPT JW username" "${JW_USERNAME:-${CURRENT_JW_USERNAME}}")"
-
-  has_password=false
-  if [[ -n "${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}" ]]; then
-    has_password=true
-  fi
-  password_input="$(prompt_secret "BUPT JW password" "${has_password}")"
-  if [[ -n "${password_input}" ]]; then
-    password="${password_input}"
-  else
-    password="${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}"
-  fi
-
   has_token=false
   if [[ -n "${JW_TOKEN:-${CURRENT_JW_TOKEN}}" ]]; then
     has_token=true
@@ -484,6 +471,32 @@ main() {
   token="$(prompt_optional_secret "JW token override, usually leave empty" "${has_token}")"
   if [[ -z "${token}" ]]; then
     token="${JW_TOKEN:-${CURRENT_JW_TOKEN}}"
+  fi
+
+  if [[ -n "${token}" ]]; then
+    username="$(prompt "BUPT JW username, optional when JW token is set" "${JW_USERNAME:-${CURRENT_JW_USERNAME}}")"
+  else
+    username="$(prompt_required "BUPT JW username" "${JW_USERNAME:-${CURRENT_JW_USERNAME}}")"
+  fi
+
+  has_password=false
+  if [[ -n "${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}" ]]; then
+    has_password=true
+  fi
+  if [[ -n "${token}" ]]; then
+    password_input="$(prompt_optional_secret "BUPT JW password" "${has_password}")"
+  else
+    password_input="$(prompt_secret "BUPT JW password" "${has_password}")"
+  fi
+  if [[ -n "${password_input}" ]]; then
+    password="${password_input}"
+  else
+    password="${JW_PASSWORD:-${CURRENT_JW_PASSWORD}}"
+  fi
+
+  if [[ -z "${token}" && ( -z "${username}" || -z "${password}" ) ]]; then
+    echo "JW_TOKEN or both JW_USERNAME and JW_PASSWORD are required." >&2
+    exit 1
   fi
   app_addr="$(prompt_required "Backend listen address" "${APP_ADDR:-${CURRENT_APP_ADDR:-${DEFAULT_APP_ADDR}}}")"
   gin_mode="$(prompt_required "Gin mode" "${GIN_MODE:-${CURRENT_GIN_MODE:-${DEFAULT_GIN_MODE}}}")"

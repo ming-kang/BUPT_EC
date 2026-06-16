@@ -1,8 +1,27 @@
 import PropTypes from "prop-types";
 import { Button, Card } from "antd";
+import { useEffect, useState } from "react";
 import "./ClassTimePicker.css";
 
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
 function ClassTimePicker(props) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    let timeoutID;
+
+    function scheduleNextTick() {
+      timeoutID = window.setTimeout(() => {
+        setNow(new Date());
+        scheduleNextTick();
+      }, msUntilNextFiveMinuteTick(new Date()));
+    }
+
+    scheduleNextTick();
+    return () => window.clearTimeout(timeoutID);
+  }, []);
+
   if (!props.selectedCampusData) {
     return null;
   }
@@ -11,8 +30,8 @@ function ClassTimePicker(props) {
   const options = Array.isArray(props.selectedCampusData.nodes)
     ? props.selectedCampusData.nodes
     : [];
-  const nowTime = new Date().toTimeString().slice(0, 5);
-  const isToday = props.todayDate === formatLocalDate(new Date());
+  const nowTime = now.toTimeString().slice(0, 5);
+  const isToday = props.todayDate === formatLocalDate(now);
 
   const normalizedOptions = options.map((item) => {
     const [, endTime = ""] = String(item.time || "").split("-");
@@ -114,6 +133,18 @@ function formatLocalDate(date) {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+}
+
+function msUntilNextFiveMinuteTick(date) {
+  const next = new Date(date);
+  next.setSeconds(0, 0);
+
+  const tickMinutes = FIVE_MINUTES_MS / (60 * 1000);
+  const remainder = next.getMinutes() % tickMinutes;
+  const minutesToAdd = remainder === 0 ? tickMinutes : tickMinutes - remainder;
+  next.setMinutes(next.getMinutes() + minutesToAdd);
+
+  return Math.max(next.getTime() - date.getTime(), 1000);
 }
 
 ClassTimePicker.propTypes = {

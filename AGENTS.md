@@ -57,11 +57,12 @@ The `Release` workflow (`.github/workflows/release.yml`) is fully automatic. The
 
 ### Workflow jobs
 
-All three triggers run the same three jobs in sequence:
+All three triggers run the same four jobs in sequence:
 
-1. `build-frontend` builds the React app with pnpm 9 and Node 22, then uploads `frontend/dist/` as an artifact named `frontend-dist`.
-2. `build-go` (matrix `amd64` + `arm64`) downloads the frontend artifact and compiles the Go 1.25 binary for each architecture, uploading each as `bupt-ec-linux-${goarch}`.
-3. `release` downloads the binaries, wraps each one with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, and publishes via `softprops/action-gh-release`. The publish step branches on `github.ref_type`:
+1. `quality-gate` runs frontend install/lint/build, Go tests, `govulncheck`, and `shellcheck scripts/install.sh`.
+2. `build-frontend` builds the React app with pnpm 9 and Node 22, then uploads `frontend/dist/` as an artifact named `frontend-dist`.
+3. `build-go` (matrix `amd64` + `arm64`) downloads the frontend artifact and compiles the Go 1.25 binary for each architecture, uploading each as `bupt-ec-linux-${goarch}`.
+4. `release` downloads the binaries, wraps each one with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests release assets with `actions/attest-build-provenance`, and publishes via `softprops/action-gh-release`. The publish step branches on `github.ref_type`:
    - `tag`: creates a stable release at that semver tag.
    - `branch` (main push): deletes the previous `nightly` release and tag with `gh release delete nightly --cleanup-tag`, then re-creates a `nightly` prerelease in its place.
 
