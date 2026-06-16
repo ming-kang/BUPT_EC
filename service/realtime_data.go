@@ -77,6 +77,12 @@ type jwError struct {
 	msg  string
 }
 
+type jwResponseEnvelope struct {
+	Code string          `json:"code"`
+	Msg  string          `json:"Msg"`
+	Data json.RawMessage `json:"data"`
+}
+
 func (e *jwError) Error() string {
 	if e == nil {
 		return ""
@@ -258,25 +264,11 @@ func queryCampusWithToken(ctx context.Context, campusID string, token string) ([
 		return nil, newJWError(jwErrorQuery, "jw query", err, "request failed")
 	}
 	if code != 200 {
-		kind := jwErrorQuery
-		if code == http.StatusUnauthorized || code == http.StatusForbidden {
-			kind = jwErrorAuth
-		}
-		return nil, newJWError(kind, "jw query", nil, "http status %d", code)
+		kind, message := classifyJWHTTPError(code, body)
+		return nil, newJWError(kind, "jw query", nil, "%s", message)
 	}
 
-	var resp model.QueryResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, newJWError(jwErrorParse, "jw query", err, "response invalid")
-	}
-	if resp.Code != "1" {
-		kind := jwErrorQuery
-		if isAuthFailureMessage(resp.Msg) {
-			kind = jwErrorAuth
-		}
-		return nil, newJWError(kind, "jw query", nil, "%s", safeRemoteMessage(resp.Msg))
-	}
-	return resp.Data, nil
+	return parseJWQueryResponse(body)
 }
 
 func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error) {
@@ -700,6 +692,48 @@ func addQuery(rawURL string, values map[string]string) string {
 	return parsed.String()
 }
 
+func parseJWQueryResponse(body []byte) ([]model.JWClassInfo, error) {
+	var envelope jwResponseEnvelope
+	if err := json.Unmarshal(body, &envelope); err != nil {
+		return nil, newJWError(jwErrorParse, "jw query", err, "response invalid")
+	}
+	if envelope.Code != "1" {
+		kind := jwErrorQuery
+		if isAuthFailureCode(envelope.Code) || isAuthFailureMessage(envelope.Msg) {
+			kind = jwErrorAuth
+		}
+		return nil, newJWError(kind, "jw query", nil, "%s", safeRemoteMessage(envelope.Msg))
+	}
+
+	var rows []model.JWClassInfo
+	if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
+		return rows, nil
+	}
+	if err := json.Unmarshal(envelope.Data, &rows); err != nil {
+		return nil, newJWError(jwErrorParse, "jw query", err, "response data invalid")
+	}
+	return rows, nil
+}
+
+func classifyJWHTTPError(statusCode int, body []byte) (jwErrorKind, string) {
+	if statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden {
+		return jwErrorAuth, fmt.Sprintf("http status %d", statusCode)
+	}
+
+	var envelope jwResponseEnvelope
+	if len(body) > 0 && json.Unmarshal(body, &envelope) == nil {
+		message := safeRemoteMessage(envelope.Msg)
+		if isAuthFailureCode(envelope.Code) || isAuthFailureMessage(envelope.Msg) {
+			return jwErrorAuth, message
+		}
+		if message != "" && message != "remote service returned failure" {
+			return jwErrorQuery, fmt.Sprintf("http status %d: %s", statusCode, message)
+		}
+	}
+
+	return jwErrorQuery, fmt.Sprintf("http status %d", statusCode)
+}
+
 func classifyError(err error) string {
 	if err == nil {
 		return ""
@@ -735,6 +769,11 @@ func safeRemoteMessage(message string) string {
 		return "remote service returned failure"
 	}
 	return strings.TrimSpace(message)
+}
+
+func isAuthFailureCode(code string) bool {
+	code = strings.TrimSpace(code)
+	return code == "401" || code == "403"
 }
 
 func recordLoginSuccess(at time.Time) {

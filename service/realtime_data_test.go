@@ -7,6 +7,7 @@ import (
 	"BUPT_EC/service/model"
 	"context"
 	"errors"
+	"net/http"
 	"os"
 	"testing"
 	"time"
@@ -196,6 +197,26 @@ func TestClassifyErrorHandlesJoinedJWError(t *testing.T) {
 	err := errors.Join(context.DeadlineExceeded, newJWError(jwErrorAuth, "jw query", nil, "token expired"))
 	if got := classifyError(err); got != string(jwErrorAuth) {
 		t.Fatalf("classifyError() = %q, want %q", got, jwErrorAuth)
+	}
+}
+
+func TestParseJWQueryResponseClassifiesBusinessAuthCode(t *testing.T) {
+	_, err := parseJWQueryResponse([]byte(`{"code":"401","Msg":"illegal access","data":""}`))
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if !isJWErrorKind(err, jwErrorAuth) {
+		t.Fatalf("parseJWQueryResponse() error kind = %s, want %s", classifyError(err), jwErrorAuth)
+	}
+}
+
+func TestClassifyJWHTTPErrorUsesBusinessAuthCode(t *testing.T) {
+	kind, message := classifyJWHTTPError(http.StatusInternalServerError, []byte(`{"code":"401","Msg":"illegal access","data":""}`))
+	if kind != jwErrorAuth {
+		t.Fatalf("classifyJWHTTPError() kind = %s, want %s", kind, jwErrorAuth)
+	}
+	if message != "illegal access" {
+		t.Fatalf("classifyJWHTTPError() message = %q, want illegal access", message)
 	}
 }
 
