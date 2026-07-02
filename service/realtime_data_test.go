@@ -1,7 +1,6 @@
 package service
 
 import (
-	"BUPT_EC/cache"
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service/model"
@@ -14,12 +13,47 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	gocache "github.com/patrickmn/go-cache"
 )
 
 func init() {
 	logs.Init(false)
 	config.InitConfig()
-	cache.InitCache()
+}
+
+type mockJWClient struct {
+	queryCampus func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error)
+	login       func(ctx context.Context, apiURL string) (string, error)
+	fetchAPIURL func(ctx context.Context) (string, error)
+}
+
+func (m *mockJWClient) QueryCampus(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+	if m.queryCampus == nil {
+		return nil, errors.New("mockJWClient.QueryCampus is not configured")
+	}
+	return m.queryCampus(ctx, apiURL, campusID, token)
+}
+
+func (m *mockJWClient) Login(ctx context.Context, apiURL string) (string, error) {
+	if m.login == nil {
+		return "mock-token", nil
+	}
+	return m.login(ctx, apiURL)
+}
+
+func (m *mockJWClient) FetchAPIURL(ctx context.Context) (string, error) {
+	if m.fetchAPIURL == nil {
+		return DefaultAPIURL, nil
+	}
+	return m.fetchAPIURL(ctx)
+}
+
+func newTestService(t *testing.T, client JWClient) *ClassroomService {
+	t.Helper()
+	svc := newClassroomService(config.GetConfig(), gocache.New(5*time.Minute, time.Minute), client)
+	t.Cleanup(svc.refreshWorkers.Wait)
+	return svc
 }
 
 func requireJWCredentials(t *testing.T) {
@@ -145,12 +179,12 @@ func TestValidateJWAPIURL(t *testing.T) {
 }
 
 func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
-	ResetRuntimeStateForTest()
+	svc := newTestService(t, &defaultJWClient{})
 	t.Setenv(LoginTokenKey, "override-token")
 	t.Setenv(LoginUsernameKey, "")
 	t.Setenv(LoginPasswordKey, "")
 
-	token, err := tokenManager.EnsureToken(context.Background(), false)
+	token, err := svc.tokenManager.EnsureToken(context.Background(), false)
 	if err != nil {
 		t.Fatalf("EnsureToken(false) error = %v", err)
 	}
@@ -158,8 +192,8 @@ func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
 		t.Fatalf("EnsureToken(false) = %q, want override-token", token)
 	}
 
-	tokenManager.setAPIURL(DefaultAPIURL)
-	token, err = tokenManager.EnsureToken(context.Background(), true)
+	svc.tokenManager.setAPIURL(DefaultAPIURL)
+	token, err = svc.tokenManager.EnsureToken(context.Background(), true)
 	if err == nil {
 		t.Fatal("EnsureToken(true) expected configuration error")
 	}
@@ -172,26 +206,26 @@ func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
 }
 
 func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
-	ResetRuntimeStateForTest()
+	svc := newTestService(t, &mockJWClient{})
 	yesterday := time.Now().Add(-24 * time.Hour)
-	cache.SetCache(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
 		Date:       yesterday.Format("2006-01-02"),
 		ExpiresAt:  yesterday.Add(time.Hour),
 		StaleUntil: yesterday.Add(time.Hour),
 	}, time.Minute)
 
-	if cached, ok := getCachedTodayClassrooms(); ok {
+	if cached, ok := svc.getCachedTodayClassrooms(); ok {
 		t.Fatalf("expected cross-day cache miss, got %#v", cached)
 	}
 
 	now := time.Now()
-	cache.SetCache(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Hour),
 		StaleUntil: endOfDay(now),
 	}, time.Minute)
 
-	if cached, ok := getCachedTodayClassrooms(); !ok || cached.Date != now.Format("2006-01-02") {
+	if cached, ok := svc.getCachedTodayClassrooms(); !ok || cached.Date != now.Format("2006-01-02") {
 		t.Fatalf("expected same-day cache hit, got %#v ok=%t", cached, ok)
 	}
 }
@@ -224,9 +258,30 @@ func TestClassifyJWHTTPErrorUsesBusinessAuthCode(t *testing.T) {
 }
 
 func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
-	ResetRuntimeStateForTest()
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var startedOnce sync.Once
+	var calls atomic.Int32
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			calls.Add(1)
+			startedOnce.Do(func() { close(started) })
+			select {
+			case <-release:
+				return []model.JWClassInfo{{
+					NodeName:   "1",
+					NodeTime:   "08:00-08:45",
+					Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+				}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	svc := newTestService(t, client)
+
 	now := time.Now()
-	cache.SetCache(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
@@ -236,27 +291,8 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 		},
 	}, time.Hour)
 
-	started := make(chan struct{})
-	release := make(chan struct{})
-	var startedOnce sync.Once
-	var calls atomic.Int32
-	setQueryCampusForRefresh(t, func(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-		calls.Add(1)
-		startedOnce.Do(func() { close(started) })
-		select {
-		case <-release:
-			return []model.JWClassInfo{{
-				NodeName:   "1",
-				NodeTime:   "08:00-08:45",
-				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
-			}}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	})
-
 	start := time.Now()
-	resp, err := GetTodayClassrooms(context.Background())
+	resp, err := svc.GetTodayClassrooms(context.Background())
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("GetTodayClassrooms() error = %v", err)
@@ -278,7 +314,7 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 	}
 	close(release)
 	waitFor(t, time.Second, func() bool {
-		cached, ok := getCachedTodayClassrooms()
+		cached, ok := svc.getCachedTodayClassrooms()
 		return ok && len(cached.Campuses) == 2
 	})
 	if calls.Load() != 2 {
@@ -287,24 +323,25 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 }
 
 func TestGetTodayClassroomsBroadcastsRefreshResultToConcurrentWaiters(t *testing.T) {
-	ResetRuntimeStateForTest()
-
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startedOnce sync.Once
-	setQueryCampusForRefresh(t, func(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-		startedOnce.Do(func() { close(started) })
-		select {
-		case <-release:
-			return []model.JWClassInfo{{
-				NodeName:   "1",
-				NodeTime:   "08:00-08:45",
-				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
-			}}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	})
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			startedOnce.Do(func() { close(started) })
+			select {
+			case <-release:
+				return []model.JWClassInfo{{
+					NodeName:   "1",
+					NodeTime:   "08:00-08:45",
+					Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+				}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	svc := newTestService(t, client)
 
 	const waiters = 8
 	errs := make(chan error, waiters)
@@ -313,7 +350,7 @@ func TestGetTodayClassroomsBroadcastsRefreshResultToConcurrentWaiters(t *testing
 	for i := 0; i < waiters; i++ {
 		go func() {
 			defer wg.Done()
-			resp, err := GetTodayClassrooms(context.Background())
+			resp, err := svc.GetTodayClassrooms(context.Background())
 			if err != nil {
 				errs <- err
 				return
@@ -341,26 +378,27 @@ func TestGetTodayClassroomsBroadcastsRefreshResultToConcurrentWaiters(t *testing
 }
 
 func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
-	ResetRuntimeStateForTest()
-
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var startedOnce sync.Once
-	setQueryCampusForRefresh(t, func(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-		startedOnce.Do(func() { close(started) })
-		select {
-		case <-release:
-			return []model.JWClassInfo{{
-				NodeName:   "1",
-				NodeTime:   "08:00-08:45",
-				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
-			}}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	})
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			startedOnce.Do(func() { close(started) })
+			select {
+			case <-release:
+				return []model.JWClassInfo{{
+					NodeName:   "1",
+					NodeTime:   "08:00-08:45",
+					Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+				}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	svc := newTestService(t, client)
 
-	StartClassroomWarmup()
+	svc.StartWarmup()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -369,7 +407,7 @@ func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
 
 	errCh := make(chan error, 1)
 	go func() {
-		resp, err := GetTodayClassrooms(context.Background())
+		resp, err := svc.GetTodayClassrooms(context.Background())
 		if err != nil {
 			errCh <- err
 			return
@@ -393,9 +431,17 @@ func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
 }
 
 func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
-	ResetRuntimeStateForTest()
+	var calls atomic.Int32
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			calls.Add(1)
+			return nil, newJWError(jwErrorQuery, "jw query", nil, "upstream failed")
+		},
+	}
+	svc := newTestService(t, client)
+
 	now := time.Now()
-	cache.SetCache(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
@@ -403,13 +449,7 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 		Campuses:   []model.CampusInfo{{ID: "cached", Name: "cached"}},
 	}, time.Hour)
 
-	var calls atomic.Int32
-	setQueryCampusForRefresh(t, func(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-		calls.Add(1)
-		return nil, newJWError(jwErrorQuery, "jw query", nil, "upstream failed")
-	})
-
-	resp, err := GetTodayClassrooms(context.Background())
+	resp, err := svc.GetTodayClassrooms(context.Background())
 	if err != nil {
 		t.Fatalf("GetTodayClassrooms() error = %v", err)
 	}
@@ -421,7 +461,7 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 		t.Fatal("expected refresh attempt")
 	}
 
-	resp, err = GetTodayClassrooms(context.Background())
+	resp, err = svc.GetTodayClassrooms(context.Background())
 	if err != nil {
 		t.Fatalf("GetTodayClassrooms() second error = %v", err)
 	}
@@ -434,22 +474,24 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 }
 
 func TestQueryAllQueriesCampusesConcurrently(t *testing.T) {
-	ResetRuntimeStateForTest()
-	setQueryCampusForRefresh(t, func(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-		select {
-		case <-time.After(300 * time.Millisecond):
-			return []model.JWClassInfo{{
-				NodeName:   "1",
-				NodeTime:   "08:00-08:45",
-				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
-			}}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
-	})
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			select {
+			case <-time.After(300 * time.Millisecond):
+				return []model.JWClassInfo{{
+					NodeName:   "1",
+					NodeTime:   "08:00-08:45",
+					Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+				}}, nil
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		},
+	}
+	svc := newTestService(t, client)
 
 	start := time.Now()
-	resp, err := QueryAll(context.Background())
+	resp, err := svc.QueryAll(context.Background())
 	elapsed := time.Since(start)
 	if err != nil {
 		t.Fatalf("QueryAll() error = %v", err)
@@ -463,24 +505,26 @@ func TestQueryAllQueriesCampusesConcurrently(t *testing.T) {
 }
 
 func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
-	ResetRuntimeStateForTest()
-	tokenManager.setToken("old-token")
+	t.Setenv(LoginTokenKey, "")
 	var refreshCalls atomic.Int32
-	setRefreshTokenFunc(t, func(m *TokenManager, ctx context.Context) (string, error) {
-		refreshCalls.Add(1)
-		return "new-token", nil
-	})
-
 	var seenTokens []string
-	setQueryCampusWithTokenFunc(t, func(ctx context.Context, campusID string, token string) ([]model.JWClassInfo, error) {
-		seenTokens = append(seenTokens, token)
-		if token == "old-token" {
-			return nil, newJWError(jwErrorAuth, "jw query", nil, "token expired")
-		}
-		return []model.JWClassInfo{{NodeName: "1", NodeTime: "08:00-08:45", Classrooms: "教学实验综合楼-N101(10)"}}, nil
-	})
+	client := &mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			refreshCalls.Add(1)
+			return "new-token", nil
+		},
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			seenTokens = append(seenTokens, token)
+			if token == "old-token" {
+				return nil, newJWError(jwErrorAuth, "jw query", nil, "token expired")
+			}
+			return []model.JWClassInfo{{NodeName: "1", NodeTime: "08:00-08:45", Classrooms: "教学实验综合楼-N101(10)"}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+	svc.tokenManager.setToken("old-token")
 
-	rows, err := queryCampus(context.Background(), "01", false)
+	rows, err := svc.queryCampus(context.Background(), "01", false)
 	if err != nil {
 		t.Fatalf("queryCampus() error = %v", err)
 	}
@@ -493,33 +537,6 @@ func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
 	if len(seenTokens) != 2 || seenTokens[0] != "old-token" || seenTokens[1] != "new-token" {
 		t.Fatalf("unexpected token sequence: %#v", seenTokens)
 	}
-}
-
-func setQueryCampusForRefresh(t *testing.T, fn func(context.Context, string, bool) ([]model.JWClassInfo, error)) {
-	t.Helper()
-	old := queryCampusForRefresh
-	queryCampusForRefresh = fn
-	t.Cleanup(func() {
-		queryCampusForRefresh = old
-	})
-}
-
-func setQueryCampusWithTokenFunc(t *testing.T, fn func(context.Context, string, string) ([]model.JWClassInfo, error)) {
-	t.Helper()
-	old := queryCampusWithTokenFunc
-	queryCampusWithTokenFunc = fn
-	t.Cleanup(func() {
-		queryCampusWithTokenFunc = old
-	})
-}
-
-func setRefreshTokenFunc(t *testing.T, fn func(*TokenManager, context.Context) (string, error)) {
-	t.Helper()
-	old := refreshTokenFunc
-	refreshTokenFunc = fn
-	t.Cleanup(func() {
-		refreshTokenFunc = old
-	})
 }
 
 func waitFor(t *testing.T, timeout time.Duration, ok func() bool) {
@@ -536,8 +553,8 @@ func waitFor(t *testing.T, timeout time.Duration, ok func() bool) {
 
 func TestLogin(t *testing.T) {
 	requireJWCredentials(t)
-	ResetRuntimeStateForTest()
-	err := Login(context.Background())
+	svc := newTestService(t, &defaultJWClient{})
+	err := svc.Login(context.Background())
 	if err != nil {
 		t.Error(err)
 	}
@@ -545,12 +562,12 @@ func TestLogin(t *testing.T) {
 
 func TestQueryOne(t *testing.T) {
 	requireJWCredentials(t)
-	ResetRuntimeStateForTest()
-	err := Login(context.Background())
+	svc := newTestService(t, &defaultJWClient{})
+	err := svc.Login(context.Background())
 	if err != nil {
 		t.Error(err)
 	}
-	rows, err := QueryOne(context.Background(), "01")
+	rows, err := svc.QueryOne(context.Background(), "01")
 	if err != nil {
 		t.Error(err)
 	}
@@ -561,12 +578,12 @@ func TestQueryOne(t *testing.T) {
 
 func TestQueryAll(t *testing.T) {
 	requireJWCredentials(t)
-	ResetRuntimeStateForTest()
-	err := Login(context.Background())
+	svc := newTestService(t, &defaultJWClient{})
+	err := svc.Login(context.Background())
 	if err != nil {
 		t.Error(err)
 	}
-	ans, err := QueryAll(context.Background())
+	ans, err := svc.QueryAll(context.Background())
 	if err != nil {
 		t.Error(err)
 	}

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"sync"
 	"time"
 )
 
@@ -16,41 +15,36 @@ type RuntimeStatus struct {
 	CacheDate            string     `json:"cache_date,omitempty"`
 }
 
-var (
-	runtimeStatusMu sync.RWMutex
-	runtimeStatus   RuntimeStatus
-)
-
-func recordLoginSuccess(at time.Time) {
-	runtimeStatusMu.Lock()
-	defer runtimeStatusMu.Unlock()
-	runtimeStatus.LastLoginSuccessAt = cloneTime(at)
-	runtimeStatus.LastLoginError = ""
+func (s *ClassroomService) recordLoginSuccess(at time.Time) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.LastLoginSuccessAt = cloneTime(at)
+	s.status.LastLoginError = ""
 }
 
-func recordLoginFailure(err error) {
-	runtimeStatusMu.Lock()
-	defer runtimeStatusMu.Unlock()
-	runtimeStatus.LastLoginError = SafeErrorMessage(err)
+func (s *ClassroomService) recordLoginFailure(err error) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.LastLoginError = SafeErrorMessage(err)
 }
 
-func recordRefreshSuccess(at time.Time) {
-	runtimeStatusMu.Lock()
-	defer runtimeStatusMu.Unlock()
-	runtimeStatus.LastRefreshSuccessAt = cloneTime(at)
-	runtimeStatus.LastRefreshError = ""
+func (s *ClassroomService) recordRefreshSuccess(at time.Time) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.LastRefreshSuccessAt = cloneTime(at)
+	s.status.LastRefreshError = ""
 }
 
-func recordRefreshFailure(err error) {
-	runtimeStatusMu.Lock()
-	defer runtimeStatusMu.Unlock()
-	runtimeStatus.LastRefreshError = SafeErrorMessage(err)
+func (s *ClassroomService) recordRefreshFailure(err error) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.LastRefreshError = SafeErrorMessage(err)
 }
 
-func GetRuntimeStatus() RuntimeStatus {
-	status := snapshotRuntimeStatus()
-	now := nowFunc()
-	if cached, ok := getCachedTodayClassrooms(); ok {
+func (s *ClassroomService) GetRuntimeStatus() RuntimeStatus {
+	status := s.snapshotRuntimeStatus()
+	now := s.now()
+	if cached, ok := s.getCachedTodayClassrooms(); ok {
 		status.CacheAvailable = true
 		status.CacheFresh = !cached.ExpiresAt.Before(now)
 		status.CacheStale = now.Before(cached.StaleUntil)
@@ -59,20 +53,20 @@ func GetRuntimeStatus() RuntimeStatus {
 	return status
 }
 
-func HasUsableTodayCache() bool {
-	cached, ok := getCachedTodayClassrooms()
-	return ok && nowFunc().Before(cached.StaleUntil)
+func (s *ClassroomService) HasUsableTodayCache() bool {
+	cached, ok := s.getCachedTodayClassrooms()
+	return ok && s.now().Before(cached.StaleUntil)
 }
 
-func snapshotRuntimeStatus() RuntimeStatus {
-	runtimeStatusMu.RLock()
-	defer runtimeStatusMu.RUnlock()
-	status := runtimeStatus
-	if runtimeStatus.LastLoginSuccessAt != nil {
-		status.LastLoginSuccessAt = cloneTime(*runtimeStatus.LastLoginSuccessAt)
+func (s *ClassroomService) snapshotRuntimeStatus() RuntimeStatus {
+	s.statusMu.RLock()
+	defer s.statusMu.RUnlock()
+	status := s.status
+	if s.status.LastLoginSuccessAt != nil {
+		status.LastLoginSuccessAt = cloneTime(*s.status.LastLoginSuccessAt)
 	}
-	if runtimeStatus.LastRefreshSuccessAt != nil {
-		status.LastRefreshSuccessAt = cloneTime(*runtimeStatus.LastRefreshSuccessAt)
+	if s.status.LastRefreshSuccessAt != nil {
+		status.LastRefreshSuccessAt = cloneTime(*s.status.LastRefreshSuccessAt)
 	}
 	return status
 }

@@ -1,8 +1,6 @@
 package service
 
 import (
-	"BUPT_EC/cache"
-	"BUPT_EC/config"
 	"BUPT_EC/service/model"
 	"context"
 	"errors"
@@ -29,43 +27,24 @@ const (
 	staleRefreshBackoff   = 30 * time.Second
 )
 
-var (
-	ErrNoTodayCache = errors.New("no today classroom cache")
+var ErrNoTodayCache = errors.New("no today classroom cache")
 
-	tokenManager = &TokenManager{}
-
-	nowFunc                  = time.Now
-	queryCampusForRefresh    = queryCampus
-	queryCampusWithTokenFunc = queryCampusWithToken
-	refreshTokenFunc         = (*TokenManager).refreshToken
-)
-
-func ResetRuntimeStateForTest() {
-	refreshWorkers.Wait()
-	tokenManager = &TokenManager{}
-	resetRefreshState()
-	runtimeStatusMu.Lock()
-	runtimeStatus = RuntimeStatus{}
-	runtimeStatusMu.Unlock()
-	cache.DeleteCache(TodayCacheKey)
-}
-
-func Login(ctx context.Context) error {
-	_, err := tokenManager.EnsureToken(ctx, true)
+func (s *ClassroomService) Login(ctx context.Context) error {
+	_, err := s.tokenManager.EnsureToken(ctx, true)
 	return err
 }
 
-func QueryOne(ctx context.Context, id string) ([]model.JWClassInfo, error) {
-	return queryCampus(ctx, id, false)
+func (s *ClassroomService) QueryOne(ctx context.Context, id string) ([]model.JWClassInfo, error) {
+	return s.queryCampus(ctx, id, false)
 }
 
-func QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
-	return refreshTodayClassrooms(ctx)
+func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
+	return s.refreshTodayClassrooms(ctx)
 }
 
-func StartClassroomWarmup() {
+func (s *ClassroomService) StartWarmup() {
 	go func() {
-		attempt, started := startClassroomRefresh(nowFunc())
+		attempt, started := s.startClassroomRefresh(s.now())
 		if !started {
 			return
 		}
@@ -73,20 +52,20 @@ func StartClassroomWarmup() {
 	}()
 }
 
-func GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	now := nowFunc()
-	if cached, ok := getCachedTodayClassrooms(); ok {
+func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
+	now := s.now()
+	if cached, ok := s.getCachedTodayClassrooms(); ok {
 		if !cached.ExpiresAt.Before(now) {
 			return classroomResponse(cached, false, nil), nil
 		}
 		if now.Before(cached.StaleUntil) {
-			return getStaleTodayClassrooms(ctx, cached, now), nil
+			return s.getStaleTodayClassrooms(ctx, cached, now), nil
 		}
 	}
 
-	attempt, started := startClassroomRefresh(now)
+	attempt, started := s.startClassroomRefresh(now)
 	if !started {
-		if err := getLastRefreshError(); err != nil {
+		if err := s.getLastRefreshError(); err != nil {
 			return nil, err
 		}
 		return nil, ErrNoTodayCache
@@ -99,57 +78,70 @@ func GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	}
 }
 
-func classroomResponseFromRefresh(result classroomRefreshResult) (*model.TodayClassrooms, error) {
-	if result.err != nil {
-		return nil, result.err
-	}
-	if result.value == nil {
-		return nil, newJWError(jwErrorParse, "classroom refresh", nil, "unexpected refresh result")
-	}
-	return classroomResponse(result.value, false, nil), nil
-}
-
-func staleAPIError(err error) *model.APIError {
-	if err == nil {
-		return nil
-	}
-	return &model.APIError{
-		Type:    classifyError(err),
-		Message: "教务系统暂时不可用，当前展示的是今天最后一次成功刷新数据",
-	}
-}
-
-func refreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	startedAt := time.Now()
-	today, err := doRefreshTodayClassrooms(ctx)
+func (s *ClassroomService) queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
+	token, err := s.tokenManager.EnsureToken(ctx, forceRefresh)
 	if err != nil {
-		recordRefreshFailure(err)
+		return nil, err
+	}
+
+	rows, err := s.queryCampusWithToken(ctx, campusID, token)
+	if err == nil {
+		return rows, nil
+	}
+	if !isJWErrorKind(err, jwErrorAuth) {
+		return nil, err
+	}
+
+	s.tokenManager.clearTokenIfCurrent(token)
+	token, refreshErr := s.tokenManager.EnsureToken(ctx, true)
+	if refreshErr != nil {
+		return nil, errors.Join(err, refreshErr)
+	}
+	rows, retryErr := s.queryCampusWithToken(ctx, campusID, token)
+	if retryErr != nil {
+		return nil, errors.Join(err, retryErr)
+	}
+	return rows, nil
+}
+
+func (s *ClassroomService) queryCampusWithToken(ctx context.Context, campusID string, token string) ([]model.JWClassInfo, error) {
+	apiURL, err := s.tokenManager.APIURL(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return s.jwClient.QueryCampus(ctx, apiURL, campusID, token)
+}
+
+func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
+	startedAt := time.Now()
+	today, err := s.doRefreshTodayClassrooms(ctx)
+	if err != nil {
+		s.recordRefreshFailure(err)
 		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", time.Since(startedAt), "err", err)
 		return nil, err
 	}
-	recordRefreshSuccess(time.Now())
+	s.recordRefreshSuccess(time.Now())
 	slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", time.Since(startedAt))
 	return today, nil
 }
 
-func doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	now := nowFunc()
-	campuses := config.GetConfig().Campuses
+func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
+	now := s.now()
 	today := &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(classroomFreshTTL),
 		StaleUntil: endOfDay(now),
 		Stale:      false,
-		Campuses:   make([]model.CampusInfo, len(campuses)),
+		Campuses:   make([]model.CampusInfo, len(s.campuses)),
 		Error:      nil,
 	}
 
 	group, groupCtx := errgroup.WithContext(ctx)
-	for i, campusConfig := range campuses {
+	for i, campusConfig := range s.campuses {
 		i, campusConfig := i, campusConfig
 		group.Go(func() error {
-			jwRows, err := queryCampusForRefresh(groupCtx, campusConfig.ID, false)
+			jwRows, err := s.queryCampus(groupCtx, campusConfig.ID, false)
 			if err != nil {
 				return err
 			}
@@ -161,12 +153,12 @@ func doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, erro
 		return nil, err
 	}
 
-	cache.SetCache(TodayCacheKey, today, time.Until(today.StaleUntil))
+	s.cache.Set(TodayCacheKey, today, time.Until(today.StaleUntil))
 	return classroomResponse(today, false, nil), nil
 }
 
-func getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
-	raw, ok := cache.GetCache(TodayCacheKey)
+func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
+	raw, ok := s.cache.Get(TodayCacheKey)
 	if !ok || raw == nil {
 		return nil, false
 	}
@@ -174,10 +166,20 @@ func getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
 	if !ok || cached == nil {
 		return nil, false
 	}
-	if cached.Date != nowFunc().Format("2006-01-02") {
+	if cached.Date != s.now().Format("2006-01-02") {
 		return nil, false
 	}
 	return cached, true
+}
+
+func classroomResponseFromRefresh(result classroomRefreshResult) (*model.TodayClassrooms, error) {
+	if result.err != nil {
+		return nil, result.err
+	}
+	if result.value == nil {
+		return nil, newJWError(jwErrorParse, "classroom refresh", nil, "unexpected refresh result")
+	}
+	return classroomResponse(result.value, false, nil), nil
 }
 
 func classroomResponse(in *model.TodayClassrooms, stale bool, apiErr *model.APIError) *model.TodayClassrooms {
@@ -193,6 +195,16 @@ func classroomResponse(in *model.TodayClassrooms, stale bool, apiErr *model.APIE
 		out.Error = nil
 	}
 	return &out
+}
+
+func staleAPIError(err error) *model.APIError {
+	if err == nil {
+		return nil
+	}
+	return &model.APIError{
+		Type:    classifyError(err),
+		Message: "教务系统暂时不可用，当前展示的是今天最后一次成功刷新数据",
+	}
 }
 
 func endOfDay(t time.Time) time.Time {

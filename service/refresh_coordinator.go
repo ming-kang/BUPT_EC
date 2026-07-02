@@ -3,17 +3,7 @@ package service
 import (
 	"BUPT_EC/service/model"
 	"context"
-	"sync"
 	"time"
-)
-
-var (
-	refreshStateMu     sync.Mutex
-	refreshInFlight    bool
-	refreshAttempt     *classroomRefreshAttempt
-	nextRefreshAllowed time.Time
-	lastRefreshError   error
-	refreshWorkers     sync.WaitGroup
 )
 
 type classroomRefreshAttempt struct {
@@ -26,74 +16,65 @@ type classroomRefreshResult struct {
 	err   error
 }
 
-func startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
-	refreshStateMu.Lock()
-	if refreshInFlight {
-		attempt := refreshAttempt
-		refreshStateMu.Unlock()
+func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
+	s.refreshMu.Lock()
+	if s.refreshInFlight {
+		attempt := s.refreshAttempt
+		s.refreshMu.Unlock()
 		return attempt, true
 	}
 
-	if !nextRefreshAllowed.IsZero() && now.Before(nextRefreshAllowed) {
-		refreshStateMu.Unlock()
+	if !s.nextRefreshAllowed.IsZero() && now.Before(s.nextRefreshAllowed) {
+		s.refreshMu.Unlock()
 		return nil, false
 	}
 
-	refreshInFlight = true
+	s.refreshInFlight = true
 	attempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	refreshAttempt = attempt
-	refreshWorkers.Add(1)
-	refreshStateMu.Unlock()
+	s.refreshAttempt = attempt
+	s.refreshWorkers.Add(1)
+	s.refreshMu.Unlock()
 
 	go func() {
-		defer refreshWorkers.Done()
+		defer s.refreshWorkers.Done()
 		refreshCtx, cancel := context.WithTimeout(context.Background(), classroomRefreshLimit)
 		defer cancel()
 
-		today, err := refreshTodayClassrooms(refreshCtx)
-		finishClassroomRefresh(attempt, classroomRefreshResult{value: today, err: err})
+		today, err := s.refreshTodayClassrooms(refreshCtx)
+		s.finishClassroomRefresh(attempt, classroomRefreshResult{value: today, err: err})
 	}()
 	return attempt, true
 }
 
-func finishClassroomRefresh(attempt *classroomRefreshAttempt, result classroomRefreshResult) {
-	refreshStateMu.Lock()
-	defer refreshStateMu.Unlock()
+func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttempt, result classroomRefreshResult) {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
 
 	attempt.result = result
-	if refreshAttempt == attempt {
-		refreshInFlight = false
-		refreshAttempt = nil
+	if s.refreshAttempt == attempt {
+		s.refreshInFlight = false
+		s.refreshAttempt = nil
 	}
 	if result.err != nil {
-		lastRefreshError = result.err
-		nextRefreshAllowed = nowFunc().Add(staleRefreshBackoff)
+		s.lastRefreshErr = result.err
+		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
 	} else {
-		lastRefreshError = nil
-		nextRefreshAllowed = time.Time{}
+		s.lastRefreshErr = nil
+		s.nextRefreshAllowed = time.Time{}
 	}
 	close(attempt.done)
 }
 
-func resetRefreshState() {
-	refreshStateMu.Lock()
-	defer refreshStateMu.Unlock()
-	refreshInFlight = false
-	refreshAttempt = nil
-	nextRefreshAllowed = time.Time{}
-	lastRefreshError = nil
+func (s *ClassroomService) getLastRefreshError() error {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	return s.lastRefreshErr
 }
 
-func getLastRefreshError() error {
-	refreshStateMu.Lock()
-	defer refreshStateMu.Unlock()
-	return lastRefreshError
-}
-
-func getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
-	attempt, started := startClassroomRefresh(now)
+func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
+	attempt, started := s.startClassroomRefresh(now)
 	if !started {
-		return classroomResponse(cached, true, staleAPIError(getLastRefreshError()))
+		return classroomResponse(cached, true, staleAPIError(s.getLastRefreshError()))
 	}
 
 	timer := time.NewTimer(staleRefreshWait)

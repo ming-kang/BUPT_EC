@@ -5,51 +5,26 @@ import (
 	"BUPT_EC/utils"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"os"
 )
 
-type jwResponseEnvelope struct {
-	Code string          `json:"code"`
-	Msg  string          `json:"Msg"`
-	Data json.RawMessage `json:"data"`
+// JWClient is the stateless protocol-level client for the JW system.
+// Token and API URL caching live in TokenManager, not here.
+type JWClient interface {
+	QueryCampus(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error)
+	Login(ctx context.Context, apiURL string) (string, error)
+	FetchAPIURL(ctx context.Context) (string, error)
 }
 
-func queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-	token, err := tokenManager.EnsureToken(ctx, forceRefresh)
-	if err != nil {
-		return nil, err
-	}
+type defaultJWClient struct{}
 
-	rows, err := queryCampusWithTokenFunc(ctx, campusID, token)
-	if err == nil {
-		return rows, nil
-	}
-	if !isJWErrorKind(err, jwErrorAuth) {
-		return nil, err
-	}
-
-	tokenManager.clearTokenIfCurrent(token)
-	token, refreshErr := tokenManager.EnsureToken(ctx, true)
-	if refreshErr != nil {
-		return nil, errors.Join(err, refreshErr)
-	}
-	rows, retryErr := queryCampusWithTokenFunc(ctx, campusID, token)
-	if retryErr != nil {
-		return nil, errors.Join(err, retryErr)
-	}
-	return rows, nil
-}
-
-func queryCampusWithToken(ctx context.Context, campusID string, token string) ([]model.JWClassInfo, error) {
+func (c *defaultJWClient) QueryCampus(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
 	defer cancel()
 
-	apiURL, err := tokenManager.APIURL(requestCtx)
-	if err != nil {
-		return nil, err
-	}
 	queryURL, err := joinAPIPath(apiURL, "todayClassrooms")
 	if err != nil {
 		return nil, newJWError(jwErrorConfig, "jw query", err, "build query URL failed")
@@ -66,6 +41,84 @@ func queryCampusWithToken(ctx context.Context, campusID string, token string) ([
 	}
 
 	return parseJWQueryResponse(body)
+}
+
+func (c *defaultJWClient) Login(ctx context.Context, apiURL string) (string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
+	defer cancel()
+
+	loginURL, err := joinAPIPath(apiURL, "login")
+	if err != nil {
+		return "", newJWError(jwErrorConfig, "jw login", err, "build login URL failed")
+	}
+
+	userNo := os.Getenv(LoginUsernameKey)
+	password := os.Getenv(LoginPasswordKey)
+	if userNo == "" || password == "" {
+		return "", newJWError(jwErrorConfig, "jw login", nil, "JW_USERNAME or JW_PASSWORD is not configured")
+	}
+
+	encryptedPassword, err := encryptJWPassword(password)
+	if err != nil {
+		return "", newJWError(jwErrorConfig, "jw login", err, "encrypt login password failed")
+	}
+	req := map[string]string{
+		"userNo":      userNo,
+		"pwd":         encryptedPassword,
+		"encode":      "1",
+		"captchaData": "",
+		"codeVal":     "",
+	}
+
+	code, _, body, err := utils.HttpPostForm(requestCtx, loginURL, req)
+	if err != nil {
+		return "", newJWError(jwErrorLogin, "jw login", err, "request failed")
+	}
+	if code != http.StatusOK {
+		return "", newJWError(jwErrorLogin, "jw login", nil, "http status %d", code)
+	}
+
+	var resp model.LoginResponse
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", newJWError(jwErrorParse, "jw login", err, "response invalid")
+	}
+	if resp.Code != "1" || resp.Data.Token == "" {
+		return "", newJWError(jwErrorLogin, "jw login", nil, "%s", safeRemoteMessage(resp.Msg))
+	}
+	return resp.Data.Token, nil
+}
+
+func (c *defaultJWClient) FetchAPIURL(ctx context.Context) (string, error) {
+	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
+	defer cancel()
+
+	code, _, body, err := utils.HttpGet(requestCtx, ServerConfigURL)
+	if err != nil {
+		slog.WarnContext(ctx, "serverconfig request failed; using default HTTPS API URL", "err", err)
+		return validateJWAPIURL(DefaultAPIURL)
+	}
+	if code != http.StatusOK {
+		slog.WarnContext(ctx, "serverconfig http status; using default HTTPS API URL", "status", code)
+		return validateJWAPIURL(DefaultAPIURL)
+	}
+
+	var resp model.ServerConfigResponse
+	if err := json.Unmarshal(body, &resp); err != nil || resp.APIURL == "" {
+		slog.WarnContext(ctx, "serverconfig invalid; using default HTTPS API URL")
+		return validateJWAPIURL(DefaultAPIURL)
+	}
+	apiURL, err := validateJWAPIURL(resp.APIURL)
+	if err != nil {
+		slog.WarnContext(ctx, "serverconfig API URL rejected; using default HTTPS API URL", "err", err)
+		return validateJWAPIURL(DefaultAPIURL)
+	}
+	return apiURL, nil
+}
+
+type jwResponseEnvelope struct {
+	Code string          `json:"code"`
+	Msg  string          `json:"Msg"`
+	Data json.RawMessage `json:"data"`
 }
 
 func parseJWQueryResponse(body []byte) ([]model.JWClassInfo, error) {

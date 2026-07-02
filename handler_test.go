@@ -1,7 +1,6 @@
 package main
 
 import (
-	"BUPT_EC/cache"
 	"BUPT_EC/config"
 	"BUPT_EC/service"
 	"BUPT_EC/service/model"
@@ -14,16 +13,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	gocache "github.com/patrickmn/go-cache"
 )
 
 func init() {
 	config.InitConfig()
-	cache.InitCache()
 	gin.SetMode(gin.TestMode)
 }
 
 func TestReadyzRequiresUsableCache(t *testing.T) {
-	service.ResetRuntimeStateForTest()
+	store := gocache.New(5*time.Minute, time.Minute)
+	classroomService = service.NewClassroomService(config.GetConfig(), store)
 	t.Setenv(service.LoginTokenKey, "test-token")
 
 	router := gin.New()
@@ -37,7 +37,7 @@ func TestReadyzRequiresUsableCache(t *testing.T) {
 	}
 
 	now := time.Now()
-	cache.SetCache(service.TodayCacheKey, &model.TodayClassrooms{
+	store.Set(service.TodayCacheKey, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(time.Minute),

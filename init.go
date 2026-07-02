@@ -4,8 +4,11 @@ import (
 	"BUPT_EC/cache"
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
+	"BUPT_EC/service"
 	"log"
 )
+
+var classroomService *service.ClassroomService
 
 func Init() {
 	logs.Init(true)
@@ -14,4 +17,5 @@ func Init() {
 		log.Fatalf("invalid runtime config: %v", err)
 	}
 	cache.InitCache()
+	classroomService = service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
 }

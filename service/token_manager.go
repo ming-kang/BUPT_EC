@@ -1,12 +1,8 @@
 package service
 
 import (
-	"BUPT_EC/service/model"
-	"BUPT_EC/utils"
 	"context"
-	"encoding/json"
 	"log/slog"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -15,6 +11,10 @@ import (
 )
 
 type TokenManager struct {
+	jwClient       JWClient
+	onLoginSuccess func(time.Time)
+	onLoginFailure func(error)
+
 	mu          sync.Mutex
 	token       string
 	apiURL      string
@@ -47,14 +47,14 @@ func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (stri
 		startedAt := time.Now()
 		loginCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
 		defer cancel()
-		token, err := refreshTokenFunc(m, loginCtx)
+		token, err := m.login(loginCtx)
 		if err != nil {
-			recordLoginFailure(err)
+			m.notifyLoginFailure(err)
 			slog.WarnContext(ctx, "jw login failed", "elapsed", time.Since(startedAt), "err", err)
 			return "", err
 		}
 		m.setToken(token)
-		recordLoginSuccess(time.Now())
+		m.notifyLoginSuccess(time.Now())
 		slog.InfoContext(ctx, "jw login succeeded", "elapsed", time.Since(startedAt))
 		return token, nil
 	})
@@ -79,7 +79,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		}
 		apiCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
 		defer cancel()
-		apiURL, err := m.fetchAPIURL(apiCtx)
+		apiURL, err := m.jwClient.FetchAPIURL(apiCtx)
 		if err != nil {
 			return "", err
 		}
@@ -94,6 +94,26 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		return "", newJWError(jwErrorConfig, "serverconfig", nil, "unexpected API URL result")
 	}
 	return apiURL, nil
+}
+
+func (m *TokenManager) login(ctx context.Context) (string, error) {
+	apiURL, err := m.APIURL(ctx)
+	if err != nil {
+		return "", err
+	}
+	return m.jwClient.Login(ctx, apiURL)
+}
+
+func (m *TokenManager) notifyLoginSuccess(at time.Time) {
+	if m.onLoginSuccess != nil {
+		m.onLoginSuccess(at)
+	}
+}
+
+func (m *TokenManager) notifyLoginFailure(err error) {
+	if m.onLoginFailure != nil {
+		m.onLoginFailure(err)
+	}
 }
 
 func (m *TokenManager) cachedToken() string {
@@ -126,80 +146,4 @@ func (m *TokenManager) setAPIURL(apiURL string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.apiURL = apiURL
-}
-
-func (m *TokenManager) refreshToken(ctx context.Context) (string, error) {
-	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
-	defer cancel()
-
-	apiURL, err := m.APIURL(requestCtx)
-	if err != nil {
-		return "", err
-	}
-	loginURL, err := joinAPIPath(apiURL, "login")
-	if err != nil {
-		return "", newJWError(jwErrorConfig, "jw login", err, "build login URL failed")
-	}
-
-	userNo := os.Getenv(LoginUsernameKey)
-	password := os.Getenv(LoginPasswordKey)
-	if userNo == "" || password == "" {
-		return "", newJWError(jwErrorConfig, "jw login", nil, "JW_USERNAME or JW_PASSWORD is not configured")
-	}
-
-	encryptedPassword, err := encryptJWPassword(password)
-	if err != nil {
-		return "", newJWError(jwErrorConfig, "jw login", err, "encrypt login password failed")
-	}
-	req := map[string]string{
-		"userNo":      userNo,
-		"pwd":         encryptedPassword,
-		"encode":      "1",
-		"captchaData": "",
-		"codeVal":     "",
-	}
-
-	code, _, body, err := utils.HttpPostForm(requestCtx, loginURL, req)
-	if err != nil {
-		return "", newJWError(jwErrorLogin, "jw login", err, "request failed")
-	}
-	if code != http.StatusOK {
-		return "", newJWError(jwErrorLogin, "jw login", nil, "http status %d", code)
-	}
-
-	var resp model.LoginResponse
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", newJWError(jwErrorParse, "jw login", err, "response invalid")
-	}
-	if resp.Code != "1" || resp.Data.Token == "" {
-		return "", newJWError(jwErrorLogin, "jw login", nil, "%s", safeRemoteMessage(resp.Msg))
-	}
-	return resp.Data.Token, nil
-}
-
-func (m *TokenManager) fetchAPIURL(ctx context.Context) (string, error) {
-	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
-	defer cancel()
-
-	code, _, body, err := utils.HttpGet(requestCtx, ServerConfigURL)
-	if err != nil {
-		slog.WarnContext(ctx, "serverconfig request failed; using default HTTPS API URL", "err", err)
-		return validateJWAPIURL(DefaultAPIURL)
-	}
-	if code != http.StatusOK {
-		slog.WarnContext(ctx, "serverconfig http status; using default HTTPS API URL", "status", code)
-		return validateJWAPIURL(DefaultAPIURL)
-	}
-
-	var resp model.ServerConfigResponse
-	if err := json.Unmarshal(body, &resp); err != nil || resp.APIURL == "" {
-		slog.WarnContext(ctx, "serverconfig invalid; using default HTTPS API URL")
-		return validateJWAPIURL(DefaultAPIURL)
-	}
-	apiURL, err := validateJWAPIURL(resp.APIURL)
-	if err != nil {
-		slog.WarnContext(ctx, "serverconfig API URL rejected; using default HTTPS API URL", "err", err)
-		return validateJWAPIURL(DefaultAPIURL)
-	}
-	return apiURL, nil
 }

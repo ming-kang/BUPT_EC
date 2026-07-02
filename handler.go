@@ -14,7 +14,7 @@ func GetData(c *gin.Context) {
 	ctx := logs.GetContextFromGinContext(c)
 	slog.InfoContext(ctx, "GetData")
 
-	todayData, err := service.GetTodayClassrooms(ctx)
+	todayData, err := classroomService.GetTodayClassrooms(ctx)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"code": http.StatusServiceUnavailable,
@@ -35,9 +35,9 @@ func Healthz(c *gin.Context) {
 }
 
 func Readyz(c *gin.Context) {
-	status := service.GetRuntimeStatus()
+	status := classroomService.GetRuntimeStatus()
 	configured := config.HasJWCredentials()
-	ready := configured && service.HasUsableTodayCache()
+	ready := configured && classroomService.HasUsableTodayCache()
 	code := http.StatusOK
 	if !ready {
 		code = http.StatusServiceUnavailable

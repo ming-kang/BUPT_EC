@@ -1,7 +1,6 @@
 package main
 
 import (
-	"BUPT_EC/service"
 	"context"
 	"errors"
 	"log"
@@ -19,7 +18,7 @@ func main() {
 	r := gin.New()
 	r.Use(gin.Recovery())
 	SetRouter(r)
-	service.StartClassroomWarmup()
+	classroomService.StartWarmup()
 	addr := os.Getenv("APP_ADDR")
 	if addr == "" {
 		addr = ":8080"
