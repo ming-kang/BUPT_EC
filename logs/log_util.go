@@ -4,14 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
-	"github.com/gin-gonic/gin"
 	"io"
 	"log"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -20,11 +20,8 @@ const (
 )
 
 func Init(isMain bool) {
-	defaultLoggerMu.Lock()
-	defer defaultLoggerMu.Unlock()
-	callerEnabled = os.Getenv("LOG_CALLER") == "1" || strings.EqualFold(os.Getenv("LOG_CALLER"), "true")
+	var writer io.Writer
 	if isMain {
-		stdoutWriter := os.Stdout
 		if err := os.MkdirAll("run_log", 0750); err != nil {
 			log.Fatalf("create log directory failed: %v", err)
 		}
@@ -35,11 +32,21 @@ func Init(isMain bool) {
 			MaxAge:     30,
 			Compress:   true,
 		}
-		defaultLogger = log.New(io.MultiWriter(stdoutWriter, fileWriter), "", log.Ldate|log.Lmicroseconds)
+		writer = io.MultiWriter(os.Stdout, fileWriter)
 	} else {
-		stdoutWriter := os.Stdout
-		defaultLogger = log.New(io.MultiWriter(stdoutWriter), "", log.Ldate|log.Lmicroseconds)
+		writer = os.Stdout
 	}
+
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}
+	if os.Getenv("LOG_CALLER") == "1" || strings.EqualFold(os.Getenv("LOG_CALLER"), "true") {
+		opts.AddSource = true
+	}
+
+	baseHandler := slog.NewJSONHandler(writer, opts)
+	logger := slog.New(&logIDHandler{Handler: baseHandler})
+	slog.SetDefault(logger)
 }
 
 func SetNewContextForGinContext(c *gin.Context) {
@@ -48,34 +55,14 @@ func SetNewContextForGinContext(c *gin.Context) {
 	c.Writer.Header().Set("LogID", GetLogIDFromContext(newCtx))
 }
 
-func FillZeroForInt(i int, w int) string {
-	rawStr := fmt.Sprintf("%d", i)
-	for len(rawStr) < w {
-		rawStr = "0" + rawStr
-	}
-	return rawStr
-}
-
 func RandomHex(n int) string {
 	bytes := make([]byte, n)
 	_, _ = rand.Read(bytes)
 	return hex.EncodeToString(bytes)
-
 }
 
 func GenLogID() string {
-	str := ""
-	t := time.Now()
-	year, month, day := t.Date()
-	hour, minute, second := t.Clock()
-	str += FillZeroForInt(year, 4)
-	str += FillZeroForInt(int(month), 2)
-	str += FillZeroForInt(day, 2)
-	str += FillZeroForInt(hour, 2)
-	str += FillZeroForInt(minute, 2)
-	str += FillZeroForInt(second, 2)
-	str += strings.ToUpper(RandomHex(9))
-	return str
+	return time.Now().Format("20060102150405") + strings.ToUpper(RandomHex(9))
 }
 
 func GenNewContext(parent context.Context) context.Context {

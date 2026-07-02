@@ -4,6 +4,7 @@ import (
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
+	"log/slog"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,7 +12,7 @@ import (
 
 func GetData(c *gin.Context) {
 	ctx := logs.GetContextFromGinContext(c)
-	logs.CtxInfo(ctx, "GetData")
+	slog.InfoContext(ctx, "GetData")
 
 	todayData, err := service.GetTodayClassrooms(ctx)
 	if err != nil {
