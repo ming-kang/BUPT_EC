@@ -71,6 +71,22 @@ func (s *ClassroomService) getLastRefreshError() error {
 	return s.lastRefreshErr
 }
 
+// WaitWarmup blocks until in-flight background refresh workers finish,
+// or until ctx is done. Used to drain work during graceful shutdown.
+func (s *ClassroomService) WaitWarmup(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() {
+		s.refreshWorkers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
 	attempt, started := s.startClassroomRefresh(now)
 	if !started {

@@ -4,6 +4,7 @@ import (
 	"BUPT_EC/logs"
 	"compress/gzip"
 	"embed"
+	"io"
 	"io/fs"
 	"net/http"
 	"strings"
@@ -50,6 +51,25 @@ func SetRouter(r *gin.Engine) {
 	}
 
 	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
+
+	r.NoRoute(func(c *gin.Context) {
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.JSON(http.StatusNotFound, gin.H{"code": http.StatusNotFound, "msg": "not found"})
+			return
+		}
+		file, err := f.Open("frontend/dist/index.html")
+		if err != nil {
+			c.Status(http.StatusNotFound)
+			return
+		}
+		defer file.Close()
+		data, err := io.ReadAll(file)
+		if err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+	})
 }
 
 type gzipResponseWriter struct {

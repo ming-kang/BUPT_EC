@@ -59,5 +59,8 @@ func main() {
 		if err := server.Shutdown(ctx); err != nil {
 			log.Fatalf("server shutdown failed: %v", err)
 		}
+		if err := classroomService.WaitWarmup(ctx); err != nil {
+			log.Printf("background refresh did not finish before shutdown: %v", err)
+		}
 	}
 }

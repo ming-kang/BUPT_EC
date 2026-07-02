@@ -52,6 +52,28 @@ func TestReadyzRequiresUsableCache(t *testing.T) {
 	}
 }
 
+func TestNoRouteServesSPAFallback(t *testing.T) {
+	router := gin.New()
+	SetRouter(router)
+
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("SPA fallback status = %d, want %d", w.Code, http.StatusOK)
+	}
+	if ct := w.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("SPA fallback Content-Type = %q, want text/html", ct)
+	}
+
+	w = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/api/nonexistent", nil)
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("unknown api route status = %d, want %d", w.Code, http.StatusNotFound)
+	}
+}
+
 func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
 	router := gin.New()
 	router.Use(gzipMiddleware())

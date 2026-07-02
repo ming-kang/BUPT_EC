@@ -17,9 +17,10 @@ func GetData(c *gin.Context) {
 	todayData, err := classroomService.GetTodayClassrooms(ctx)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
-			"code": http.StatusServiceUnavailable,
-			"msg":  service.SafeErrorMessage(err),
-			"data": nil,
+			"code":   http.StatusServiceUnavailable,
+			"msg":    service.SafeErrorMessage(err),
+			"log_id": logs.GetLogIDFromContext(ctx),
+			"data":   nil,
 		})
 		return
 	}
