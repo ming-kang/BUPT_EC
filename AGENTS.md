@@ -1,111 +1,70 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, `handler.go`, and `init.go`. Domain logic is under `service/` (with JSON shapes in `service/model/`), shared helpers under `utils/`, caching under `cache/`, logging under `logs/`, and runtime configuration loading under `config/`. The frontend lives in `frontend/src/`, with reusable components in `frontend/src/components/`, static assets in `frontend/src/assets/`, and public static files in `frontend/public/`. Deployment automation lives in `scripts/install.sh`; CI and release definitions live under `.github/workflows/`. Dependencies are managed manually (no Dependabot). The release artifacts are `bupt-ec-linux-amd64.tar.gz` and `bupt-ec-linux-arm64.tar.gz`; on a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
+This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, `handler.go`, and `init.go`; `init.go` constructs the single `service.ClassroomService` instance used by the handlers. Domain logic is under `service/`, split into focused files: `classroom_service.go` (struct + `CacheStore`), `realtime_data.go` (public API + refresh data flow), `jw_client.go` (`JWClient` interface + HTTP protocol layer), `token_manager.go`, `refresh_coordinator.go`, `runtime_status.go`, `classroom_builder.go`, `jw_error.go`, `crypto.go`, `urlutil.go`, with JSON shapes in `service/model/`. Shared helpers are under `utils/`, caching under `cache/`, logging under `logs/`, runtime configuration under `config/`. The frontend lives in `frontend/src/` with components in `frontend/src/components/`; selection state lives in `frontend/src/selectionContext.js` + `SelectionProvider.jsx`. Deployment automation is `scripts/install.sh`; release helpers are `scripts/release.sh` and `scripts/extract-changelog.sh`; CI definitions live under `.github/workflows/` (`ci.yml` for PRs, `release.yml` for main pushes and tags). Dependencies are managed manually (no Dependabot). On a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
+
+User-facing documentation lives in `README.md` (overview) and `docs/` (`deployment.md`, `upgrading.md`, `operations.md`, `development.md`, `release.md`). Keep these in sync when behavior, endpoints, configuration, or the release process change.
 
 ## Build, Test, and Development Commands
 - `go run ./` starts the backend locally. `JW_USERNAME` and `JW_PASSWORD` (or `JW_TOKEN`) must be set; the backend reads them from a `.env` file via `godotenv`. Build `frontend/dist/` first if it is missing because the backend embeds it via `//go:embed frontend/dist` in `router.go`.
 - `go build -o bupt-ec -v ./` builds the backend binary. Run `cd frontend; pnpm build` first when building locally; CI builds the frontend and downloads the artifact into `frontend/dist/` before compiling Go.
-- `go test ./...` runs Go tests. `service/realtime_data_test.go` contains unit tests (`TestEncryptJWPassword`, `TestParseRoom`) that always run plus integration tests (`TestLogin`, `TestQueryOne`, `TestQueryAll`) that need valid `JW_USERNAME`/`JW_PASSWORD` and skip otherwise.
+- `go test ./...` runs Go tests (CI runs `go test -race ./...`). Unit tests in `service/realtime_data_test.go` and `handler_test.go` always run and never touch the network; integration tests (`TestLogin`, `TestQueryOne`, `TestQueryAll`) need valid `JW_USERNAME`/`JW_PASSWORD` and skip otherwise.
+- `gofmt -l .` must print nothing and `go vet ./...` must pass; both are enforced in CI.
 - `cd frontend; pnpm install` installs frontend dependencies from `pnpm-lock.yaml` (lockfile v9, pnpm 9.15.x).
 - `cd frontend; pnpm dev` starts the Vite development server; it proxies `/api` to `http://localhost:8080` (see `frontend/vite.config.js`).
-- `cd frontend; pnpm build` creates `frontend/dist/` for backend static serving and CI artifacts.
-- `cd frontend; pnpm lint` runs ESLint for JS/JSX files.
-- Pushing to `main` (or a `v*` tag, or `workflow_dispatch`) triggers the `Release` workflow, which builds Linux `amd64`/`arm64` archives plus `bupt-ec-linux-*.tar.gz`, `checksums.txt`, and `install.sh` from the bundled binary (see "Release Process" below).
+- `cd frontend; pnpm build` creates `frontend/dist/`; `cd frontend; pnpm lint` runs ESLint.
 
 ## Architecture and Data Flow
-- Single public endpoint: `GET /api/get_data`, defined in `router.go` and implemented by `handler.go` → `service.GetData` → `service.GetTodayClassrooms`.
-- The backend does **not** maintain a local timetable database. `service/realtime_data.go` calls the BUPT JW system on demand:
-  - `https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json` resolves the live API base URL (with a fallback default in `DefaultAPIURL`).
-  - `POST /login` performs an AES-encrypted password login and stores the returned token in memory.
-  - `POST /todayClassrooms?campusId=01|04` fetches Xitucheng (`01`) and Shahe (`04`) classroom rows. Response shapes live in `service/model/realtime_data.go` (`JWClassInfo`, `QueryResponse`, `TodayClassrooms`, etc.).
-- Results are normalized into a `TodayClassrooms` payload grouped by `campus` → `buildings` → `rooms` with `free_nodes`/`free_times`, plus a `nodes` list of class periods. See `service/realtime_data.go::buildCampusInfo` and the `parseRoom`/`splitRoomName` helpers that handle rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)`.
-- The `TokenManager` (`service/realtime_data.go`) refreshes the token on auth failure and supports an emergency `JW_TOKEN` env override for debugging.
+- Public endpoint `GET /api/get_data` is defined in `router.go` and implemented by `handler.go::GetData` → `classroomService.GetTodayClassrooms`. Operational endpoints are `/healthz` and `/readyz` (runtime status). Unknown non-API paths fall back to the embedded `index.html` (SPA fallback in `router.go`); unknown `/api/*` paths return JSON 404.
+- All mutable runtime state lives on the `ClassroomService` struct — there are no package-level mutable globals in `service/`. The struct owns the `TokenManager`, a `CacheStore`, the campus list, a `JWClient`, refresh-coordination state, and `RuntimeStatus`.
+- The backend does **not** maintain a local timetable database. It calls the BUPT JW system on demand through the stateless `JWClient` interface (`jw_client.go`):
+  - `FetchAPIURL`: `https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json` resolves the live API base URL (validated by `urlutil.go`, fallback in `DefaultAPIURL`).
+  - `Login`: AES-encrypted password login (`crypto.go`); the token is cached in memory by `TokenManager` with `singleflight` dedup and re-login on auth failures. `JW_TOKEN` is an emergency env override.
+  - `QueryCampus`: `POST /todayClassrooms?campusId=01|04` for Xitucheng (`01`) and Shahe (`04`). Response shapes live in `service/model/realtime_data.go`.
+- Results are normalized into a `TodayClassrooms` payload grouped by `campus` → `buildings` → `rooms` with `free_nodes`/`free_times`, plus a `nodes` list of class periods. See `service/classroom_builder.go` (`buildCampusInfo`, `parseRoom`, `splitRoomName`) for rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)`.
+- Refreshes are single-flight (`refresh_coordinator.go`): concurrent requests share one attempt; failures set a 30-second backoff; graceful shutdown waits via `WaitWarmup`.
 
 ## Caching
-- `cache/cache.go` wraps `github.com/patrickmn/go-cache` with a 5-minute fresh TTL and 1-minute janitor interval.
-- A single `TODAY_CLASSROOMS_CACHE` key holds the `*model.TodayClassrooms` value for the current day. `service.GetTodayClassrooms` first returns the fresh cache, then attempts a refresh; on failure it falls back to a `stale=true` response until `endOfDay(now)`. Cross-day cache reuse is rejected by `getCachedTodayClassrooms`.
+- `cache/cache.go` wraps `github.com/patrickmn/go-cache`; `cache.GlobalCache` satisfies the `service.CacheStore` interface directly.
+- A single `TODAY_CLASSROOMS_CACHE` key holds the `*model.TodayClassrooms` value for the current day: fresh for ~5 minutes, then served with `stale=true` until `endOfDay(now)` while background refreshes run. Cross-day cache reuse is rejected by `getCachedTodayClassrooms`.
 - The cache is process-local; restarting the backend or running multiple instances does not share it.
 
+## Logging
+- The `logs` package configures `log/slog` with a JSON handler writing to stdout, plus `run_log/ec.log` (lumberjack rotation) when `logs.Init(true)` is called from `Init`.
+- Every `/api/*` request gets a `log_id` (set by `logs.SetNewContextForGinContext`); a custom handler wrapper stamps it onto every record. It is also returned in the `LogID` response header and in the body of API error responses.
+- Log with `slog.InfoContext(ctx, "msg", "key", value)` style calls so the `log_id` is attached; do not use `log.Printf` in request paths.
+
 ## Coding Style & Naming Conventions
-- Format Go code with `gofmt`; keep package names short and lowercase. Use exported names only for cross-package APIs (e.g., `service.GetData`, `service.GetTodayClassrooms`, `config.GetConfig`).
+- Format Go code with `gofmt`; keep package names short and lowercase. Use exported names only for cross-package APIs (e.g., `service.NewClassroomService`, `service.SafeErrorMessage`, `config.GetConfig`).
 - The Go module name is `BUPT_EC`; all internal imports use that prefix (e.g., `"BUPT_EC/service"`, `"BUPT_EC/cache"`).
-- React components use PascalCase filenames such as `BuildingPicker.jsx`; component-specific styles sit beside them as matching `.css` files. The main result table component is `TodayClassroomTable.jsx` with class `.today-classroom-table`. The frontend `package.json` `name` is `bupt-ec`.
-- JavaScript modules use ES modules, React hooks, and 2-space indentation consistent with the existing frontend. ESLint config (`frontend/.eslintrc.cjs`) enforces `eslint:recommended`, `plugin:react/recommended`, and `react-refresh/only-export-components` (allowConstantExport).
+- React components use PascalCase filenames such as `BuildingPicker.jsx`; component-specific styles sit beside them as matching `.css` files. Shared frontend state goes through `useSelection()` from `selectionContext.js` rather than prop drilling.
+- JavaScript modules use ES modules, React hooks, and 2-space indentation. ESLint config (`frontend/.eslintrc.cjs`) enforces `eslint:recommended`, `plugin:react/recommended`, and `react-refresh/only-export-components` — keep component files exporting only components (hooks/constants go in separate `.js` files).
 
 ## Testing Guidelines
-- Go tests use the standard `testing` package and follow `TestXxx` naming in `*_test.go` files. Place backend tests near the package they verify, for example `service/realtime_data_test.go`.
-- Integration-like service tests call `ResetRuntimeStateForTest()` so they start with a clean `TokenManager` and cache. They require valid `JW_USERNAME` and `JW_PASSWORD` (or `JW_TOKEN`) values, otherwise they `t.Skip` cleanly with a clear message.
+- Go tests use the standard `testing` package and follow `TestXxx` naming in `*_test.go` files placed next to the package they verify.
+- Service unit tests create an isolated `ClassroomService` per test via `newTestService(t, client)`, injecting a `mockJWClient` (an implementation of the `JWClient` interface) and a fresh `gocache` instance — no shared globals, no cleanup calls needed. Handler tests assign the package-level `classroomService` in `main` directly.
+- Integration tests require valid `JW_USERNAME`/`JW_PASSWORD` (or `JW_TOKEN`) and otherwise `t.Skip` cleanly with a clear message.
 - The frontend currently has lint/build checks but no test framework configured.
 
-## Commit & Pull Request Guidelines
-- History uses Conventional Commit prefixes such as `feat:`, `fix:`, `chore:`, `ci:`, and `docs:`. Keep commit messages concise and scoped to one change.
+## Commit, Changelog & Pull Request Guidelines
+- History uses Conventional Commit prefixes such as `feat:`, `fix:`, `chore:`, `ci:`, `docs:`, and `refactor:`. Keep commit messages concise and scoped to one change.
+- User-visible changes must add a bullet to the `[Unreleased]` section of `CHANGELOG.md` in the same commit (Keep a Changelog categories: Added/Changed/Fixed/Removed/Deprecated/Security, plus Dependencies). Internal-only changes may skip it. This section becomes the release notes verbatim.
 - Pull requests should include a short description, linked issue when applicable, test/build commands run, and screenshots for visible frontend changes.
 - Do not mix module renames, dependency updates, and behavior changes in a single commit.
 
 ## Release Process
+See [docs/release.md](docs/release.md) for the full picture. Key facts:
 
-The `Release` workflow (`.github/workflows/release.yml`) is fully automatic. There are two trigger paths producing two different release flavors.
-
-### Triggers
-
-| Trigger | What happens |
-|---|---|
-| `git push origin main` | Builds and publishes the rolling `nightly` **prerelease** (overwritten on every push) |
-| `git tag v0.1.0 && git push origin v0.1.0` | Builds and publishes the immutable `v0.1.0` stable release |
-| Actions tab → `Run workflow` | Manual run for the current `main` HEAD (dry-run) |
-
-### Workflow jobs
-
-All three triggers run the same four jobs in sequence:
-
-1. `quality-gate` runs frontend install/lint/build, Go tests, `govulncheck`, and `shellcheck scripts/install.sh`.
-2. `build-frontend` builds the React app with pnpm 9 and Node 22, then uploads `frontend/dist/` as an artifact named `frontend-dist`.
-3. `build-go` (matrix `amd64` + `arm64`) downloads the frontend artifact and compiles the Go 1.25 binary for each architecture, uploading each as `bupt-ec-linux-${goarch}`.
-4. `release` downloads the binaries, wraps each one with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests release assets with `actions/attest-build-provenance`, and publishes via `softprops/action-gh-release`. The publish step branches on `github.ref_type`:
-   - `tag`: creates a stable release at that semver tag.
-   - `branch` (main push): deletes the previous `nightly` release and tag with `gh release delete nightly --cleanup-tag`, then re-creates a `nightly` prerelease in its place.
-
-### Resulting releases
-
-Both release flavors publish the same four assets:
-
-- `bupt-ec-linux-amd64.tar.gz`
-- `bupt-ec-linux-arm64.tar.gz`
-- `checksums.txt`
-- `install.sh`
-
-The `nightly` prerelease URL is `https://github.com/ming-kang/BUPT_EC/releases/tag/nightly`. A `v*` stable release URL is `https://github.com/ming-kang/BUPT_EC/releases/tag/<tag>`.
-
-The install script (`scripts/install.sh`) downloads the matching tarball, so the assets above must keep their exact filenames and directory layout:
-
-```
-bupt-ec-linux-${arch}/
-  bupt-ec
-  .env.example
-  README.md
-  install.sh
-```
-
-## Toolchain Versions
-
-Pinned via the workflows and `go.mod`. No Dependabot; bump dependencies by hand when needed.
-
-- Go: 1.25 (per `go.mod` `go` directive and `actions/setup-go` `go-version`)
-- Node: 22 LTS (per `actions/setup-node` `node-version` in both workflows)
-- pnpm: 9.15.x (per `corepack prepare` in both workflows, lockfile v9 in `frontend/pnpm-lock.yaml`)
-- All `actions/*` and `softprops/action-gh-release` are pinned to 40-character commit SHAs (see comments in the workflow YAMLs) for supply-chain safety. To bump a pin, find the new SHA for the target tag with `git ls-remote`:
-
-  ```bash
-  git ls-remote https://github.com/actions/checkout.git refs/tags/v4
-  ```
-
-  Update the comment and the `uses:` ref in the workflow, then commit.
+- Every push to `main` republishes the rolling `nightly` prerelease; pushing a `v*` tag publishes an immutable stable release whose notes come from the matching `CHANGELOG.md` section (extracted by `scripts/extract-changelog.sh`).
+- Cut stable releases with `scripts/release.sh vX.Y.Z` — it rolls the changelog, bumps `frontend/package.json`, commits, tags, and pushes. Do not hand-edit tags or release notes.
+- PRs are validated by `.github/workflows/ci.yml`; direct pushes to `main` are validated by the `quality-gate` job in `release.yml` (frontend lint/build, gofmt, vet, `go test -race`, govulncheck, shellcheck on `scripts/*.sh`).
+- Release assets must keep their exact names and layout (`bupt-ec-linux-${arch}.tar.gz` containing `bupt-ec`, `.env.example`, `README.md`, `install.sh`, plus top-level `checksums.txt` and `install.sh`) because `scripts/install.sh` depends on them.
+- Toolchain: Go 1.25, Node 22, pnpm 9.15.x. All GitHub Actions are pinned to 40-character commit SHAs; bump pins by resolving the new SHA with `git ls-remote` and updating both the ref and the comment.
 
 ## Security & Configuration Tips
 - Do not commit real `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, generated logs, or private config data. Use `.env.example` as the template for local secrets.
 - `APP_ADDR` controls the listen address, commonly `127.0.0.1:8080` behind Nginx. The server defaults to `:8080`.
-- The `logs` package writes to `run_log/ec.log` (relative to the working directory) when `logs.Init(true)` is called from `Init`; the working directory of the systemd unit is `${INSTALL_DIR}`, so the path becomes `/opt/bupt-ec/run_log/ec.log` after install. Keep `run_log/` and `.env` out of version control.
-- The AES key for JW password encryption (`tokenPasswordKey` in `service/realtime_data.go`) is compiled into the binary; rotating it requires a new release. Do not log JW passwords or tokens.
+- The `logs` package writes to `run_log/ec.log` relative to the working directory; on an installed server that is `/opt/bupt-ec/run_log/ec.log`. Keep `run_log/` and `.env` out of version control.
+- The AES key for JW password encryption (`tokenPasswordKey` in `service/crypto.go`) matches the JW system protocol and is compiled into the binary; do not change it, and do not log JW passwords or tokens.
 - The backend talks directly to the BUPT teaching affairs HTTP endpoints and uses only same-day in-memory cache data; do not reintroduce local timetable databases unless explicitly requested.
 - The installer (`scripts/install.sh`) hardens the systemd unit with `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, and a dedicated `bupt-ec` system user. Keep the env file at `/etc/bupt-ec/bupt-ec.env` mode `0600` and owned by `root`.

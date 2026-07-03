@@ -1,0 +1,83 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Add user-visible changes to the `[Unreleased]` section as part of the change itself. `scripts/release.sh` turns that section into the next version entry, and the Release workflow publishes it as the GitHub release notes. See [docs/release.md](docs/release.md) for the full release process.
+
+## [Unreleased]
+
+### Added
+
+- SPA fallback route: unknown non-API paths serve `index.html`; unknown `/api/*` paths return JSON 404.
+- Error responses from `/api/get_data` include a `log_id` field for correlating with server logs.
+- Graceful shutdown waits for in-flight background classroom refreshes to finish.
+- Frontend auto-reloads classroom data when the cached payload expires (`expires_at`).
+- Error boundary around the lazy-loaded classroom table with a visible failure message.
+- This changelog, plus `scripts/release.sh` for cutting releases; stable release notes are now taken from the matching changelog section.
+
+### Changed
+
+- Documentation reorganized: `README.md` is a short overview, with detailed guides under `docs/` (deployment, upgrading, operations, development, release).
+- CI reorganized: pull requests are validated by `ci.yml`; pushes to `main` by the release quality gate. The quality gate now also enforces `gofmt`, `go vet`, and the race detector.
+- Logging migrated to `log/slog` with structured JSON output; every request-scoped record carries a `log_id`.
+- Backend refactored from package-level globals to a `ClassroomService` struct with a stateless `JWClient` interface; tests now use interface mocks instead of function-pointer swapping.
+- `service/realtime_data.go` split into focused files (token manager, refresh coordinator, JW client, classroom builder, error classification, runtime status, crypto, URL utilities).
+- Frontend selection state moved from prop drilling to a `useReducer` + Context store; display preferences initialize from `localStorage` on first render.
+- Dark-mode disabled-button styling moved from inline styles to CSS; `isDark` prop removed from `ClassTimePicker`.
+
+### Fixed
+
+- Invalid Ant Design button `type="outline"` replaced with `type="default"` in building and class-time pickers.
+
+### Dependencies
+
+- gin v1.9.1 → v1.12.0; gin-contrib/static v0.0.1 → v1.1.6.
+
+## [0.1.3] - 2026-06-16
+
+### Added
+
+- Classroom detail modal improvements.
+
+### Fixed
+
+- Backend refresh stability improvements.
+
+## [0.1.2] - 2026-06-16
+
+### Changed
+
+- Frontend bundles split for faster loading.
+
+### Fixed
+
+- Token is refreshed on JW business-level auth errors, not only HTTP 401/403.
+- Installer and release documentation aligned with actual behavior.
+
+## [0.1.1] - 2026-06-14
+
+### Changed
+
+- Frontend UI refresh.
+- Vulnerable Go dependencies updated.
+
+### Added
+
+- Existing-certificate VPS deployment documentation.
+
+## [0.1.0] - 2026-06-14
+
+### Added
+
+- Initial release: Go/Gin backend querying the BUPT JW `todayClassrooms` endpoint with automatic HTTP login, same-day in-memory cache, and an embedded React/Ant Design frontend.
+- Xitucheng and Shahe campus support with building and class-period filters.
+- One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
+- Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
+
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/ming-kang/BUPT_EC/releases/tag/v0.1.0
