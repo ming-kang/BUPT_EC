@@ -8,6 +8,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-03
+
 ### Added
 
 - SPA fallback route: unknown non-API paths serve `index.html`; unknown `/api/*` paths return JSON 404.
@@ -76,7 +78,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
 - Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
 
-[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.0...v0.1.1
