@@ -24,7 +24,8 @@ if [[ -n "$(git status --porcelain)" ]]; then
   exit 1
 fi
 
-git fetch origin main --tags
+# --force lets the rolling nightly tag update instead of failing the fetch.
+git fetch --force origin main --tags
 if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
   echo "Local main is not in sync with origin/main; pull or push first." >&2
   exit 1
