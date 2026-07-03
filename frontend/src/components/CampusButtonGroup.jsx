@@ -2,23 +2,13 @@ import PropTypes from "prop-types";
 import { Button } from "antd";
 import { Fragment, Suspense, lazy, useState } from "react";
 import { SettingOutlined } from "@ant-design/icons";
+import { useSelection } from "../selectionContext";
 import "./CampusButtonGroup.css";
 
 const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
 
-function CampusButtonGroup(props) {
-  const {
-    campuses,
-    todayData,
-    selectedCampus,
-    setSelectedCampus,
-    setSelectedBuildings,
-    setSelectedClassTimes,
-    showClassTime,
-    setShowClassTime,
-    canSelectAllDay,
-    setCanSelectAllDay,
-  } = props;
+function CampusButtonGroup({ campuses, todayData }) {
+  const { state, dispatch } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
   const settingsSplitIndex = Math.floor(campuses.length / 2);
 
@@ -36,12 +26,8 @@ function CampusButtonGroup(props) {
               />
             ) : null}
             <Button
-              type={selectedCampus === campus.id ? "primary" : "default"}
-              onClick={() => {
-                setSelectedCampus(campus.id);
-                setSelectedBuildings([]);
-                setSelectedClassTimes([]);
-              }}
+              type={state.selectedCampus === campus.id ? "primary" : "default"}
+              onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
             >
               {campus.name}
             </Button>
@@ -53,10 +39,6 @@ function CampusButtonGroup(props) {
           <CampusSettingsModal
             open={openSettingModal}
             todayData={todayData}
-            showClassTime={showClassTime}
-            setShowClassTime={setShowClassTime}
-            canSelectAllDay={canSelectAllDay}
-            setCanSelectAllDay={setCanSelectAllDay}
             onClose={() => setOpenSettingModal(false)}
           />
         </Suspense>
@@ -73,14 +55,6 @@ CampusButtonGroup.propTypes = {
     })
   ).isRequired,
   todayData: PropTypes.object.isRequired,
-  selectedCampus: PropTypes.string,
-  setSelectedCampus: PropTypes.func,
-  setSelectedBuildings: PropTypes.func,
-  setSelectedClassTimes: PropTypes.func,
-  showClassTime: PropTypes.bool,
-  setShowClassTime: PropTypes.func,
-  canSelectAllDay: PropTypes.bool,
-  setCanSelectAllDay: PropTypes.func,
 };
 
 export default CampusButtonGroup;

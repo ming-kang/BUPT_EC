@@ -1,8 +1,11 @@
 import PropTypes from "prop-types";
 import { Button, Divider, Modal, Switch, Typography } from "antd";
 import { GithubOutlined } from "@ant-design/icons";
+import { useSelection } from "../selectionContext";
 
 function CampusSettingsModal(props) {
+  const { state, dispatch } = useSelection();
+
   return (
     <Modal
       title="设置"
@@ -21,11 +24,8 @@ function CampusSettingsModal(props) {
           }}
         >
           <Switch
-            checked={props.showClassTime}
-            onChange={(v) => {
-              localStorage.setItem("showClassTime", v ? "true" : "false");
-              props.setShowClassTime(v);
-            }}
+            checked={state.showClassTime}
+            onChange={(v) => dispatch({ type: "SET_SHOW_CLASS_TIME", value: v })}
             size="small"
           />
           <Typography.Text>显示课程时间</Typography.Text>
@@ -39,11 +39,10 @@ function CampusSettingsModal(props) {
           }}
         >
           <Switch
-            checked={props.canSelectAllDay}
-            onChange={(v) => {
-              localStorage.setItem("canSelectAllDay", v ? "true" : "false");
-              props.setCanSelectAllDay(v);
-            }}
+            checked={state.canSelectAllDay}
+            onChange={(v) =>
+              dispatch({ type: "SET_CAN_SELECT_ALL_DAY", value: v })
+            }
             size="small"
           />
           <Typography.Text>全选时包含已结束节次</Typography.Text>
@@ -91,10 +90,6 @@ function CampusSettingsModal(props) {
 CampusSettingsModal.propTypes = {
   open: PropTypes.bool.isRequired,
   todayData: PropTypes.object.isRequired,
-  showClassTime: PropTypes.bool,
-  setShowClassTime: PropTypes.func,
-  canSelectAllDay: PropTypes.bool,
-  setCanSelectAllDay: PropTypes.func,
   onClose: PropTypes.func,
 };
 

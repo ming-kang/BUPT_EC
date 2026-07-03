@@ -1,5 +1,6 @@
 import PropTypes from "prop-types";
 import { Button, Card } from "antd";
+import { useSelection } from "../selectionContext";
 import "./BuildingPicker.css";
 
 const BUILDING_ALIASES = {
@@ -13,30 +14,29 @@ function displayBuildingName(name) {
   return /^\d+$/.test(trimmed) ? `教${trimmed}` : name;
 }
 
-function BuildingPicker(props) {
-  if (!props.selectedCampusData) {
+function BuildingPicker({ selectedCampusData }) {
+  const { state, dispatch } = useSelection();
+
+  if (!selectedCampusData) {
     return null;
   }
 
-  const selectedBuildings = props.selectedBuildings || [];
-  const buildings = Array.isArray(props.selectedCampusData.buildings)
-    ? props.selectedCampusData.buildings
+  const selectedBuildings = state.selectedBuildings || [];
+  const buildings = Array.isArray(selectedCampusData.buildings)
+    ? selectedCampusData.buildings
     : [];
 
   return (
     <Card className="building-picker responsive-card">
       {buildings.map((building) => (
         <Button
-          key={`${props.selectedCampusData.id}-${building.name}`}
-          type={selectedBuildings.includes(building.name) ? "primary" : "outline"}
+          key={`${selectedCampusData.id}-${building.name}`}
+          type={selectedBuildings.includes(building.name) ? "primary" : "default"}
           onClick={() => {
-            if (selectedBuildings.includes(building.name)) {
-              props.setSelectedBuildings(
-                selectedBuildings.filter((x) => x !== building.name)
-              );
-            } else {
-              props.setSelectedBuildings([...selectedBuildings, building.name]);
-            }
+            const next = selectedBuildings.includes(building.name)
+              ? selectedBuildings.filter((x) => x !== building.name)
+              : [...selectedBuildings, building.name];
+            dispatch({ type: "SET_BUILDINGS", buildings: next });
           }}
         >
           {displayBuildingName(building.name)}
@@ -48,8 +48,6 @@ function BuildingPicker(props) {
 
 BuildingPicker.propTypes = {
   selectedCampusData: PropTypes.object,
-  selectedBuildings: PropTypes.array,
-  setSelectedBuildings: PropTypes.func,
 };
 
 export default BuildingPicker;

@@ -4,9 +4,12 @@ import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
 import BuildingPicker from "./components/BuildingPicker";
 import ClassTimePicker from "./components/ClassTimePicker";
+import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
+import SelectionProvider from "./SelectionProvider";
+import { useSelection } from "./selectionContext";
 
 const TodayClassroomTable = lazy(
   () => import("./components/TodayClassroomTable")
@@ -22,13 +25,10 @@ function formatDateWithWeekday(dateStr) {
   return `${dateStr} · ${WEEKDAY_LABELS[date.getDay()]}`;
 }
 
-function App() {
+function AppContent() {
   const { resp, spinning, isError, retry } = useTodayClassrooms();
-  const [selectedCampus, setSelectedCampus] = useState("");
-  const [selectedBuildings, setSelectedBuildings] = useState([]);
-  const [selectedClassTimes, setSelectedClassTimes] = useState([]);
-  const [showClassTime, setShowClassTime] = useState(false);
-  const [canSelectAllDay, setCanSelectAllDay] = useState(false);
+  const { state, dispatch } = useSelection();
+  const { selectedCampus, selectedBuildings, selectedClassTimes } = state;
   const [isDark, setIsDark] = useState(false);
 
   const { Title } = Typography;
@@ -64,9 +64,6 @@ function App() {
     mql.addEventListener("change", matchMode);
     matchMode(mql);
 
-    setShowClassTime(localStorage.getItem("showClassTime") !== "false");
-    setCanSelectAllDay(localStorage.getItem("canSelectAllDay") === "true");
-
     return () => {
       mql.removeEventListener("change", matchMode);
     };
@@ -75,9 +72,7 @@ function App() {
   useEffect(() => {
     if (campuses.length === 0) {
       if (selectedCampus !== "") {
-        setSelectedCampus("");
-        setSelectedBuildings([]);
-        setSelectedClassTimes([]);
+        dispatch({ type: "SET_CAMPUS", id: "" });
       }
       return;
     }
@@ -85,11 +80,9 @@ function App() {
     if (!campuses.some((campus) => campus.id === selectedCampus)) {
       const preferred =
         campuses.find((campus) => campus.name === "沙河") || campuses[0];
-      setSelectedCampus(preferred.id);
-      setSelectedBuildings([]);
-      setSelectedClassTimes([]);
+      dispatch({ type: "SET_CAMPUS", id: preferred.id });
     }
-  }, [campuses, selectedCampus]);
+  }, [campuses, selectedCampus, dispatch]);
 
   return (
     <ConfigProvider
@@ -120,46 +113,44 @@ function App() {
               }
             />
           ) : null}
-          <CampusButtonGroup
-            campuses={campuses}
-            todayData={resp}
-            selectedCampus={selectedCampus}
-            setSelectedCampus={setSelectedCampus}
-            setSelectedBuildings={setSelectedBuildings}
-            setSelectedClassTimes={setSelectedClassTimes}
-            showClassTime={showClassTime}
-            setShowClassTime={setShowClassTime}
-            canSelectAllDay={canSelectAllDay}
-            setCanSelectAllDay={setCanSelectAllDay}
-          />
-          <BuildingPicker
-            selectedCampusData={selectedCampusData}
-            selectedBuildings={selectedBuildings}
-            setSelectedBuildings={setSelectedBuildings}
-          />
+          <CampusButtonGroup campuses={campuses} todayData={resp} />
+          <BuildingPicker selectedCampusData={selectedCampusData} />
           <ClassTimePicker
             selectedCampusData={selectedCampusData}
             todayDate={resp.data?.date}
-            selectedClassTimes={selectedClassTimes}
-            setSelectedClassTimes={setSelectedClassTimes}
-            showClassTime={showClassTime}
-            canSelectAllDay={canSelectAllDay}
-            isDark={isDark}
           />
           {selectedCampusData ? (
-            <Suspense fallback={null}>
-              <TodayClassroomTable
-                selectedCampusData={selectedCampusData}
-                selectedBuildings={selectedBuildings}
-                selectedClassTimes={selectedClassTimes}
-              />
-            </Suspense>
+            <ErrorBoundary
+              fallback={
+                <Alert
+                  type="error"
+                  showIcon
+                  message="教室列表加载失败，请刷新页面重试"
+                />
+              }
+            >
+              <Suspense fallback={null}>
+                <TodayClassroomTable
+                  selectedCampusData={selectedCampusData}
+                  selectedBuildings={selectedBuildings}
+                  selectedClassTimes={selectedClassTimes}
+                />
+              </Suspense>
+            </ErrorBoundary>
           ) : null}
           <GlobalEmpty todayData={resp} isError={isError} onRetry={retry} />
           <Footer />
         </div>
       </Spin>
     </ConfigProvider>
+  );
+}
+
+function App() {
+  return (
+    <SelectionProvider>
+      <AppContent />
+    </SelectionProvider>
   );
 }
 

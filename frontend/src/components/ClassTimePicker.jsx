@@ -1,11 +1,13 @@
 import PropTypes from "prop-types";
 import { Button, Card } from "antd";
 import { useEffect, useState } from "react";
+import { useSelection } from "../selectionContext";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
 
-function ClassTimePicker(props) {
+function ClassTimePicker({ selectedCampusData, todayDate }) {
+  const { state, dispatch } = useSelection();
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -22,16 +24,16 @@ function ClassTimePicker(props) {
     return () => window.clearTimeout(timeoutID);
   }, []);
 
-  if (!props.selectedCampusData) {
+  if (!selectedCampusData) {
     return null;
   }
 
-  const selectedClassTimes = props.selectedClassTimes || [];
-  const options = Array.isArray(props.selectedCampusData.nodes)
-    ? props.selectedCampusData.nodes
+  const selectedClassTimes = state.selectedClassTimes || [];
+  const options = Array.isArray(selectedCampusData.nodes)
+    ? selectedCampusData.nodes
     : [];
   const nowTime = now.toTimeString().slice(0, 5);
-  const isToday = props.todayDate === formatLocalDate(now);
+  const isToday = todayDate === formatLocalDate(now);
 
   const normalizedOptions = options.map((item) => {
     const [, endTime = ""] = String(item.time || "").split("-");
@@ -39,7 +41,7 @@ function ClassTimePicker(props) {
       ...item,
       disabled:
         endTime.localeCompare(nowTime) < 0 &&
-        !props.canSelectAllDay &&
+        !state.canSelectAllDay &&
         isToday,
     };
   });
@@ -54,12 +56,15 @@ function ClassTimePicker(props) {
 
   function onCheckAllChange() {
     if (isAllChecked()) {
-      props.setSelectedClassTimes([]);
+      dispatch({ type: "SET_CLASS_TIMES", times: [] });
       return;
     }
-    props.setSelectedClassTimes(
-      normalizedOptions.filter((item) => !item.disabled).map((item) => item.node)
-    );
+    dispatch({
+      type: "SET_CLASS_TIMES",
+      times: normalizedOptions
+        .filter((item) => !item.disabled)
+        .map((item) => item.node),
+    });
   }
 
   function renderTime(time, index) {
@@ -72,28 +77,18 @@ function ClassTimePicker(props) {
       {normalizedOptions.map((item) => (
         <Button
           key={item.node}
-          type={selectedClassTimes.includes(item.node) ? "primary" : "outline"}
-          className={props.showClassTime ? "time-slot-show-time" : ""}
+          type={selectedClassTimes.includes(item.node) ? "primary" : "default"}
+          className={state.showClassTime ? "time-slot-show-time" : ""}
           onClick={() => {
-            if (selectedClassTimes.includes(item.node)) {
-              props.setSelectedClassTimes(
-                selectedClassTimes.filter((node) => node !== item.node)
-              );
-            } else {
-              props.setSelectedClassTimes([...selectedClassTimes, item.node]);
-            }
-          }}
-          style={{
-            color: item.disabled
-              ? props.isDark
-                ? "rgba(255,255,255,0.45)"
-                : "rgba(0,0,0,0.45)"
-              : undefined,
+            const times = selectedClassTimes.includes(item.node)
+              ? selectedClassTimes.filter((node) => node !== item.node)
+              : [...selectedClassTimes, item.node];
+            dispatch({ type: "SET_CLASS_TIMES", times });
           }}
           disabled={item.disabled}
         >
           <div>
-            {props.showClassTime ? (
+            {state.showClassTime ? (
               <div
                 style={{
                   fontSize: "0.7em",
@@ -104,7 +99,7 @@ function ClassTimePicker(props) {
               </div>
             ) : null}
             {String(item.node).padStart(2, "0")}
-            {props.showClassTime ? (
+            {state.showClassTime ? (
               <div
                 style={{
                   fontSize: "0.7em",
@@ -118,8 +113,8 @@ function ClassTimePicker(props) {
         </Button>
       ))}
       <Button
-        type={isAllChecked() ? "primary" : "outline"}
-        className={`select-all-btn ${props.showClassTime ? "time-slot-show-time" : ""}`}
+        type={isAllChecked() ? "primary" : "default"}
+        className={`select-all-btn ${state.showClassTime ? "time-slot-show-time" : ""}`}
         onClick={onCheckAllChange}
       >
         {isAllChecked() ? "取消" : "全选"}
@@ -150,11 +145,6 @@ function msUntilNextFiveMinuteTick(date) {
 ClassTimePicker.propTypes = {
   selectedCampusData: PropTypes.object,
   todayDate: PropTypes.string,
-  selectedClassTimes: PropTypes.array,
-  setSelectedClassTimes: PropTypes.func,
-  showClassTime: PropTypes.bool,
-  canSelectAllDay: PropTypes.bool,
-  isDark: PropTypes.bool,
 };
 
 export default ClassTimePicker;

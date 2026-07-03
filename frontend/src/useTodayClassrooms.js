@@ -102,6 +102,21 @@ export default function useTodayClassrooms() {
     setReloadKey((current) => current + 1);
   }, []);
 
+  useEffect(() => {
+    if (resp.code !== 0 || !resp.data?.expires_at) {
+      return;
+    }
+    const expiresAt = new Date(resp.data.expires_at).getTime();
+    if (!Number.isFinite(expiresAt)) {
+      return;
+    }
+    const delay = Math.max(expiresAt - Date.now(), 60_000);
+    const timer = setTimeout(() => {
+      setReloadKey((current) => current + 1);
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [resp]);
+
   return {
     resp,
     spinning,
