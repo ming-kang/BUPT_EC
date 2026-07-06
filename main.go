@@ -17,23 +17,22 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-var classroomService *service.ClassroomService
-
-func Init() {
+func Init() *service.ClassroomService {
 	logs.Init(true)
 	config.InitConfig()
 	if err := config.ValidateRuntimeConfig(); err != nil {
 		log.Fatalf("invalid runtime config: %v", err)
 	}
 	cache.InitCache()
-	classroomService = service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
+	return service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
 }
 
 func main() {
-	Init()
+	classroomService := Init()
 	r := gin.New()
 	r.Use(gin.Recovery())
-	SetRouter(r)
+	httpServer := NewHTTPServer(classroomService, config.HasJWCredentials)
+	httpServer.RegisterRoutes(r)
 	classroomService.StartWarmup()
 	addr := os.Getenv("APP_ADDR")
 	if addr == "" {

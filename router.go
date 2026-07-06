@@ -39,15 +39,15 @@ func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
 	}
 }
 
-func SetRouter(r *gin.Engine) {
+func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 	r.Use(gzipMiddleware())
 
-	r.GET("/healthz", Healthz)
-	r.GET("/readyz", Readyz)
+	r.GET("/healthz", server.Healthz)
+	r.GET("/readyz", server.Readyz)
 
 	apiGroup := r.Group("/api").Use(logs.SetNewContextForGinContext)
 	{
-		apiGroup.GET("/get_data", GetData)
+		apiGroup.GET("/get_data", server.GetData)
 	}
 
 	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))

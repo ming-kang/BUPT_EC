@@ -11,9 +11,9 @@ deployment/release tooling in `scripts/` and `docs/`.
 
 ```text
 .
-├── main.go                    # process startup, service init, and graceful shutdown
-├── router.go                  # Gin routes, gzip middleware, embedded SPA
-├── handler.go                 # HTTP handlers delegating to ClassroomService
+├── main.go                    # process startup, service init, HTTPServer wiring, graceful shutdown
+├── router.go                  # HTTPServer route registration, gzip middleware, embedded SPA
+├── handler.go                 # HTTPServer boundary delegating to injected ClassroomService
 ├── config/                    # environment loading and campus config
 ├── logs/                      # slog setup and per-request log_id context
 ├── cache/                     # process-local go-cache adapter
@@ -31,20 +31,22 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
 ## Entry Points and HTTP Layer
 
 - `main.go` owns process lifetime and startup initialization. Its `Init()`
-  function configures logs/config/cache and constructs the single application
-  `service.ClassroomService` from `config.GetConfig()` and `cache.GlobalCache`.
-  `main()` starts background warmup, builds a Gin router through `SetRouter`,
-  and drains warmup work during graceful shutdown with
-  `ClassroomService.WaitWarmup`.
-- `router.go` owns route registration, gzip handling, static frontend serving,
-  and SPA fallback. API routes live under `/api` and receive
+  function configures logs/config/cache and returns the single application
+  `service.ClassroomService` built from `config.GetConfig()` and
+  `cache.GlobalCache`. `main()` injects that service plus
+  `config.HasJWCredentials` into `NewHTTPServer`, starts background warmup, and
+  drains warmup work during graceful shutdown with `ClassroomService.WaitWarmup`.
+- `router.go` owns `HTTPServer.RegisterRoutes`, gzip handling, static frontend
+  serving, and SPA fallback. API routes live under `/api` and receive
   `logs.SetNewContextForGinContext`.
-- `handler.go` should stay thin. Handlers read the request context, log the
-  operation, call `classroomService`, and shape HTTP responses.
+- `handler.go` should stay thin. `HTTPServer` methods read the request context,
+  log the operation, call the injected `classroomDataService`, and shape HTTP
+  responses.
 
-When adding an endpoint, register it in `router.go`, implement the smallest
-possible handler in `handler.go`, and put data access or transformation in
-`service/`. Do not call the JW HTTP API directly from handlers.
+When adding an endpoint, register it in `HTTPServer.RegisterRoutes`, implement
+the smallest possible method in `handler.go`, and put data access or
+transformation in `service/`. Do not call the JW HTTP API directly from
+handlers.
 
 ## Service Package Ownership
 
@@ -82,7 +84,8 @@ API shapes:
   `RoomInfo`, `NodeInfo`, `FreeTime`, and `APIError`.
 
 When changing a public JSON tag or field, update the backend builder/handler,
-the frontend consumer in `frontend/src/useTodayClassrooms.js`, any affected
+the frontend consumer in `frontend/src/useTodayClassrooms.js`, the envelope
+normalization helpers in `frontend/src/todayClassroomsResponse.js`, any affected
 components, tests, docs, and `CHANGELOG.md` if the behavior is user-visible.
 
 ## Naming Conventions
@@ -96,8 +99,8 @@ components, tests, docs, and `CHANGELOG.md` if the behavior is user-visible.
   `refresh_coordinator.go`, `classroom_builder.go`) rather than broad utility
   files.
 - Tests live beside the code they verify as `*_test.go`. Service tests use the
-  `service` package; handler tests use `main` and may replace the package-level
-  `classroomService` directly.
+  `service` package; handler tests use `main` and inject fake dependencies via
+  `NewHTTPServer`.
 
 ## Anti-Patterns
 

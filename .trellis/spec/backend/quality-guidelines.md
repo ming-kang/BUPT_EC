@@ -48,8 +48,9 @@ Local test patterns:
 - Integration tests such as `TestLogin`, `TestQueryOne`, and `TestQueryAll`
   require `JW_TOKEN` or `JW_USERNAME`/`JW_PASSWORD` and must skip cleanly when
   credentials are missing.
-- Handler tests can assign the package-level `classroomService` directly and
-  use `httptest` plus `gin.New()`.
+- Handler tests should inject deterministic fakes through `NewHTTPServer` and
+  use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
+  middleware such as `/api` `log_id` correlation matters.
 
 Avoid tests that only restate the implementation. Prefer tests that protect
 contract edges, race-prone behavior, security checks, or user-visible output.
@@ -63,6 +64,15 @@ finishing substantial backend changes:
 gofmt -l .
 go vet ./...
 go test ./...
+```
+
+For frontend source, API-normalization, selection-state, or package changes,
+also run:
+
+```bash
+pnpm --dir "frontend" lint
+pnpm --dir "frontend" test
+pnpm --dir "frontend" build
 ```
 
 CI and release quality gates also run:
@@ -86,6 +96,7 @@ the backend payload directly. Before changing `service/model/realtime_data.go`,
 `classroom_builder.go`, or `handler.go`, inspect these frontend files:
 
 - `frontend/src/useTodayClassrooms.js` for fetch and normalization.
+- `frontend/src/todayClassroomsResponse.js` for API envelope normalization.
 - `frontend/src/components/BuildingPicker.jsx` for building assumptions.
 - `frontend/src/components/ClassTimePicker.jsx` for campus node assumptions.
 - `frontend/src/components/TodayClassroomTable.jsx` for `free_nodes` filtering.

@@ -1,20 +1,44 @@
 package main
 
 import (
-	"BUPT_EC/config"
-	"BUPT_EC/logs"
-	"BUPT_EC/service"
+	"context"
 	"log/slog"
 	"net/http"
+
+	"BUPT_EC/logs"
+	"BUPT_EC/service"
+	"BUPT_EC/service/model"
 
 	"github.com/gin-gonic/gin"
 )
 
-func GetData(c *gin.Context) {
+type classroomDataService interface {
+	GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error)
+	GetRuntimeStatus() service.RuntimeStatus
+	HasUsableTodayCache() bool
+}
+
+type HTTPServer struct {
+	classroomService classroomDataService
+	hasJWCredentials func() bool
+}
+
+func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool) *HTTPServer {
+	if hasJWCredentials == nil {
+		hasJWCredentials = func() bool { return false }
+	}
+
+	return &HTTPServer{
+		classroomService: classroomService,
+		hasJWCredentials: hasJWCredentials,
+	}
+}
+
+func (server *HTTPServer) GetData(c *gin.Context) {
 	ctx := logs.GetContextFromGinContext(c)
 	slog.InfoContext(ctx, "GetData")
 
-	todayData, err := classroomService.GetTodayClassrooms(ctx)
+	todayData, err := server.classroomService.GetTodayClassrooms(ctx)
 	if err != nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{
 			"code":   http.StatusServiceUnavailable,
@@ -31,14 +55,14 @@ func GetData(c *gin.Context) {
 	})
 }
 
-func Healthz(c *gin.Context) {
+func (server *HTTPServer) Healthz(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
-func Readyz(c *gin.Context) {
-	status := classroomService.GetRuntimeStatus()
-	configured := config.HasJWCredentials()
-	ready := configured && classroomService.HasUsableTodayCache()
+func (server *HTTPServer) Readyz(c *gin.Context) {
+	status := server.classroomService.GetRuntimeStatus()
+	configured := server.hasJWCredentials()
+	ready := configured && server.classroomService.HasUsableTodayCache()
 	code := http.StatusOK
 	if !ready {
 		code = http.StatusServiceUnavailable

@@ -53,17 +53,19 @@ go test ./...              # unit tests always run; integration tests skip
 go test -race ./...        # what CI runs
 go vet ./...
 gofmt -l .                 # must print nothing
-cd frontend && pnpm lint && pnpm build
+cd frontend && pnpm lint && pnpm test && pnpm build
 ```
 
 Integration tests (`TestLogin`, `TestQueryOne`, `TestQueryAll` in `service/realtime_data_test.go`) hit the real JW system and require `JW_USERNAME`/`JW_PASSWORD` (or `JW_TOKEN`); without credentials they skip with a clear message.
 
 Unit tests never touch the network: they inject a `mockJWClient` (implementing the `JWClient` interface) into a fresh `ClassroomService` with an isolated cache per test — see `newTestService` in `service/realtime_data_test.go`.
 
+Frontend behavior tests use Vitest and focus on API envelope normalization plus selection-state transitions and preference persistence. Run them with `pnpm test` from `frontend/`.
+
 ## Project structure
 
 ```text
-main.go, router.go, handler.go            Gin entry points; main.go wires the ClassroomService
+main.go, router.go, handler.go            Gin entry points; main.go wires ClassroomService into HTTPServer
 service/
   classroom_service.go   ClassroomService struct, CacheStore interface, constructor
   realtime_data.go       public API: GetTodayClassrooms, QueryOne/All, refresh data flow
@@ -84,6 +86,7 @@ frontend/src/            React app (Vite + Ant Design)
   selectionContext.js    selection state: reducer + useSelection hook
   SelectionProvider.jsx  context provider
   useTodayClassrooms.js  data fetching + auto-refresh on expires_at
+  todayClassroomsResponse.js  API envelope normalization helpers
   components/            UI components (pickers, table, modal, ErrorBoundary)
 scripts/                 install.sh, release.sh, extract-changelog.sh
 .github/workflows/       ci.yml (PRs), release.yml (main pushes + tags)
@@ -97,7 +100,7 @@ There is one public API endpoint, `GET /api/get_data`, plus `/healthz` and `/rea
 2. `POST <api>/login` performs an AES-encrypted password login and yields a token, held in memory only.
 3. `POST <api>/todayClassrooms?campusId=01|04` fetches classroom rows for Xitucheng (`01`) and Shahe (`04`).
 
-All runtime state lives on the `ClassroomService` struct (created once in `main.go::Init` and injected into handlers):
+All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` creates one service instance, `main()` passes it to `NewHTTPServer`, and `HTTPServer.RegisterRoutes` registers methods from that injected boundary:
 
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `defaultJWClient` talks to the real system; tests substitute `mockJWClient`.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override, and re-logs-in when a query fails with an auth error.
@@ -109,7 +112,7 @@ Logging is `log/slog` with a JSON handler; a custom wrapper adds the per-request
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data`, normalizes the payload, and schedules an automatic reload when `expires_at` passes.
+- `useTodayClassrooms.js` fetches `/api/get_data` and schedules an automatic reload when `expires_at` passes; `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.
 - Dark mode follows `prefers-color-scheme` and toggles both the Ant Design theme algorithm and a `body.dark` class used by component CSS.

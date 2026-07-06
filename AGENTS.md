@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, and `handler.go`; `main.go` owns process startup and constructs the single `service.ClassroomService` instance used by the handlers. Domain logic is under `service/`, split into focused files: `classroom_service.go` (struct + `CacheStore`), `realtime_data.go` (public API + refresh data flow), `jw_client.go` (`JWClient` interface + HTTP protocol layer), `token_manager.go`, `refresh_coordinator.go`, `runtime_status.go`, `classroom_builder.go`, `jw_error.go`, `crypto.go`, `urlutil.go`, with JSON shapes in `service/model/`. Shared helpers are under `utils/`, caching under `cache/`, logging under `logs/`, runtime configuration under `config/`. The frontend lives in `frontend/src/` with components in `frontend/src/components/`; selection state lives in `frontend/src/selectionContext.js` + `SelectionProvider.jsx`. Deployment automation is `scripts/install.sh`; release helpers are `scripts/release.sh` and `scripts/extract-changelog.sh`; CI definitions live under `.github/workflows/` (`ci.yml` for PRs, `release.yml` for main pushes and tags). Dependencies are managed manually (no Dependabot). On a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
+This repository contains a Go 1.25 backend (Go module `BUPT_EC`) and a React/Vite frontend for a BUPT empty-classroom query service. Backend entry points live at `main.go`, `router.go`, and `handler.go`; `main.go` owns process startup, constructs the single `service.ClassroomService` instance, and injects it into `HTTPServer` before route registration. Domain logic is under `service/`, split into focused files: `classroom_service.go` (struct + `CacheStore`), `realtime_data.go` (public API + refresh data flow), `jw_client.go` (`JWClient` interface + HTTP protocol layer), `token_manager.go`, `refresh_coordinator.go`, `runtime_status.go`, `classroom_builder.go`, `jw_error.go`, `crypto.go`, `urlutil.go`, with JSON shapes in `service/model/`. Shared helpers are under `utils/`, caching under `cache/`, logging under `logs/`, runtime configuration under `config/`. The frontend lives in `frontend/src/` with components in `frontend/src/components/`; selection state lives in `frontend/src/selectionContext.js` + `SelectionProvider.jsx`. Deployment automation is `scripts/install.sh`; release helpers are `scripts/release.sh` and `scripts/extract-changelog.sh`; CI definitions live under `.github/workflows/` (`ci.yml` for PRs, `release.yml` for main pushes and tags). Dependencies are managed manually (no Dependabot). On a deployed server the systemd unit is `bupt-ec.service` under `/opt/bupt-ec`.
 
 User-facing documentation lives in `README.md` (overview) and `docs/` (`deployment.md`, `upgrading.md`, `operations.md`, `development.md`, `release.md`). Keep these in sync when behavior, endpoints, configuration, or the release process change.
 
@@ -13,9 +13,10 @@ User-facing documentation lives in `README.md` (overview) and `docs/` (`deployme
 - `cd frontend; pnpm install` installs frontend dependencies from `pnpm-lock.yaml` (lockfile v9, pnpm 9.15.x).
 - `cd frontend; pnpm dev` starts the Vite development server; it proxies `/api` to `http://localhost:8080` (see `frontend/vite.config.js`).
 - `cd frontend; pnpm build` creates `frontend/dist/`; `cd frontend; pnpm lint` runs ESLint.
+- `cd frontend; pnpm test` runs the focused Vitest behavior tests.
 
 ## Architecture and Data Flow
-- Public endpoint `GET /api/get_data` is defined in `router.go` and implemented by `handler.go::GetData` → `classroomService.GetTodayClassrooms`. Operational endpoints are `/healthz` and `/readyz` (runtime status). Unknown non-API paths fall back to the embedded `index.html` (SPA fallback in `router.go`); unknown `/api/*` paths return JSON 404.
+- Public endpoint `GET /api/get_data` is defined by `HTTPServer.RegisterRoutes` in `router.go` and implemented by `handler.go::HTTPServer.GetData` → injected `classroomService.GetTodayClassrooms`. Operational endpoints are `/healthz` and `/readyz` (runtime status). Unknown non-API paths fall back to the embedded `index.html` (SPA fallback in `router.go`); unknown `/api/*` paths return JSON 404.
 - All mutable runtime state lives on the `ClassroomService` struct — there are no package-level mutable globals in `service/`. The struct owns the `TokenManager`, a `CacheStore`, the campus list, a `JWClient`, refresh-coordination state, and `RuntimeStatus`.
 - The backend does **not** maintain a local timetable database. It calls the BUPT JW system on demand through the stateless `JWClient` interface (`jw_client.go`):
   - `FetchAPIURL`: `https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json` resolves the live API base URL (validated by `urlutil.go`, fallback in `DefaultAPIURL`).
@@ -42,9 +43,9 @@ User-facing documentation lives in `README.md` (overview) and `docs/` (`deployme
 
 ## Testing Guidelines
 - Go tests use the standard `testing` package and follow `TestXxx` naming in `*_test.go` files placed next to the package they verify.
-- Service unit tests create an isolated `ClassroomService` per test via `newTestService(t, client)`, injecting a `mockJWClient` (an implementation of the `JWClient` interface) and a fresh `gocache` instance — no shared globals, no cleanup calls needed. Handler tests assign the package-level `classroomService` in `main` directly.
+- Service unit tests create an isolated `ClassroomService` per test via `newTestService(t, client)`, injecting a `mockJWClient` (an implementation of the `JWClient` interface) and a fresh `gocache` instance — no shared globals, no cleanup calls needed. Handler tests inject a deterministic fake through `NewHTTPServer` instead of mutating package-level service state.
 - Integration tests require valid `JW_USERNAME`/`JW_PASSWORD` (or `JW_TOKEN`) and otherwise `t.Skip` cleanly with a clear message.
-- The frontend currently has lint/build checks but no test framework configured.
+- Frontend behavior tests use Vitest for API envelope normalization and selection-state behavior. Keep additions focused on meaningful regression risk rather than runner-only smoke tests.
 
 ## Commit, Changelog & Pull Request Guidelines
 - History uses Conventional Commit prefixes such as `feat:`, `fix:`, `chore:`, `ci:`, `docs:`, and `refactor:`. Keep commit messages concise and scoped to one change.

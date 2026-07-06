@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -228,6 +229,171 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	if cached, ok := svc.getCachedTodayClassrooms(); !ok || cached.Date != now.Format("2006-01-02") {
 		t.Fatalf("expected same-day cache hit, got %#v ok=%t", cached, ok)
 	}
+}
+
+func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
+	var queryCalls atomic.Int32
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			queryCalls.Add(1)
+			return nil, errors.New("fresh cache should not query JW")
+		},
+	}
+	classroomServiceUnderTest := newTestService(t, client)
+
+	now := time.Now()
+	classroomServiceUnderTest.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       now.Format("2006-01-02"),
+		UpdatedAt:  now,
+		ExpiresAt:  now.Add(time.Minute),
+		StaleUntil: endOfDay(now),
+		Campuses: []model.CampusInfo{
+			{ID: "cached", Name: "cached campus"},
+		},
+	}, time.Hour)
+
+	response, err := classroomServiceUnderTest.GetTodayClassrooms(context.Background())
+	if err != nil {
+		t.Fatalf("GetTodayClassrooms() error = %v", err)
+	}
+	if response.Stale {
+		t.Fatal("expected fresh cache response to be non-stale")
+	}
+	if response.Error != nil {
+		t.Fatalf("expected fresh cache response without API error, got %#v", response.Error)
+	}
+	if len(response.Campuses) != 1 || response.Campuses[0].ID != "cached" {
+		t.Fatalf("unexpected cached campuses: %#v", response.Campuses)
+	}
+	if queryCalls.Load() != 0 {
+		t.Fatalf("expected no JW query for fresh cache, got %d", queryCalls.Load())
+	}
+}
+
+func TestQueryAllBuildsTodayClassroomsFromJWFixture(t *testing.T) {
+	t.Setenv(LoginTokenKey, "fixture-token")
+	rowsByCampus := map[string][]model.JWClassInfo{
+		"01": {
+			{
+				NodeName:   "2",
+				NodeTime:   "09:00-09:45",
+				Classrooms: "教学实验综合楼-N104(229),未来学习大楼-202-203(60),教学实验综合楼-N104(229)",
+			},
+			{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N104(229)",
+			},
+		},
+		"04": {
+			{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "沙河教学楼-S101(40)",
+			},
+		},
+	}
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			rows, ok := rowsByCampus[campusID]
+			if !ok {
+				return nil, fmt.Errorf("unexpected campus query: %s", campusID)
+			}
+			return rows, nil
+		},
+	}
+	classroomServiceUnderTest := newTestService(t, client)
+
+	response, err := classroomServiceUnderTest.QueryAll(context.Background())
+	if err != nil {
+		t.Fatalf("QueryAll() error = %v", err)
+	}
+	if response.Stale {
+		t.Fatal("expected refreshed fixture response to be non-stale")
+	}
+	if response.Error != nil {
+		t.Fatalf("expected refreshed fixture response without API error, got %#v", response.Error)
+	}
+	if len(response.Campuses) != 2 {
+		t.Fatalf("expected two campuses, got %#v", response.Campuses)
+	}
+
+	xituchengCampus := requireCampusByID(t, response.Campuses, "01")
+	if xituchengCampus.Name != "西土城" {
+		t.Fatalf("campus 01 name = %q, want 西土城", xituchengCampus.Name)
+	}
+	expectedNodes := []model.NodeInfo{
+		{Node: 1, Time: "08:00-08:45", RoomCount: 1},
+		{Node: 2, Time: "09:00-09:45", RoomCount: 2},
+	}
+	if !reflect.DeepEqual(xituchengCampus.Nodes, expectedNodes) {
+		t.Fatalf("campus 01 nodes = %#v, want %#v", xituchengCampus.Nodes, expectedNodes)
+	}
+
+	standardRoom := requireRoomByDisplayName(t, requireBuildingByName(t, xituchengCampus.Buildings, "教学实验综合楼").Rooms, "教学实验综合楼-N104")
+	if standardRoom.Name != "N104" || standardRoom.Capacity != 229 {
+		t.Fatalf("unexpected standard room metadata: %#v", standardRoom)
+	}
+	if !reflect.DeepEqual(standardRoom.FreeNodes, []int{1, 2}) {
+		t.Fatalf("standard room free_nodes = %#v, want [1 2]", standardRoom.FreeNodes)
+	}
+	expectedStandardFreeTimes := []model.FreeTime{
+		{Node: 1, Time: "08:00-08:45"},
+		{Node: 2, Time: "09:00-09:45"},
+	}
+	if !reflect.DeepEqual(standardRoom.FreeTimes, expectedStandardFreeTimes) {
+		t.Fatalf("standard room free_times = %#v, want %#v", standardRoom.FreeTimes, expectedStandardFreeTimes)
+	}
+
+	mergedRoom := requireRoomByDisplayName(t, requireBuildingByName(t, xituchengCampus.Buildings, "未来学习大楼").Rooms, "未来学习大楼-202-203")
+	if mergedRoom.Name != "202-203" || mergedRoom.Capacity != 60 {
+		t.Fatalf("unexpected merged room metadata: %#v", mergedRoom)
+	}
+	if !reflect.DeepEqual(mergedRoom.FreeNodes, []int{2}) {
+		t.Fatalf("merged room free_nodes = %#v, want [2]", mergedRoom.FreeNodes)
+	}
+
+	shaheCampus := requireCampusByID(t, response.Campuses, "04")
+	if shaheCampus.Name != "沙河" {
+		t.Fatalf("campus 04 name = %q, want 沙河", shaheCampus.Name)
+	}
+	shaheRoom := requireRoomByDisplayName(t, requireBuildingByName(t, shaheCampus.Buildings, "沙河教学楼").Rooms, "沙河教学楼-S101")
+	if shaheRoom.Capacity != 40 || !reflect.DeepEqual(shaheRoom.FreeNodes, []int{1}) {
+		t.Fatalf("unexpected shahe room shape: %#v", shaheRoom)
+	}
+}
+
+func requireCampusByID(t *testing.T, campuses []model.CampusInfo, campusID string) model.CampusInfo {
+	t.Helper()
+	for _, campus := range campuses {
+		if campus.ID == campusID {
+			return campus
+		}
+	}
+	t.Fatalf("campus %q not found in %#v", campusID, campuses)
+	return model.CampusInfo{}
+}
+
+func requireBuildingByName(t *testing.T, buildings []model.BuildingInfo, buildingName string) model.BuildingInfo {
+	t.Helper()
+	for _, building := range buildings {
+		if building.Name == buildingName {
+			return building
+		}
+	}
+	t.Fatalf("building %q not found in %#v", buildingName, buildings)
+	return model.BuildingInfo{}
+}
+
+func requireRoomByDisplayName(t *testing.T, rooms []model.RoomInfo, displayName string) model.RoomInfo {
+	t.Helper()
+	for _, room := range rooms {
+		if room.DisplayName == displayName {
+			return room
+		}
+	}
+	t.Fatalf("room %q not found in %#v", displayName, rooms)
+	return model.RoomInfo{}
 }
 
 func TestClassifyErrorHandlesJoinedJWError(t *testing.T) {

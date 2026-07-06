@@ -1,0 +1,29 @@
+{
+  "id": "refactor-maintainability",
+  "name": "refactor-maintainability",
+  "title": "重构维护性总任务",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-07-06",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-06-behavior-safety-net",
+    "07-06-injected-http-boundary"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
