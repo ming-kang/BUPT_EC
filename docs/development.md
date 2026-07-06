@@ -63,7 +63,7 @@ Unit tests never touch the network: they inject a `mockJWClient` (implementing t
 ## Project structure
 
 ```text
-main.go, router.go, handler.go, init.go   Gin entry points; init.go wires the ClassroomService
+main.go, router.go, handler.go            Gin entry points; main.go wires the ClassroomService
 service/
   classroom_service.go   ClassroomService struct, CacheStore interface, constructor
   realtime_data.go       public API: GetTodayClassrooms, QueryOne/All, refresh data flow
@@ -97,7 +97,7 @@ There is one public API endpoint, `GET /api/get_data`, plus `/healthz` and `/rea
 2. `POST <api>/login` performs an AES-encrypted password login and yields a token, held in memory only.
 3. `POST <api>/todayClassrooms?campusId=01|04` fetches classroom rows for Xitucheng (`01`) and Shahe (`04`).
 
-All runtime state lives on the `ClassroomService` struct (created once in `init.go` and injected into handlers):
+All runtime state lives on the `ClassroomService` struct (created once in `main.go::Init` and injected into handlers):
 
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `defaultJWClient` talks to the real system; tests substitute `mockJWClient`.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override, and re-logs-in when a query fails with an auth error.

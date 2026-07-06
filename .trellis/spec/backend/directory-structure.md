@@ -11,8 +11,7 @@ deployment/release tooling in `scripts/` and `docs/`.
 
 ```text
 .
-├── main.go                    # process startup and graceful shutdown
-├── init.go                    # config, log, cache, and service initialization
+├── main.go                    # process startup, service init, and graceful shutdown
 ├── router.go                  # Gin routes, gzip middleware, embedded SPA
 ├── handler.go                 # HTTP handlers delegating to ClassroomService
 ├── config/                    # environment loading and campus config
@@ -31,11 +30,12 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
 
 ## Entry Points and HTTP Layer
 
-- `main.go` owns process lifetime. It calls `Init()`, starts background warmup,
-  builds a Gin router through `SetRouter`, and drains warmup work during
-  graceful shutdown with `ClassroomService.WaitWarmup`.
-- `init.go` constructs the single application `service.ClassroomService` from
-  `config.GetConfig()` and `cache.GlobalCache`.
+- `main.go` owns process lifetime and startup initialization. Its `Init()`
+  function configures logs/config/cache and constructs the single application
+  `service.ClassroomService` from `config.GetConfig()` and `cache.GlobalCache`.
+  `main()` starts background warmup, builds a Gin router through `SetRouter`,
+  and drains warmup work during graceful shutdown with
+  `ClassroomService.WaitWarmup`.
 - `router.go` owns route registration, gzip handling, static frontend serving,
   and SPA fallback. API routes live under `/api` and receive
   `logs.SetNewContextForGinContext`.

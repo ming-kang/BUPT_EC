@@ -1,0 +1,5 @@
+{"file":".trellis/spec/backend/index.md","reason":"Verify final cleanup obeys project-level backend rules and tracked workflow boundaries."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Verify docs/specs match the final file layout and root entry-point ownership."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify relevant checks and docs/changelog requirements were satisfied or documented."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check batch edits for missed duplicated references or stale path mentions."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check cross-layer path assumptions across docs, CI, frontend embed, and Trellis files."}

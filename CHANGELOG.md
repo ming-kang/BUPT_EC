@@ -8,6 +8,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Changed
+
+- Tidied repository structure by folding backend startup initialization into
+  `main.go` and refreshing ignore rules for local-only project artifacts.
+
 ## [0.1.4] - 2026-07-03
 
 ### Added
