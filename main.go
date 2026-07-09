@@ -27,6 +27,16 @@ func Init() *service.ClassroomService {
 	return service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
 }
 
+// listenAddr returns the HTTP listen address from APP_ADDR.
+// When env is empty, default to loopback so an unbound process is not
+// reachable on all interfaces.
+func listenAddr(env string) string {
+	if env == "" {
+		return "127.0.0.1:8080"
+	}
+	return env
+}
+
 func main() {
 	classroomService := Init()
 	r := gin.New()
@@ -34,10 +44,7 @@ func main() {
 	httpServer := NewHTTPServer(classroomService, config.HasJWCredentials)
 	httpServer.RegisterRoutes(r)
 	classroomService.StartWarmup()
-	addr := os.Getenv("APP_ADDR")
-	if addr == "" {
-		addr = ":8080"
-	}
+	addr := listenAddr(os.Getenv("APP_ADDR"))
 
 	server := &http.Server{
 		Addr:              addr,

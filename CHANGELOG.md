@@ -10,6 +10,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Security
 
+- Default listen address is `127.0.0.1:8080` when `APP_ADDR` is unset (no longer
+  binds all interfaces via `:8080`).
 - JW outbound HTTP no longer follows redirects, so custom `token` headers and
   login form bodies cannot be sent to unvalidated hosts.
 
