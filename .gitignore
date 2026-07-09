@@ -29,6 +29,7 @@ config/*.json
 
 # Project-local workflow files
 .claude/
+mcps/
 
 # IDE, OS, and editor junk
 .idea/
