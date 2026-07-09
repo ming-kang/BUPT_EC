@@ -231,6 +231,89 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	}
 }
 
+func TestCacheExpirationAlwaysPositive(t *testing.T) {
+	now := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
+	staleUntil := endOfDay(now)
+	d := cacheExpiration(now, staleUntil)
+	if d <= 0 {
+		t.Fatalf("cacheExpiration positive day = %s, want > 0", d)
+	}
+	if want := staleUntil.Sub(now); d != want {
+		t.Fatalf("cacheExpiration = %s, want %s", d, want)
+	}
+
+	// Past or equal StaleUntil must not yield a non-positive go-cache TTL.
+	if got := cacheExpiration(now, now); got != time.Second {
+		t.Fatalf("cacheExpiration(now, now) = %s, want 1s", got)
+	}
+	if got := cacheExpiration(now, now.Add(-time.Hour)); got != time.Second {
+		t.Fatalf("cacheExpiration past StaleUntil = %s, want 1s", got)
+	}
+	if got := cacheExpiration(now, now.Add(500*time.Millisecond)); got != time.Second {
+		t.Fatalf("cacheExpiration sub-second remaining = %s, want 1s", got)
+	}
+}
+
+func TestDoRefreshStampsCacheAtCompletionAcrossMidnight(t *testing.T) {
+	beforeMidnight := time.Date(2026, 7, 9, 23, 59, 50, 0, businessLocation)
+	afterMidnight := time.Date(2026, 7, 10, 0, 0, 5, 0, businessLocation)
+
+	var mu sync.Mutex
+	current := beforeMidnight
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			mu.Lock()
+			current = afterMidnight
+			mu.Unlock()
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+	svc.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return current
+	}
+
+	resp, err := svc.doRefreshTodayClassrooms(context.Background())
+	if err != nil {
+		t.Fatalf("doRefreshTodayClassrooms() error = %v", err)
+	}
+
+	wantDate := afterMidnight.Format("2006-01-02")
+	if resp.Date != wantDate {
+		t.Fatalf("Date = %q, want completion day %q", resp.Date, wantDate)
+	}
+	if !resp.UpdatedAt.Equal(afterMidnight) {
+		t.Fatalf("UpdatedAt = %v, want %v", resp.UpdatedAt, afterMidnight)
+	}
+	if wantExp := afterMidnight.Add(classroomFreshTTL); !resp.ExpiresAt.Equal(wantExp) {
+		t.Fatalf("ExpiresAt = %v, want %v", resp.ExpiresAt, wantExp)
+	}
+	wantStaleUntil := endOfDay(afterMidnight)
+	if !resp.StaleUntil.Equal(wantStaleUntil) {
+		t.Fatalf("StaleUntil = %v, want %v", resp.StaleUntil, wantStaleUntil)
+	}
+	if d := cacheExpiration(afterMidnight, resp.StaleUntil); d <= 0 {
+		t.Fatalf("cache TTL would be non-positive: %s", d)
+	}
+
+	cached, ok := svc.getCachedTodayClassrooms()
+	if !ok {
+		t.Fatal("expected completion-day cache hit")
+	}
+	if cached.Date != wantDate {
+		t.Fatalf("cached Date = %q, want %q", cached.Date, wantDate)
+	}
+	if !cached.StaleUntil.Equal(wantStaleUntil) {
+		t.Fatalf("cached StaleUntil = %v, want %v", cached.StaleUntil, wantStaleUntil)
+	}
+}
+
 func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 	var queryCalls atomic.Int32
 	client := &mockJWClient{

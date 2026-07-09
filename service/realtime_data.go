@@ -156,7 +156,6 @@ type campusQueryResult struct {
 }
 
 func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
-	now := s.now()
 	results := make([]campusQueryResult, len(s.campuses))
 
 	var group errgroupNoCancel
@@ -193,6 +192,10 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model
 		}
 		return nil, errors.Join(errs...)
 	}
+
+	// Stamp metadata at refresh completion so a JW round-trip that straddles
+	// Asia/Shanghai midnight is labeled with the completion business day (not start).
+	now := s.now()
 
 	previousByID := map[string]model.CampusInfo{}
 	if prev, ok := s.getCachedTodayClassrooms(); ok {
@@ -232,8 +235,20 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model
 		Error:      apiErr,
 	}
 
-	s.cache.Set(TodayCacheKey, today, time.Until(today.StaleUntil))
+	s.cache.Set(TodayCacheKey, today, cacheExpiration(now, today.StaleUntil))
 	return classroomResponse(today, false, apiErr), nil
+}
+
+// cacheExpiration returns the go-cache TTL for a today-classrooms entry.
+// go-cache treats non-positive durations as never-expire; clamp to a short
+// positive TTL if StaleUntil is not after now (defensive; completion-time
+// stamping normally keeps StaleUntil in the future).
+func cacheExpiration(now, staleUntil time.Time) time.Duration {
+	d := staleUntil.Sub(now)
+	if d < time.Second {
+		return time.Second
+	}
+	return d
 }
 
 func emptyCampusInfo(campusConfig config.CampusConfig) model.CampusInfo {

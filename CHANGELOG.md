@@ -17,6 +17,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Classroom cache `Date`/`ExpiresAt`/`StaleUntil` are stamped at refresh
+  completion (not start), so a JW refresh that straddles Asia/Shanghai midnight
+  is labeled for the completion day and never stored with a non-positive
+  go-cache TTL.
 - HTTP `WriteTimeout` is now longer than the cold classroom refresh budget so
   clients are not cut off when a shared refresh succeeds near the previous 30s
   limit.
