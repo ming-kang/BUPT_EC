@@ -79,10 +79,20 @@ func (s *ClassroomService) runWarmupOnce() {
 func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	now := s.now()
 	if cached, ok := s.getCachedTodayClassrooms(); ok {
-		if !cached.ExpiresAt.Before(now) {
-			return classroomResponse(cached, false, cached.Error), nil
+		fresh := !cached.ExpiresAt.Before(now)
+		// Fully fresh success: serve without touching JW.
+		if fresh && cached.Error == nil {
+			return classroomResponse(cached, false, nil), nil
 		}
+		// Soft-stale: past fresh TTL, or partial-campus error still inside the
+		// fresh window. Always return usable data; kick/share a refresh so a
+		// failed campus is retried without waiting the full 5m TTL. Single-flight
+		// and failure/partial backoff prevent JW thrashing.
 		if now.Before(cached.StaleUntil) {
+			if fresh {
+				s.startClassroomRefresh(now)
+				return classroomResponse(cached, false, cached.Error), nil
+			}
 			return s.getStaleTodayClassrooms(ctx, cached, now), nil
 		}
 	}

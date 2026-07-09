@@ -948,6 +948,160 @@ func TestDoRefreshAllCampusesFail(t *testing.T) {
 	}
 }
 
+// Partial-campus error must not freeze retries for the full fresh TTL: a later
+// Get inside the old ExpiresAt window should still kick a background refresh
+// (subject to single-flight + 30s backoff).
+func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
+	t.Setenv(LoginTokenKey, "token")
+
+	var mu sync.Mutex
+	var shaheCalls int
+	var allCalls int
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			mu.Lock()
+			allCalls++
+			if campusID == "04" {
+				shaheCalls++
+			}
+			mu.Unlock()
+			if campusID == "04" {
+				return nil, newJWError(jwErrorQuery, "jw query", nil, "shahe still down")
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+
+	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
+	svc.now = func() time.Time { return fixed }
+
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       fixed.Format("2006-01-02"),
+		UpdatedAt:  fixed.Add(-time.Minute),
+		ExpiresAt:  fixed.Add(4 * time.Minute), // still inside full fresh TTL
+		StaleUntil: endOfDay(fixed),
+		Campuses: []model.CampusInfo{
+			{ID: "01", Name: "西土城", Buildings: []model.BuildingInfo{{Name: "教学实验综合楼"}}},
+			{ID: "04", Name: "沙河"},
+		},
+		Error: &model.APIError{
+			Type:    string(jwErrorQuery),
+			Message: partialCampusErrorMessage,
+		},
+	}, time.Hour)
+
+	resp, err := svc.GetTodayClassrooms(context.Background())
+	if err != nil {
+		t.Fatalf("GetTodayClassrooms() error = %v", err)
+	}
+	if resp.Stale {
+		t.Fatal("expected immediate partial response to stay non-stale")
+	}
+	if resp.Error == nil || resp.Error.Message != partialCampusErrorMessage {
+		t.Fatalf("expected partial error preserved, got %#v", resp.Error)
+	}
+
+	waitFor(t, time.Second, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return shaheCalls >= 1
+	})
+	mu.Lock()
+	firstShahe := shaheCalls
+	firstAll := allCalls
+	mu.Unlock()
+	if firstShahe < 1 {
+		t.Fatalf("expected failed campus to be re-queried inside fresh TTL, shaheCalls=%d", firstShahe)
+	}
+
+	// Same clock (still inside ExpiresAt and inside partial backoff): must not thrash JW.
+	resp2, err := svc.GetTodayClassrooms(context.Background())
+	if err != nil {
+		t.Fatalf("GetTodayClassrooms() second error = %v", err)
+	}
+	if resp2.Error == nil {
+		t.Fatalf("expected partial error on backoff serve, got %#v", resp2)
+	}
+	// Give any accidental second refresh a moment to start.
+	time.Sleep(50 * time.Millisecond)
+	mu.Lock()
+	secondShahe := shaheCalls
+	secondAll := allCalls
+	mu.Unlock()
+	if secondShahe != firstShahe || secondAll != firstAll {
+		t.Fatalf("expected partial backoff to suppress re-query, calls before=%d/%d after=%d/%d",
+			firstAll, firstShahe, secondAll, secondShahe)
+	}
+}
+
+func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.T) {
+	t.Setenv(LoginTokenKey, "token")
+
+	var shaheCalls atomic.Int32
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			if campusID == "04" {
+				shaheCalls.Add(1)
+				return []model.JWClassInfo{{
+					NodeName:   "1",
+					NodeTime:   "08:00-08:45",
+					Classrooms: "沙河教学楼-S101(40)",
+				}}, nil
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+
+	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
+	svc.now = func() time.Time { return fixed }
+
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       fixed.Format("2006-01-02"),
+		UpdatedAt:  fixed.Add(-time.Minute),
+		ExpiresAt:  fixed.Add(classroomFreshTTL),
+		StaleUntil: endOfDay(fixed),
+		Campuses: []model.CampusInfo{
+			{ID: "01", Name: "西土城"},
+			{ID: "04", Name: "沙河"},
+		},
+		Error: &model.APIError{
+			Type:    string(jwErrorQuery),
+			Message: partialCampusErrorMessage,
+		},
+	}, time.Hour)
+
+	resp, err := svc.GetTodayClassrooms(context.Background())
+	if err != nil {
+		t.Fatalf("GetTodayClassrooms() error = %v", err)
+	}
+	if resp.Error == nil {
+		t.Fatal("expected first response to still carry partial error while refresh runs")
+	}
+
+	waitFor(t, time.Second, func() bool {
+		cached, ok := svc.getCachedTodayClassrooms()
+		return ok && cached.Error == nil && shaheCalls.Load() >= 1
+	})
+	cached, ok := svc.getCachedTodayClassrooms()
+	if !ok || cached.Error != nil {
+		t.Fatalf("expected recovered cache without partial error, ok=%t cached=%#v", ok, cached)
+	}
+	shahe := requireCampusByID(t, cached.Campuses, "04")
+	if len(shahe.Buildings) == 0 {
+		t.Fatalf("expected recovered shahe buildings, got %#v", shahe)
+	}
+}
+
 func TestEndOfDayIsNextMidnightShanghai(t *testing.T) {
 	loc := businessLocation
 	input := time.Date(2026, 7, 9, 15, 30, 0, 0, loc)

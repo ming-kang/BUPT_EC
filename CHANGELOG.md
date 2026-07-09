@@ -17,6 +17,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Partial-campus cache hits no longer skip JW retries for the full 5-minute
+  fresh TTL; soft-stale revalidation runs immediately (still single-flight,
+  with the same 30s backoff after total or partial refresh outcomes).
 - Classroom cache `Date`/`ExpiresAt`/`StaleUntil` are stamped at refresh
   completion (not start), so a JW refresh that straddles Asia/Shanghai midnight
   is labeled for the completion day and never stored with a non-positive

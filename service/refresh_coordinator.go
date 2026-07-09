@@ -60,7 +60,13 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
 	} else {
 		s.lastRefreshErr = nil
-		s.nextRefreshAllowed = time.Time{}
+		// Partial campus success is not a hard failure (payload is cached), but
+		// still back off so soft-stale retries do not hammer JW every request.
+		if result.value != nil && result.value.Error != nil {
+			s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
+		} else {
+			s.nextRefreshAllowed = time.Time{}
+		}
 	}
 	close(attempt.done)
 }
