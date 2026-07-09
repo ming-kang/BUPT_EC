@@ -18,7 +18,7 @@ JW_USERNAME=your_username
 JW_PASSWORD=your_password
 # Optional debug fallback only. Leave empty for automatic HTTP login.
 JW_TOKEN=
-# Optional listen address (default :8080).
+# Optional listen address (default 127.0.0.1:8080 when unset).
 APP_ADDR=127.0.0.1:8080
 # Gin runtime mode. Use release in production.
 GIN_MODE=debug
@@ -42,8 +42,8 @@ go run ./
 For frontend work with hot reload, run both dev servers:
 
 ```bash
-go run ./                # terminal 1: backend on :8080
-cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to :8080
+go run ./                # terminal 1: backend on 127.0.0.1:8080
+cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to localhost:8080
 ```
 
 ## Tests and checks

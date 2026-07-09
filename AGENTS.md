@@ -64,7 +64,7 @@ See [docs/release.md](docs/release.md) for the full picture. Key facts:
 
 ## Security & Configuration Tips
 - Do not commit real `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, generated logs, or private config data. Use `.env.example` as the template for local secrets.
-- `APP_ADDR` controls the listen address, commonly `127.0.0.1:8080` behind Nginx. The server defaults to `:8080`.
+- `APP_ADDR` controls the listen address, commonly `127.0.0.1:8080` behind Nginx. The server defaults to `127.0.0.1:8080` when unset.
 - The `logs` package writes to `run_log/ec.log` relative to the working directory; on an installed server that is `/opt/bupt-ec/run_log/ec.log`. Keep `run_log/` and `.env` out of version control.
 - The AES key for JW password encryption (`tokenPasswordKey` in `service/crypto.go`) matches the JW system protocol and is compiled into the binary; do not change it, and do not log JW passwords or tokens.
 - The backend talks directly to the BUPT teaching affairs HTTP endpoints and uses only same-day in-memory cache data; do not reintroduce local timetable databases unless explicitly requested.
