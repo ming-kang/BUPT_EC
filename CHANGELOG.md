@@ -8,10 +8,29 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Fixed
+
+- Invalid `JW_TOKEN` no longer overrides a successfully re-logged-in token after
+  an auth failure (override is invalidated until process restart).
+- Multi-campus refresh keeps partial results when one campus fails, merging prior
+  same-day data when available instead of failing the whole payload.
+- Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
+- Stale/partial classroom payloads auto-refresh every few seconds instead of
+  waiting a minimum of 60 seconds past `expires_at`.
+- Ended class periods are dropped from the selection so they cannot block room
+  filters; empty/malformed period times are not treated as ended.
+- Settings modal secondary text follows the theme (readable in dark mode).
+- Settings gear remains available when campus list is empty (error/loading).
+- `localStorage` failures no longer crash preference init/updates.
+
 ### Changed
 
 - Tidied repository structure by folding backend startup initialization into
   `main.go` and refreshing ignore rules for local-only project artifacts.
+- `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
+  “still within the same calendar day”).
+- Settings label for ended periods: “允许选择已结束节次”.
+- Background warmup re-runs after each Shanghai midnight for long-lived processes.
 
 ## [0.1.4] - 2026-07-03
 

@@ -103,16 +103,16 @@ There is one public API endpoint, `GET /api/get_data`, plus `/healthz` and `/rea
 All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` creates one service instance, `main()` passes it to `NewHTTPServer`, and `HTTPServer.RegisterRoutes` registers methods from that injected boundary:
 
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `defaultJWClient` talks to the real system; tests substitute `mockJWClient`.
-- **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override, and re-logs-in when a query fails with an auth error.
-- **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Failed refreshes set a 30-second backoff.
-- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fresh for ~5 minutes, then served stale until end of day while refreshes happen in the background. Cross-day reuse is rejected. See [operations.md](operations.md#caching-behavior) for the operator view.
+- **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override (applied only while memory token is empty and the override has not been invalidated), and re-logs-in when a query fails with an auth error. Auth failure clears the current token and **invalidates** the env override until process restart so a stale `JW_TOKEN` cannot clobber a good login token.
+- **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Failed refreshes set a 30-second backoff. Campus queries run independently: if at least one campus succeeds, the payload is cached (with a top-level `error` when partial) and prior same-day data is merged for failed campuses when available.
+- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fresh for ~5 minutes, then served stale until the next **Asia/Shanghai** midnight while refreshes happen in the background. Cross-day reuse is rejected. Warmup re-runs after each Shanghai midnight. See [operations.md](operations.md#caching-behavior) for the operator view.
 - Rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)` are parsed in `classroom_builder.go`.
 
 Logging is `log/slog` with a JSON handler; a custom wrapper adds the per-request `log_id` from the context to every record (`logs/`).
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data` and schedules an automatic reload when `expires_at` passes; `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them.
+- `useTodayClassrooms.js` fetches `/api/get_data` and schedules an automatic reload near `expires_at` (or every few seconds while `stale` / `error` is set); `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.
 - Dark mode follows `prefers-color-scheme` and toggles both the Ant Design theme algorithm and a `body.dark` class used by component CSS.

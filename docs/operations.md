@@ -37,11 +37,15 @@ Returns `200` when JW credentials are configured **and** a usable same-day cache
     "last_refresh_error": "",
     "cache_available": true,
     "cache_fresh": true,
-    "cache_stale": true,
+    "cache_stale": false,
     "cache_date": "2026-07-03"
   }
 }
 ```
+
+- `cache_fresh`: within the ~5 minute fresh TTL.
+- `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
+- Business day boundaries use **Asia/Shanghai**.
 
 `last_login_error` and `last_refresh_error` hold the most recent sanitized failure and are the first place to look when the service is not ready. A `503` right after a restart is normal until the warmup refresh finishes.
 
@@ -77,16 +81,17 @@ sudo journalctl -u bupt-ec | grep '20260703081504A1B2C3D4E5F6A7B8C9D2'
 
 ## Caching behavior
 
-The backend keeps a single same-day in-memory cache of classroom data:
+The backend keeps a single same-day in-memory cache of classroom data (business day = **Asia/Shanghai**):
 
 - **Fresh TTL**: about 5 minutes. Fresh cache is served directly.
-- **Stale window**: after the fresh TTL, the cached payload may still be served with `stale: true` until the end of the same day, while a refresh runs in the background (stale-while-revalidate).
-- **Failure backoff**: after a failed refresh, new refresh attempts are suppressed for 30 seconds; stale responses carry the last error message.
+- **Stale window**: after the fresh TTL, the cached payload may still be served with `stale: true` until the next Shanghai midnight, while a refresh runs in the background (stale-while-revalidate).
+- **Partial campus success**: if one campus query fails but another succeeds, the payload is still cached; failed campuses keep prior same-day data when available, and a top-level `error` describes the partial failure.
+- **Failure backoff**: after a **total** refresh failure, new refresh attempts are suppressed for 30 seconds; stale responses carry the last error message.
 - **Cross-day reuse**: never. Yesterday's cache is ignored.
 
-Refreshes are triggered on demand by `GET /api/get_data` and once at startup (warmup); there is no periodic scheduler. Concurrent requests share a single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
+Refreshes are triggered on demand by `GET /api/get_data`, once at startup (warmup), and again after each Shanghai midnight. Concurrent requests share a single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
-If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner.
+If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale).
 
 ## Troubleshooting
 
