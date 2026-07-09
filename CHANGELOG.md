@@ -8,6 +8,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Security
+
+- JW outbound HTTP no longer follows redirects, so custom `token` headers and
+  login form bodies cannot be sent to unvalidated hosts.
+
 ### Fixed
 
 - Invalid `JW_TOKEN` no longer overrides a successfully re-logged-in token after

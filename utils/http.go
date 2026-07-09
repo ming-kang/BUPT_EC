@@ -12,6 +12,14 @@ import (
 
 const maxResponseBodyBytes int64 = 5 << 20
 
+// CheckRedirect rejects every redirect. JW traffic carries a custom token
+// header and login form bodies that must never be forwarded to an
+// unvalidated host; net/http would otherwise follow redirects and preserve
+// those credentials even across hosts.
+func CheckRedirect(req *http.Request, via []*http.Request) error {
+	return fmt.Errorf("refusing redirect to %q: JW outbound HTTP does not follow redirects", req.URL.String())
+}
+
 var defaultHTTPClient = &http.Client{
 	Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
@@ -22,6 +30,7 @@ var defaultHTTPClient = &http.Client{
 		ResponseHeaderTimeout: 12 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	},
+	CheckRedirect: CheckRedirect,
 }
 
 func HttpGet(ctx context.Context, rawURL string) (int, http.Header, []byte, error) {
