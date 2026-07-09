@@ -1,6 +1,17 @@
 package main
 
-import "testing"
+import (
+	"BUPT_EC/service"
+	"testing"
+)
+
+func TestHTTPWriteTimeoutExceedsClassroomRefreshLimit(t *testing.T) {
+	t.Parallel()
+	if httpWriteTimeout <= service.ClassroomRefreshLimit {
+		t.Fatalf("httpWriteTimeout (%v) must be greater than ClassroomRefreshLimit (%v)",
+			httpWriteTimeout, service.ClassroomRefreshLimit)
+	}
+}
 
 func TestListenAddr(t *testing.T) {
 	t.Parallel()

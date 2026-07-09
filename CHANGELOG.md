@@ -17,6 +17,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- HTTP `WriteTimeout` is now longer than the cold classroom refresh budget so
+  clients are not cut off when a shared refresh succeeds near the previous 30s
+  limit.
 - Invalid `JW_TOKEN` no longer overrides a successfully re-logged-in token after
   an auth failure (override is invalidated until process restart).
 - Multi-campus refresh keeps partial results when one campus fails, merging prior

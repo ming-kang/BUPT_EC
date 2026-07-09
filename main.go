@@ -27,6 +27,12 @@ func Init() *service.ClassroomService {
 	return service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
 }
 
+// httpWriteTimeout bounds how long the server may spend writing a response,
+// including any handler wait. It must stay greater than
+// service.ClassroomRefreshLimit so cold-path classroom refreshes that finish
+// near the refresh budget are not cut off before JSON is written.
+const httpWriteTimeout = 45 * time.Second
+
 // listenAddr returns the HTTP listen address from APP_ADDR.
 // When env is empty, default to loopback so an unbound process is not
 // reachable on all interfaces.
@@ -51,9 +57,12 @@ func main() {
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-		MaxHeaderBytes:    1 << 20,
+		// Must exceed service.ClassroomRefreshLimit: cold /api/get_data waits for a
+		// shared refresh (up to that budget) before writing JSON. Keep margin for
+		// response serialization after a near-limit refresh.
+		WriteTimeout:   httpWriteTimeout,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20,
 	}
 
 	serverErr := make(chan error, 1)

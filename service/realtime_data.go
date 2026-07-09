@@ -20,9 +20,12 @@ const (
 
 	TodayCacheKey = "TODAY_CLASSROOMS_CACHE"
 
-	jwRequestTimeout      = 12 * time.Second
-	classroomFreshTTL     = 5 * time.Minute
-	classroomRefreshLimit = 30 * time.Second
+	jwRequestTimeout  = 12 * time.Second
+	classroomFreshTTL = 5 * time.Minute
+	// ClassroomRefreshLimit is the max duration for a shared JW classroom refresh.
+	// HTTP WriteTimeout in main must exceed this so a cold-path handler that
+	// blocks until refresh finishes can still write the JSON response.
+	ClassroomRefreshLimit = 30 * time.Second
 	staleRefreshWait      = 300 * time.Millisecond
 	staleRefreshBackoff   = 30 * time.Second
 	warmupDayJitter       = time.Second

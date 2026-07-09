@@ -37,7 +37,7 @@ func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefre
 
 	go func() {
 		defer s.refreshWorkers.Done()
-		refreshCtx, cancel := context.WithTimeout(context.Background(), classroomRefreshLimit)
+		refreshCtx, cancel := context.WithTimeout(context.Background(), ClassroomRefreshLimit)
 		defer cancel()
 
 		today, err := s.refreshTodayClassrooms(refreshCtx)
