@@ -20,6 +20,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Exact path `/api` now returns JSON 404 like other unknown API routes, instead
+  of the SPA `index.html`.
 - Day-boundary auto-reload considers Asia/Shanghai business date and
   `stale_until`, so yesterday’s “fresh” payload is not held until `expires_at`
   after midnight.

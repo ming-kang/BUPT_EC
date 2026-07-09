@@ -53,7 +53,8 @@ func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
 
 	r.NoRoute(func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+		path := c.Request.URL.Path
+		if path == "/api" || strings.HasPrefix(path, "/api/") {
 			c.JSON(http.StatusNotFound, gin.H{"code": http.StatusNotFound, "msg": "not found"})
 			return
 		}

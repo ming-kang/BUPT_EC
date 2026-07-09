@@ -194,6 +194,19 @@ func TestNoRouteServesSPAFallback(t *testing.T) {
 	if responseRecorder.Code != http.StatusNotFound {
 		t.Fatalf("unknown api route status = %d, want %d", responseRecorder.Code, http.StatusNotFound)
 	}
+	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("unknown api route Content-Type = %q, want application/json", contentType)
+	}
+
+	responseRecorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/api", nil)
+	router.ServeHTTP(responseRecorder, request)
+	if responseRecorder.Code != http.StatusNotFound {
+		t.Fatalf("GET /api status = %d, want %d", responseRecorder.Code, http.StatusNotFound)
+	}
+	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+		t.Fatalf("GET /api Content-Type = %q, want application/json", contentType)
+	}
 }
 
 func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
