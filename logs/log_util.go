@@ -15,9 +15,13 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-const (
-	LogIDKey = "K_LOGID"
-)
+// LogIDKey is retained for callers that need a stable string label; the
+// context value itself uses an unexported typed key to avoid collisions.
+const LogIDKey = "K_LOGID"
+
+type ctxKey int
+
+const logIDCtxKey ctxKey = 1
 
 func Init(isMain bool) {
 	var writer io.Writer
@@ -69,7 +73,7 @@ func GenNewContext(parent context.Context) context.Context {
 	if parent == nil {
 		parent = context.Background()
 	}
-	return context.WithValue(parent, LogIDKey, GenLogID())
+	return context.WithValue(parent, logIDCtxKey, GenLogID())
 }
 
 func GetLogIDFromContext(ctx context.Context) string {
@@ -77,7 +81,7 @@ func GetLogIDFromContext(ctx context.Context) string {
 		return ""
 	}
 
-	v := ctx.Value(LogIDKey)
+	v := ctx.Value(logIDCtxKey)
 	if v == nil {
 		return ""
 	}

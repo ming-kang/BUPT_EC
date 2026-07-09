@@ -70,6 +70,9 @@ func SafeErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
+	if errors.Is(err, ErrNoTodayCache) {
+		return "暂无可用的今日空教室数据，请稍后重试"
+	}
 	switch classifyError(err) {
 	case string(jwErrorConfig):
 		return "服务配置不完整，请检查教务系统凭据"
@@ -99,7 +102,11 @@ func isAuthFailureMessage(message string) bool {
 	if message == "" {
 		return false
 	}
-	for _, marker := range []string{"token", "login", "auth", "unauthorized", "forbidden", "登录", "认证", "授权", "过期", "失效"} {
+	// Avoid bare “过期/失效” — they appear in non-auth JW messages.
+	for _, marker := range []string{
+		"token", "login", "auth", "unauthorized", "forbidden",
+		"登录", "认证", "未授权", "无权限", "重新登录",
+	} {
 		if strings.Contains(message, marker) {
 			return true
 		}

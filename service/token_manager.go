@@ -15,37 +15,42 @@ type TokenManager struct {
 	onLoginSuccess func(time.Time)
 	onLoginFailure func(error)
 
-	mu          sync.Mutex
-	token       string
-	apiURL      string
-	tokenGroup  singleflight.Group
-	apiURLGroup singleflight.Group
+	mu                  sync.Mutex
+	token               string
+	apiURL              string
+	overrideInvalidated bool
+	tokenGroup          singleflight.Group
+	apiURLGroup         singleflight.Group
 }
 
 func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if !forceRefresh {
-		if token := os.Getenv(LoginTokenKey); token != "" {
-			m.setToken(token)
+		if token := m.cachedToken(); token != "" {
 			return token, nil
 		}
-		if token := m.cachedToken(); token != "" {
+		if token := m.envOverrideToken(); token != "" {
+			m.setToken(token)
 			return token, nil
 		}
 	}
 
 	value, err, _ := m.tokenGroup.Do("jw-token", func() (interface{}, error) {
 		if !forceRefresh {
-			if token := os.Getenv(LoginTokenKey); token != "" {
-				m.setToken(token)
+			if token := m.cachedToken(); token != "" {
 				return token, nil
 			}
-			if token := m.cachedToken(); token != "" {
+			if token := m.envOverrideToken(); token != "" {
+				m.setToken(token)
 				return token, nil
 			}
 		}
 
 		startedAt := time.Now()
-		loginCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
+		loginCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
 		defer cancel()
 		token, err := m.login(loginCtx)
 		if err != nil {
@@ -69,6 +74,10 @@ func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (stri
 }
 
 func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	if apiURL := m.cachedAPIURL(); apiURL != "" {
 		return apiURL, nil
 	}
@@ -77,7 +86,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		if apiURL := m.cachedAPIURL(); apiURL != "" {
 			return apiURL, nil
 		}
-		apiCtx, cancel := context.WithTimeout(context.Background(), jwRequestTimeout)
+		apiCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
 		defer cancel()
 		apiURL, err := m.jwClient.FetchAPIURL(apiCtx)
 		if err != nil {
@@ -116,6 +125,15 @@ func (m *TokenManager) notifyLoginFailure(err error) {
 	}
 }
 
+func (m *TokenManager) envOverrideToken() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.overrideInvalidated {
+		return ""
+	}
+	return os.Getenv(LoginTokenKey)
+}
+
 func (m *TokenManager) cachedToken() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -133,6 +151,7 @@ func (m *TokenManager) clearTokenIfCurrent(token string) {
 	defer m.mu.Unlock()
 	if m.token == token {
 		m.token = ""
+		m.overrideInvalidated = true
 	}
 }
 
