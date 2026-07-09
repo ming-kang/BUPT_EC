@@ -53,11 +53,9 @@ function AppContent() {
       if (e.matches) {
         body.classList.add("dark");
         setIsDark(true);
-        localStorage.setItem("darkMode", "true");
       } else {
         body.classList.remove("dark");
         setIsDark(false);
-        localStorage.setItem("darkMode", "false");
       }
     }
 
@@ -102,7 +100,7 @@ function AppContent() {
               {formatDateWithWeekday(resp.data.date)}
             </div>
           ) : null}
-          {resp.code === 0 && resp.data?.stale ? (
+          {resp.code === 0 && (resp.data?.stale || resp.data?.error) ? (
             <Alert
               className="stale-alert"
               type="warning"

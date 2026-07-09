@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { nextReloadDelay } from "./reloadSchedule";
 import {
   extractMessage,
   fallbackErrorMessage,
@@ -58,14 +59,13 @@ export default function useTodayClassrooms() {
   }, []);
 
   useEffect(() => {
-    if (resp.code !== 0 || !resp.data?.expires_at) {
+    if (resp.code !== 0 || !resp.data) {
       return;
     }
-    const expiresAt = new Date(resp.data.expires_at).getTime();
-    if (!Number.isFinite(expiresAt)) {
+    const delay = nextReloadDelay(resp.data);
+    if (delay == null) {
       return;
     }
-    const delay = Math.max(expiresAt - Date.now(), 60_000);
     const timer = setTimeout(() => {
       setReloadKey((current) => current + 1);
     }, delay);
