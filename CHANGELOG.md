@@ -17,6 +17,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Day-boundary auto-reload considers Asia/Shanghai business date and
+  `stale_until`, so yesterday’s “fresh” payload is not held until `expires_at`
+  after midnight.
 - Background auto-refresh no longer full-page spins or replaces a successful
   classroom snapshot with an empty error envelope; last-good data is kept with
   a soft warning until the next successful fetch (hard empty only when there is
