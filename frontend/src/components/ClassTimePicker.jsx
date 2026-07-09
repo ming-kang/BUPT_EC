@@ -1,10 +1,17 @@
 import PropTypes from "prop-types";
 import { Button, Card } from "antd";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  formatShanghaiDate,
+  formatShanghaiTime,
+  isNodeEnded,
+  pruneEndedClassTimes,
+} from "../classTimeUtils";
 import { useSelection } from "../selectionContext";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
+const EMPTY_CLASS_TIMES = [];
 
 function ClassTimePicker({ selectedCampusData, todayDate }) {
   const { state, dispatch } = useSelection();
@@ -24,27 +31,55 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
     return () => window.clearTimeout(timeoutID);
   }, []);
 
+  const selectedClassTimes = useMemo(
+    () =>
+      Array.isArray(state.selectedClassTimes)
+        ? state.selectedClassTimes
+        : EMPTY_CLASS_TIMES,
+    [state.selectedClassTimes]
+  );
+  const options = Array.isArray(selectedCampusData?.nodes)
+    ? selectedCampusData.nodes
+    : [];
+  const nowTime = formatShanghaiTime(now);
+  const isToday = todayDate === formatShanghaiDate(now);
+
+  useEffect(() => {
+    if (!selectedCampusData) {
+      return;
+    }
+    const nodes = Array.isArray(selectedCampusData.nodes)
+      ? selectedCampusData.nodes
+      : [];
+    const next = pruneEndedClassTimes(selectedClassTimes, nodes, {
+      nowTime,
+      isToday,
+      canSelectAllDay: state.canSelectAllDay,
+    });
+    if (
+      next.length !== selectedClassTimes.length ||
+      next.some((node, index) => node !== selectedClassTimes[index])
+    ) {
+      dispatch({ type: "SET_CLASS_TIMES", times: next });
+    }
+  }, [
+    selectedCampusData,
+    selectedClassTimes,
+    nowTime,
+    isToday,
+    state.canSelectAllDay,
+    dispatch,
+  ]);
+
   if (!selectedCampusData) {
     return null;
   }
 
-  const selectedClassTimes = state.selectedClassTimes || [];
-  const options = Array.isArray(selectedCampusData.nodes)
-    ? selectedCampusData.nodes
-    : [];
-  const nowTime = now.toTimeString().slice(0, 5);
-  const isToday = todayDate === formatLocalDate(now);
-
-  const normalizedOptions = options.map((item) => {
-    const [, endTime = ""] = String(item.time || "").split("-");
-    return {
-      ...item,
-      disabled:
-        endTime.localeCompare(nowTime) < 0 &&
-        !state.canSelectAllDay &&
-        isToday,
-    };
-  });
+  const normalizedOptions = options.map((item) => ({
+    ...item,
+    disabled:
+      isNodeEnded(item.time, nowTime) && !state.canSelectAllDay && isToday,
+  }));
 
   function isAllChecked() {
     const selectable = normalizedOptions.filter((item) => !item.disabled);
@@ -121,13 +156,6 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
       </Button>
     </Card>
   );
-}
-
-function formatLocalDate(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
 }
 
 function msUntilNextFiveMinuteTick(date) {
