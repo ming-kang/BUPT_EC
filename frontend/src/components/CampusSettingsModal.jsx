@@ -45,28 +45,27 @@ function CampusSettingsModal(props) {
             }
             size="small"
           />
-          <Typography.Text>全选时包含已结束节次</Typography.Text>
+          <Typography.Text>允许选择已结束节次</Typography.Text>
         </div>
         <Divider />
-        <div style={{ lineHeight: "1.9em", color: "rgba(0,0,0,0.65)" }}>
+        <Typography.Text type="secondary" style={{ display: "block", lineHeight: "1.9em" }}>
           数据来源：教务系统当天空闲教室接口
-        </div>
-        <div style={{ lineHeight: "1.9em", color: "rgba(0,0,0,0.65)" }}>
+        </Typography.Text>
+        <Typography.Text type="secondary" style={{ display: "block", lineHeight: "1.9em" }}>
           当前数据刷新时间：
           {props.todayData.data?.updated_at
             ? new Date(props.todayData.data.updated_at).toLocaleString()
             : "未知"}
-        </div>
+        </Typography.Text>
         <div
           style={{
             lineHeight: "1.9em",
-            color: "rgba(0,0,0,0.65)",
             display: "flex",
             alignItems: "center",
             gap: 4,
           }}
         >
-          项目已开源：
+          <Typography.Text type="secondary">项目已开源：</Typography.Text>
           <Button
             onClick={() =>
               window.open(

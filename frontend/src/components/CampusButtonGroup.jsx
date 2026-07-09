@@ -10,29 +10,39 @@ const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
 function CampusButtonGroup({ campuses, todayData }) {
   const { state, dispatch } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
-  const settingsSplitIndex = Math.floor(campuses.length / 2);
+  const list = Array.isArray(campuses) ? campuses : [];
+  const settingsSplitIndex = Math.floor(list.length / 2);
 
   return (
     <div className="campus-button-group">
       <div className="campus-buttons">
-        {campuses.map((campus, index) => (
-          <Fragment key={campus.id}>
-            {index === settingsSplitIndex ? (
+        {list.length === 0 ? (
+          <Button
+            className="settings-trigger"
+            icon={<SettingOutlined />}
+            onClick={() => setOpenSettingModal(true)}
+            aria-label="设置"
+          />
+        ) : (
+          list.map((campus, index) => (
+            <Fragment key={campus.id}>
+              {index === settingsSplitIndex ? (
+                <Button
+                  className="settings-trigger"
+                  icon={<SettingOutlined />}
+                  onClick={() => setOpenSettingModal(true)}
+                  aria-label="设置"
+                />
+              ) : null}
               <Button
-                className="settings-trigger"
-                icon={<SettingOutlined />}
-                onClick={() => setOpenSettingModal(true)}
-                aria-label="设置"
-              />
-            ) : null}
-            <Button
-              type={state.selectedCampus === campus.id ? "primary" : "default"}
-              onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
-            >
-              {campus.name}
-            </Button>
-          </Fragment>
-        ))}
+                type={state.selectedCampus === campus.id ? "primary" : "default"}
+                onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
+              >
+                {campus.name}
+              </Button>
+            </Fragment>
+          ))
+        )}
       </div>
       {openSettingModal ? (
         <Suspense fallback={null}>

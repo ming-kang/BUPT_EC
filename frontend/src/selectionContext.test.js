@@ -95,4 +95,27 @@ describe("selection state", () => {
     expect(localStorage.getItem("showClassTime")).toBe("false");
     expect(localStorage.getItem("canSelectAllDay")).toBe("true");
   });
+
+  it("survives localStorage get/set failures", () => {
+    vi.stubGlobal("localStorage", {
+      getItem() {
+        throw new Error("blocked");
+      },
+      setItem() {
+        throw new Error("blocked");
+      },
+    });
+
+    expect(() => initSelectionState()).not.toThrow();
+    expect(initSelectionState()).toMatchObject({
+      showClassTime: true,
+      canSelectAllDay: false,
+    });
+
+    const next = selectionReducer(initSelectionState(), {
+      type: "SET_SHOW_CLASS_TIME",
+      value: false,
+    });
+    expect(next.showClassTime).toBe(false);
+  });
 });

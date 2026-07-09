@@ -2,13 +2,29 @@ import { createContext, useContext } from "react";
 
 export const SelectionContext = createContext(null);
 
+function readLocalStorage(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    // Ignore quota / privacy-mode failures; in-memory state still updates.
+  }
+}
+
 export function initSelectionState() {
   return {
     selectedCampus: "",
     selectedBuildings: [],
     selectedClassTimes: [],
-    showClassTime: localStorage.getItem("showClassTime") !== "false",
-    canSelectAllDay: localStorage.getItem("canSelectAllDay") === "true",
+    showClassTime: readLocalStorage("showClassTime") !== "false",
+    canSelectAllDay: readLocalStorage("canSelectAllDay") === "true",
   };
 }
 
@@ -26,10 +42,10 @@ export function selectionReducer(state, action) {
     case "SET_CLASS_TIMES":
       return { ...state, selectedClassTimes: action.times };
     case "SET_SHOW_CLASS_TIME":
-      localStorage.setItem("showClassTime", action.value ? "true" : "false");
+      writeLocalStorage("showClassTime", action.value ? "true" : "false");
       return { ...state, showClassTime: action.value };
     case "SET_CAN_SELECT_ALL_DAY":
-      localStorage.setItem("canSelectAllDay", action.value ? "true" : "false");
+      writeLocalStorage("canSelectAllDay", action.value ? "true" : "false");
       return { ...state, canSelectAllDay: action.value };
     default:
       return state;
