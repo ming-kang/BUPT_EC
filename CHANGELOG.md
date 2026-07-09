@@ -17,6 +17,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Background auto-refresh no longer full-page spins or replaces a successful
+  classroom snapshot with an empty error envelope; last-good data is kept with
+  a soft warning until the next successful fetch (hard empty only when there is
+  no prior good data).
 - Partial-campus cache hits no longer skip JW retries for the full 5-minute
   fresh TTL; soft-stale revalidation runs immediately (still single-flight,
   with the same 30s backoff after total or partial refresh outcomes).
