@@ -20,6 +20,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Dark mode follows system `prefers-color-scheme` only (no conflicting
+  `localStorage.darkMode` bootstrap), so React no longer thrash-overwrites the
+  pre-hydration theme.
 - Exact path `/api` now returns JSON 404 like other unknown API routes, instead
   of the SPA `index.html`.
 - Day-boundary auto-reload considers Asia/Shanghai business date and

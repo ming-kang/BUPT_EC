@@ -10,6 +10,11 @@ import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
 import SelectionProvider from "./SelectionProvider";
 import { useSelection } from "./selectionContext";
+import {
+  applyDarkClass,
+  getSystemPrefersDark,
+  resolveDarkMode,
+} from "./darkMode";
 
 const TodayClassroomTable = lazy(
   () => import("./components/TodayClassroomTable")
@@ -29,7 +34,9 @@ function AppContent() {
   const { resp, spinning, isError, retry } = useTodayClassrooms();
   const { state, dispatch } = useSelection();
   const { selectedCampus, selectedBuildings, selectedClassTimes } = state;
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(() =>
+    resolveDarkMode(getSystemPrefersDark())
+  );
 
   const { Title } = Typography;
 
@@ -49,14 +56,9 @@ function AppContent() {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
 
     function matchMode(e) {
-      const body = document.body;
-      if (e.matches) {
-        body.classList.add("dark");
-        setIsDark(true);
-      } else {
-        body.classList.remove("dark");
-        setIsDark(false);
-      }
+      const dark = resolveDarkMode(e.matches);
+      applyDarkClass(dark);
+      setIsDark(dark);
     }
 
     mql.addEventListener("change", matchMode);
