@@ -55,7 +55,7 @@ Two workflows, no overlap:
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend lint + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck`, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 

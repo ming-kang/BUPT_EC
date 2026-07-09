@@ -39,6 +39,10 @@ jobs:
         working-directory: frontend
         run: pnpm lint
 
+      - name: Test frontend
+        working-directory: frontend
+        run: pnpm test
+
       - name: Build frontend
         working-directory: frontend
         run: pnpm build
@@ -64,7 +68,7 @@ jobs:
         run: go test -race ./...
 
       - name: Install govulncheck
-        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.5.0
 
       - name: Run govulncheck
         run: govulncheck ./...
