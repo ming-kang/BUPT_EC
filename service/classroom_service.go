@@ -6,6 +6,22 @@ import (
 	"time"
 )
 
+// businessLocation is the calendar used for "today" and day-boundary cache expiry.
+// Asia/Shanghai matches BUPT academic operations; FixedZone covers hosts without tzdata.
+var businessLocation = loadBusinessLocation()
+
+func loadBusinessLocation() *time.Location {
+	loc, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		return time.FixedZone("CST", 8*3600)
+	}
+	return loc
+}
+
+func businessNow() time.Time {
+	return time.Now().In(businessLocation)
+}
+
 // CacheStore is the cache abstraction used by ClassroomService.
 // *gocache.Cache satisfies it directly.
 type CacheStore interface {
@@ -44,7 +60,7 @@ func newClassroomService(cfg config.Config, store CacheStore, client JWClient) *
 		cache:    store,
 		campuses: cfg.Campuses,
 		jwClient: client,
-		now:      time.Now,
+		now:      businessNow,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,

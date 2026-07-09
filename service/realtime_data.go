@@ -1,13 +1,13 @@
 package service
 
 import (
+	"BUPT_EC/config"
 	"BUPT_EC/service/model"
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
 	"time"
-
-	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -25,9 +25,12 @@ const (
 	classroomRefreshLimit = 30 * time.Second
 	staleRefreshWait      = 300 * time.Millisecond
 	staleRefreshBackoff   = 30 * time.Second
+	warmupDayJitter       = time.Second
 )
 
 var ErrNoTodayCache = errors.New("no today classroom cache")
+
+const partialCampusErrorMessage = "部分校区数据刷新失败，已展示可用数据"
 
 func (s *ClassroomService) Login(ctx context.Context) error {
 	_, err := s.tokenManager.EnsureToken(ctx, true)
@@ -42,21 +45,39 @@ func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms
 	return s.refreshTodayClassrooms(ctx)
 }
 
+// StartWarmup kicks an immediate background refresh, then re-warms after each
+// Asia/Shanghai midnight so long-lived processes do not stay cold across days.
 func (s *ClassroomService) StartWarmup() {
-	go func() {
-		attempt, started := s.startClassroomRefresh(s.now())
-		if !started {
-			return
+	go s.warmupLoop()
+}
+
+func (s *ClassroomService) warmupLoop() {
+	s.runWarmupOnce()
+	for {
+		now := s.now()
+		nextMidnight := endOfDay(now)
+		wait := nextMidnight.Sub(now) + warmupDayJitter
+		if wait < time.Second {
+			wait = time.Second
 		}
-		<-attempt.done
-	}()
+		time.Sleep(wait)
+		s.runWarmupOnce()
+	}
+}
+
+func (s *ClassroomService) runWarmupOnce() {
+	attempt, started := s.startClassroomRefresh(s.now())
+	if !started {
+		return
+	}
+	<-attempt.done
 }
 
 func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	now := s.now()
 	if cached, ok := s.getCachedTodayClassrooms(); ok {
 		if !cached.ExpiresAt.Before(now) {
-			return classroomResponse(cached, false, nil), nil
+			return classroomResponse(cached, false, cached.Error), nil
 		}
 		if now.Before(cached.StaleUntil) {
 			return s.getStaleTodayClassrooms(ctx, cached, now), nil
@@ -125,36 +146,117 @@ func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) (*model.T
 	return today, nil
 }
 
+type campusQueryResult struct {
+	info model.CampusInfo
+	err  error
+	ok   bool
+}
+
 func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	now := s.now()
+	results := make([]campusQueryResult, len(s.campuses))
+
+	var group errgroupNoCancel
+	for i, campusConfig := range s.campuses {
+		i, campusConfig := i, campusConfig
+		group.Go(func() {
+			jwRows, err := s.queryCampus(ctx, campusConfig.ID, false)
+			if err != nil {
+				results[i] = campusQueryResult{err: err}
+				return
+			}
+			results[i] = campusQueryResult{
+				info: buildCampusInfo(campusConfig, jwRows),
+				ok:   true,
+			}
+		})
+	}
+	group.Wait()
+
+	successCount := 0
+	var errs []error
+	for _, result := range results {
+		if result.ok {
+			successCount++
+			continue
+		}
+		if result.err != nil {
+			errs = append(errs, result.err)
+		}
+	}
+	if successCount == 0 {
+		if len(errs) == 0 {
+			return nil, newJWError(jwErrorQuery, "classroom refresh", nil, "all campus queries failed")
+		}
+		return nil, errors.Join(errs...)
+	}
+
+	previousByID := map[string]model.CampusInfo{}
+	if prev, ok := s.getCachedTodayClassrooms(); ok {
+		for _, campus := range prev.Campuses {
+			previousByID[campus.ID] = campus
+		}
+	}
+
+	campuses := make([]model.CampusInfo, len(s.campuses))
+	for i, campusConfig := range s.campuses {
+		if results[i].ok {
+			campuses[i] = results[i].info
+			continue
+		}
+		if prev, ok := previousByID[campusConfig.ID]; ok {
+			campuses[i] = prev
+			continue
+		}
+		campuses[i] = emptyCampusInfo(campusConfig)
+	}
+
+	var apiErr *model.APIError
+	if successCount < len(s.campuses) {
+		apiErr = &model.APIError{
+			Type:    string(jwErrorQuery),
+			Message: partialCampusErrorMessage,
+		}
+	}
+
 	today := &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(classroomFreshTTL),
 		StaleUntil: endOfDay(now),
 		Stale:      false,
-		Campuses:   make([]model.CampusInfo, len(s.campuses)),
-		Error:      nil,
-	}
-
-	group, groupCtx := errgroup.WithContext(ctx)
-	for i, campusConfig := range s.campuses {
-		i, campusConfig := i, campusConfig
-		group.Go(func() error {
-			jwRows, err := s.queryCampus(groupCtx, campusConfig.ID, false)
-			if err != nil {
-				return err
-			}
-			today.Campuses[i] = buildCampusInfo(campusConfig, jwRows)
-			return nil
-		})
-	}
-	if err := group.Wait(); err != nil {
-		return nil, err
+		Campuses:   campuses,
+		Error:      apiErr,
 	}
 
 	s.cache.Set(TodayCacheKey, today, time.Until(today.StaleUntil))
-	return classroomResponse(today, false, nil), nil
+	return classroomResponse(today, false, apiErr), nil
+}
+
+func emptyCampusInfo(campusConfig config.CampusConfig) model.CampusInfo {
+	return model.CampusInfo{
+		ID:        campusConfig.ID,
+		Name:      campusConfig.Name,
+		Buildings: []model.BuildingInfo{},
+		Nodes:     []model.NodeInfo{},
+	}
+}
+
+// errgroupNoCancel runs goroutines without canceling siblings on the first error.
+type errgroupNoCancel struct {
+	wg sync.WaitGroup
+}
+
+func (g *errgroupNoCancel) Go(fn func()) {
+	g.wg.Add(1)
+	go func() {
+		defer g.wg.Done()
+		fn()
+	}()
+}
+
+func (g *errgroupNoCancel) Wait() {
+	g.wg.Wait()
 }
 
 func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
@@ -179,7 +281,7 @@ func classroomResponseFromRefresh(result classroomRefreshResult) (*model.TodayCl
 	if result.value == nil {
 		return nil, newJWError(jwErrorParse, "classroom refresh", nil, "unexpected refresh result")
 	}
-	return classroomResponse(result.value, false, nil), nil
+	return classroomResponse(result.value, false, result.value.Error), nil
 }
 
 func classroomResponse(in *model.TodayClassrooms, stale bool, apiErr *model.APIError) *model.TodayClassrooms {
@@ -207,7 +309,10 @@ func staleAPIError(err error) *model.APIError {
 	}
 }
 
+// endOfDay returns the exclusive end of the business calendar day: next midnight
+// in Asia/Shanghai (or the fixed CST fallback).
 func endOfDay(t time.Time) time.Time {
+	t = t.In(businessLocation)
 	year, month, day := t.Date()
-	return time.Date(year, month, day, 23, 59, 59, 0, t.Location())
+	return time.Date(year, month, day+1, 0, 0, 0, 0, businessLocation)
 }

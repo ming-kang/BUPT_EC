@@ -47,7 +47,8 @@ func (s *ClassroomService) GetRuntimeStatus() RuntimeStatus {
 	if cached, ok := s.getCachedTodayClassrooms(); ok {
 		status.CacheAvailable = true
 		status.CacheFresh = !cached.ExpiresAt.Before(now)
-		status.CacheStale = now.Before(cached.StaleUntil)
+		// CacheStale means usable but past the fresh TTL (not merely "within StaleUntil").
+		status.CacheStale = !status.CacheFresh && now.Before(cached.StaleUntil)
 		status.CacheDate = cached.Date
 	}
 	return status

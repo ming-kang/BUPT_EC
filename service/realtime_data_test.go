@@ -717,6 +717,222 @@ func waitFor(t *testing.T, timeout time.Duration, ok func() bool) {
 	t.Fatal("condition was not met before timeout")
 }
 
+func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
+	t.Setenv(LoginTokenKey, "bad-override")
+	t.Setenv(LoginUsernameKey, "user")
+	t.Setenv(LoginPasswordKey, "pass")
+
+	var loginCalls atomic.Int32
+	client := &mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			loginCalls.Add(1)
+			return "fresh-login-token", nil
+		},
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			if token == "bad-override" {
+				return nil, newJWError(jwErrorAuth, "jw query", nil, "token invalid")
+			}
+			if token != "fresh-login-token" {
+				return nil, fmt.Errorf("unexpected token %q", token)
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+
+	rows, err := svc.queryCampus(context.Background(), "01", false)
+	if err != nil {
+		t.Fatalf("queryCampus() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected rows after override invalidation, got %#v", rows)
+	}
+	if loginCalls.Load() != 1 {
+		t.Fatalf("loginCalls = %d, want 1", loginCalls.Load())
+	}
+
+	token, err := svc.tokenManager.EnsureToken(context.Background(), false)
+	if err != nil {
+		t.Fatalf("EnsureToken(false) after recovery error = %v", err)
+	}
+	if token != "fresh-login-token" {
+		t.Fatalf("EnsureToken(false) = %q, want fresh-login-token (must not reapply JW_TOKEN)", token)
+	}
+	if loginCalls.Load() != 1 {
+		t.Fatalf("loginCalls after EnsureToken = %d, want 1", loginCalls.Load())
+	}
+}
+
+func TestDoRefreshPartialCampusSuccess(t *testing.T) {
+	t.Setenv(LoginTokenKey, "token")
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			if campusID == "04" {
+				return nil, newJWError(jwErrorQuery, "jw query", nil, "shahe down")
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+
+	resp, err := svc.QueryAll(context.Background())
+	if err != nil {
+		t.Fatalf("QueryAll() error = %v", err)
+	}
+	if resp.Error == nil || resp.Error.Message != partialCampusErrorMessage {
+		t.Fatalf("expected partial campus error, got %#v", resp.Error)
+	}
+	xitucheng := requireCampusByID(t, resp.Campuses, "01")
+	if len(xitucheng.Buildings) == 0 {
+		t.Fatal("expected successful campus to have buildings")
+	}
+	shahe := requireCampusByID(t, resp.Campuses, "04")
+	if len(shahe.Buildings) != 0 {
+		t.Fatalf("expected empty skeleton for failed campus without prior cache, got %#v", shahe)
+	}
+
+	cached, ok := svc.getCachedTodayClassrooms()
+	if !ok || cached.Error == nil {
+		t.Fatalf("expected partial result cached, ok=%t cached=%#v", ok, cached)
+	}
+}
+
+func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
+	t.Setenv(LoginTokenKey, "token")
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			if campusID == "04" {
+				return nil, newJWError(jwErrorQuery, "jw query", nil, "shahe down")
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+	now := svc.now()
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       now.Format("2006-01-02"),
+		ExpiresAt:  now.Add(time.Minute),
+		StaleUntil: endOfDay(now),
+		Campuses: []model.CampusInfo{
+			{ID: "01", Name: "西土城"},
+			{
+				ID:   "04",
+				Name: "沙河",
+				Buildings: []model.BuildingInfo{
+					{Name: "旧楼", Rooms: []model.RoomInfo{{Name: "1", DisplayName: "旧楼-1"}}},
+				},
+			},
+		},
+	}, time.Hour)
+
+	resp, err := svc.QueryAll(context.Background())
+	if err != nil {
+		t.Fatalf("QueryAll() error = %v", err)
+	}
+	shahe := requireCampusByID(t, resp.Campuses, "04")
+	if len(shahe.Buildings) != 1 || shahe.Buildings[0].Name != "旧楼" {
+		t.Fatalf("expected previous shahe campus data merged, got %#v", shahe)
+	}
+}
+
+func TestDoRefreshAllCampusesFail(t *testing.T) {
+	t.Setenv(LoginTokenKey, "token")
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			return nil, newJWError(jwErrorQuery, "jw query", nil, "down")
+		},
+	}
+	svc := newTestService(t, client)
+
+	_, err := svc.QueryAll(context.Background())
+	if err == nil {
+		t.Fatal("QueryAll() expected error when all campuses fail")
+	}
+	if _, ok := svc.getCachedTodayClassrooms(); ok {
+		t.Fatal("expected no cache update when all campuses fail")
+	}
+}
+
+func TestEndOfDayIsNextMidnightShanghai(t *testing.T) {
+	loc := businessLocation
+	input := time.Date(2026, 7, 9, 15, 30, 0, 0, loc)
+	got := endOfDay(input)
+	want := time.Date(2026, 7, 10, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("endOfDay = %v, want %v", got, want)
+	}
+
+	// UTC evening that is still the same Shanghai calendar day should map to next Shanghai midnight.
+	utc := time.Date(2026, 7, 9, 10, 0, 0, 0, time.UTC) // 18:00 CST
+	got = endOfDay(utc)
+	want = time.Date(2026, 7, 10, 0, 0, 0, 0, loc)
+	if !got.Equal(want) {
+		t.Fatalf("endOfDay(UTC) = %v, want %v", got, want)
+	}
+}
+
+func TestRuntimeStatusCacheStaleOnlyWhenPastFreshTTL(t *testing.T) {
+	svc := newTestService(t, &mockJWClient{})
+	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
+	svc.now = func() time.Time { return fixed }
+
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       fixed.Format("2006-01-02"),
+		ExpiresAt:  fixed.Add(time.Minute),
+		StaleUntil: endOfDay(fixed),
+	}, time.Hour)
+
+	status := svc.GetRuntimeStatus()
+	if !status.CacheAvailable || !status.CacheFresh || status.CacheStale {
+		t.Fatalf("fresh cache status = %#v, want fresh and not stale", status)
+	}
+
+	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+		Date:       fixed.Format("2006-01-02"),
+		ExpiresAt:  fixed.Add(-time.Minute),
+		StaleUntil: endOfDay(fixed),
+	}, time.Hour)
+
+	status = svc.GetRuntimeStatus()
+	if !status.CacheAvailable || status.CacheFresh || !status.CacheStale {
+		t.Fatalf("expired-but-usable cache status = %#v, want stale", status)
+	}
+}
+
+func TestIsAuthFailureMessageDoesNotMatchBareExpiry(t *testing.T) {
+	if isAuthFailureMessage("活动已过期") {
+		t.Fatal("bare 过期 should not be treated as auth failure")
+	}
+	if isAuthFailureMessage("数据失效") {
+		t.Fatal("bare 失效 should not be treated as auth failure")
+	}
+	if !isAuthFailureMessage("token 已过期") {
+		t.Fatal("token-related message should be auth failure")
+	}
+	if !isAuthFailureMessage("请重新登录") {
+		t.Fatal("重新登录 should be auth failure")
+	}
+}
+
+func TestSafeErrorMessageForNoTodayCache(t *testing.T) {
+	msg := SafeErrorMessage(ErrNoTodayCache)
+	if msg != "暂无可用的今日空教室数据，请稍后重试" {
+		t.Fatalf("SafeErrorMessage(ErrNoTodayCache) = %q", msg)
+	}
+}
+
 func TestLogin(t *testing.T) {
 	requireJWCredentials(t)
 	svc := newTestService(t, &defaultJWClient{})

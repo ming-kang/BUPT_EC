@@ -90,7 +90,7 @@ func (s *ClassroomService) WaitWarmup(ctx context.Context) error {
 func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
 	attempt, started := s.startClassroomRefresh(now)
 	if !started {
-		return classroomResponse(cached, true, staleAPIError(s.getLastRefreshError()))
+		return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(s.getLastRefreshError())))
 	}
 
 	timer := time.NewTimer(staleRefreshWait)
@@ -103,12 +103,20 @@ func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *
 			if err == nil {
 				return fresh
 			}
-			return classroomResponse(cached, true, staleAPIError(err))
+			return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(err)))
 		}
-		return classroomResponse(cached, true, staleAPIError(attempt.result.err))
+		return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(attempt.result.err)))
 	case <-timer.C:
-		return classroomResponse(cached, true, nil)
+		return classroomResponse(cached, true, cached.Error)
 	case <-ctx.Done():
-		return classroomResponse(cached, true, nil)
+		return classroomResponse(cached, true, cached.Error)
 	}
+}
+
+// preferAPIError returns primary when set, otherwise fallback (e.g. stale refresh failure).
+func preferAPIError(primary, fallback *model.APIError) *model.APIError {
+	if primary != nil {
+		return primary
+	}
+	return fallback
 }
