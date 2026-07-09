@@ -281,11 +281,26 @@ download_release() {
   echo "Downloading ${repo} ${version} (${arch}) from ${base_url}..."
   curl -fL "${base_url}/${package_name}" -o "${work_dir}/${package_name}"
 
-  if curl -fsL "${base_url}/checksums.txt" -o "${work_dir}/checksums.txt"; then
-    (cd "${work_dir}" && grep " ${package_name}$" checksums.txt | sha256sum -c -)
-  else
-    echo "checksums.txt not found; skipping checksum verification."
+  # Checksum verification is required by default (fail-closed).
+  # Break-glass only: SKIP_CHECKSUM=1 skips verification with a loud warning.
+  if [[ "${SKIP_CHECKSUM:-}" == "1" ]]; then
+    echo "WARNING: SKIP_CHECKSUM=1 is set; skipping package checksum verification. This is insecure." >&2
+    return
   fi
+
+  if ! curl -fsL "${base_url}/checksums.txt" -o "${work_dir}/checksums.txt"; then
+    echo "Failed to download checksums.txt from ${base_url}/checksums.txt; refusing to install without verification." >&2
+    echo "Set SKIP_CHECKSUM=1 only as an explicit break-glass to skip verification." >&2
+    exit 1
+  fi
+
+  if ! grep -q " ${package_name}$" "${work_dir}/checksums.txt"; then
+    echo "checksums.txt has no entry for ${package_name}; refusing to install." >&2
+    exit 1
+  fi
+
+  echo "Verifying package checksum..."
+  (cd "${work_dir}" && grep " ${package_name}$" checksums.txt | sha256sum -c -)
 }
 
 install_binary() {

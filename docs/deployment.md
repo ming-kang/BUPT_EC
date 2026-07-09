@@ -78,7 +78,7 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/instal
 
 - Installs `ca-certificates`, `curl`, `tar`, and `nginx` via apt.
 - Creates a dedicated `bupt-ec` system user and group.
-- Downloads the release tarball matching the CPU architecture and verifies it against `checksums.txt` when available.
+- Downloads the release tarball matching the CPU architecture and requires a matching `checksums.txt` entry (install fails if the checksum file is missing or verification fails). Set `SKIP_CHECKSUM=1` only as an explicit break-glass to skip verification.
 - Installs the binary to `/opt/bupt-ec/bupt-ec`, owned by root so the running service cannot rewrite its own executable. Only `/opt/bupt-ec/run_log` is writable by the service user.
 - Writes the configuration to `/etc/bupt-ec/bupt-ec.env` (mode `0600`, owned by root).
 - Installs a hardened systemd unit (`NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, empty capability bounding set, and more) and enables it.
@@ -101,7 +101,7 @@ If both GitHub and `gh-v6.com` are unavailable, mirror the release files to an H
 curl -fsSL https://your-mirror.example/install.sh | sudo DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.3 bash
 ```
 
-The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz`; `checksums.txt` is optional but recommended. `DOWNLOAD_BASE_URL` must use HTTPS; for a trusted local mirror only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP.
+The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash (verification is required unless `SKIP_CHECKSUM=1`). `DOWNLOAD_BASE_URL` must use HTTPS; for a trusted local mirror only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP.
 
 ## Manual deployment
 
