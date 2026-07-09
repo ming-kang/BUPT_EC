@@ -6,8 +6,8 @@ How versioning, the changelog, and the release pipeline work, and how to cut a r
 
 | Flavor | Trigger | Audience |
 |---|---|---|
-| `nightly` prerelease | every push to `main` (automatic) | freshest build; the installer default |
-| `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible deployments |
+| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; installer default when `VERSION` is unset (edge) |
+| `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible production deployments (recommended) |
 
 Both flavors publish the same four assets, which the installer depends on by exact name:
 

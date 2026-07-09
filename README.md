@@ -27,13 +27,21 @@ Endpoints:
 
 ## Deploy to a server
 
-One command on a Debian/Ubuntu server with a domain and TLS certificate already in place:
+One command on a Debian/Ubuntu server with a domain and TLS certificate already in place.
+
+**Production** — prefer a stable release:
+
+```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+```
+
+**Edge** — rolling `nightly` (freshest `main`; also the installer default when `VERSION` is unset):
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
 ```
 
-The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command.
+The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command (pin a stable tag in production).
 
 - Full setup guide: [docs/deployment.md](docs/deployment.md)
 - Upgrading and rollback: [docs/upgrading.md](docs/upgrading.md)

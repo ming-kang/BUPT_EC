@@ -45,18 +45,20 @@ Renewal stays the responsibility of your certificate manager (for example Certbo
 
 ## One-command install
 
-Install the freshest `main` build (the rolling `nightly` prerelease):
+**Production:** prefer an immutable stable tag (or GitHub `latest` stable). The installer default when `VERSION` is unset is the rolling `nightly` prerelease (edge / freshest `main`).
 
-```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
-```
-
-Or pin a specific stable release:
+Stable release (recommended for production):
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
 # or a fixed version:
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.3/install.sh | sudo VERSION=v0.1.3 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo VERSION=v0.1.4 bash
+```
+
+Rolling nightly (edge):
+
+```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
 ```
 
 The script asks interactively for:
@@ -71,7 +73,7 @@ The script asks interactively for:
 Environment variables can pre-seed or override choices, for example:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.3 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.4 bash
 ```
 
 ## What the installer does
@@ -98,7 +100,7 @@ curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/download/nightly/install
 If both GitHub and `gh-v6.com` are unavailable, mirror the release files to an HTTPS location you control and point the installer at it:
 
 ```bash
-curl -fsSL https://your-mirror.example/install.sh | sudo DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.3 bash
+curl -fsSL https://your-mirror.example/install.sh | sudo DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash
 ```
 
 The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash (verification is required unless `SKIP_CHECKSUM=1`). `DOWNLOAD_BASE_URL` must use HTTPS; for a trusted local mirror only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP.

@@ -104,18 +104,20 @@ All classroom-query runtime state lives on the `ClassroomService` struct. `main.
 
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `defaultJWClient` talks to the real system; tests substitute `mockJWClient`.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override (applied only while memory token is empty and the override has not been invalidated), and re-logs-in when a query fails with an auth error. Auth failure clears the current token and **invalidates** the env override until process restart so a stale `JW_TOKEN` cannot clobber a good login token.
-- **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Failed refreshes set a 30-second backoff. Campus queries run independently: if at least one campus succeeds, the payload is cached (with a top-level `error` when partial) and prior same-day data is merged for failed campuses when available.
-- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fresh for ~5 minutes, then served stale until the next **Asia/Shanghai** midnight while refreshes happen in the background. Cross-day reuse is rejected. Warmup re-runs after each Shanghai midnight. See [operations.md](operations.md#caching-behavior) for the operator view.
+- **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Total **or** partial refresh outcomes set a 30-second backoff. Campus queries run independently: if at least one campus succeeds, the payload is cached (with a top-level `error` when partial) and prior same-day data is merged for failed campuses when available. Partial payloads still inside the fresh TTL trigger soft-stale revalidation (return data + background refresh) instead of waiting the full 5 minutes.
+- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fully successful data is fresh for ~5 minutes, then served stale until the next **Asia/Shanghai** midnight while refreshes happen in the background. Cache `date` / TTLs are stamped at refresh **completion**. Cross-day reuse is rejected. Warmup re-runs after each Shanghai midnight. See [operations.md](operations.md#caching-behavior) for the operator view.
 - Rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)` are parsed in `classroom_builder.go`.
+- Outbound JW HTTP (`utils/http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-path handlers may wait up to the classroom refresh budget; HTTP `WriteTimeout` is set higher so near-limit successes are not cut off.
 
 Logging is `log/slog` with a JSON handler; a custom wrapper adds the per-request `log_id` from the context to every record (`logs/`).
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data` and schedules an automatic reload near `expires_at` (or every few seconds while `stale` / `error` is set); `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
+- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via `reloadSchedule.js`: near `expires_at` when fully fresh; every few seconds while `stale` / `error` is set; and ASAP when `data.date` is not today's Shanghai business day or `stale_until` has passed. Background polls do **not** full-page spin; on fetch failure they keep the last successful campuses and attach a soft warning (hard empty only with no prior snapshot).
+- `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.
-- Dark mode follows `prefers-color-scheme` and toggles both the Ant Design theme algorithm and a `body.dark` class used by component CSS.
+- Dark mode follows system `prefers-color-scheme` only (bootstrap + React share that source; no conflicting `localStorage.darkMode`).
 
 ## Conventions
 

@@ -57,6 +57,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- Docs (README, deployment/upgrading/operations/development, AGENTS) now describe
+  partial-campus soft-stale retry, day-stamped cache metadata, frontend
+  keep-last-good reload, and recommend stable tags for production installs
+  (installer `VERSION` default remains `nightly`).
 - Tidied repository structure by folding backend startup initialization into
   `main.go` and refreshing ignore rules for local-only project artifacts.
 - `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely

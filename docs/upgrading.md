@@ -4,19 +4,25 @@ How to update an existing server installation. For first-time setup see [deploym
 
 ## Standard upgrade
 
-Rerun the installer — the same command used for installation:
+Rerun the installer — the same command used for installation.
+
+**Production upgrades** should pin a stable tag (or use GitHub `latest` stable). When `VERSION` is unset, the installer still defaults to the rolling `nightly` prerelease.
+
+Stable:
+
+```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+# or:
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo VERSION=v0.1.4 bash
+```
+
+Nightly (edge):
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
 ```
 
 Existing configuration from `/etc/bupt-ec/bupt-ec.env` is offered back as defaults, so pressing Enter at each prompt keeps the current values. Secrets (password/token) are kept by pressing Enter at their prompts. The installer downloads the new binary, replaces `/opt/bupt-ec/bupt-ec`, rewrites the systemd unit and Nginx site, and restarts the service.
-
-By default this installs the rolling `nightly` prerelease (the freshest `main` build). To upgrade to a specific stable release instead:
-
-```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=v0.1.3 bash
-```
 
 See [CHANGELOG.md](../CHANGELOG.md) for what changed between versions.
 
