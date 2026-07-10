@@ -174,3 +174,37 @@ Added a single context-cancellable warmup scheduler, deterministic cache-state r
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Coordinate token auth recovery
+
+**Date**: 2026-07-10
+**Task**: Coordinate token auth recovery
+**Branch**: `main`
+
+### Summary
+
+Added token-source tracking, failed-token-aware singleflight auth recovery, detached bounded login/API URL operations, per-waiter cancellation, concurrency regressions, docs, and executable specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8dd6851` | (see git log) |
+| `de1970b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
