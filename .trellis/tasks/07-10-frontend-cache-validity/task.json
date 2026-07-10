@@ -3,7 +3,7 @@
   "name": "frontend-cache-validity",
   "title": "前端跨日缓存与轮询退避",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "frontend",
   "package": null,

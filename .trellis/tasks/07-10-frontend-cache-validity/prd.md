@@ -17,14 +17,14 @@
 
 ## Acceptance Criteria
 
-- [ ] 同日有效快照在网络失败后保留并标记 stale。
-- [ ] 昨日快照在刷新失败后被清空，教室表格和筛选器不再显示昨日内容。
-- [ ] 已超过 `stale_until` 的快照在失败后被清空。
-- [ ] hard-empty 状态仍按失败退避自动重试，而不是停止调度。
-- [ ] 连续失败 delay 为 5s/10s/20s/30s，成功后恢复正常 fresh expiry 调度。
-- [ ] 部分 payload 不会每 5 秒向处于 30 秒 backoff 的后端发送无效请求。
-- [ ] Vitest 覆盖 merge 与 scheduler 的组合场景，前端 lint/test/build 通过。
-- [ ] 用户可见警告和缓存行为同步更新 CHANGELOG 与 operations 文档。
+- [x] 同日有效快照在网络失败后保留并标记 stale。
+- [x] 昨日快照在刷新失败后被清空，教室表格和筛选器不再显示昨日内容。
+- [x] 已超过 `stale_until` 的快照在失败后被清空。
+- [x] hard-empty 状态仍按失败退避自动重试，而不是停止调度。
+- [x] 连续失败 delay 为 5s/10s/20s/30s，成功后恢复正常 fresh expiry 调度。
+- [x] 部分 payload 不会每 5 秒向处于 30 秒 backoff 的后端发送无效请求。
+- [x] Vitest 覆盖 merge 与 scheduler 的组合场景，前端 lint/test/build 通过。
+- [x] 用户可见警告和缓存行为同步更新 CHANGELOG 与 operations 文档。
 
 ## Out of Scope
 
