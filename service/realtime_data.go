@@ -57,14 +57,14 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 		// and failure/partial backoff prevent JW thrashing.
 		if now.Before(cached.StaleUntil) {
 			if fresh {
-				s.startClassroomRefresh(now)
+				s.startClassroomRefresh(ctx, now)
 				return classroomResponse(cached, false, cached.Error), nil
 			}
 			return s.getStaleTodayClassrooms(ctx, cached, now), nil
 		}
 	}
 
-	attempt, started := s.startClassroomRefresh(now)
+	attempt, started := s.startClassroomRefresh(ctx, now)
 	if !started {
 		if err := s.getLastRefreshError(); err != nil {
 			return nil, err

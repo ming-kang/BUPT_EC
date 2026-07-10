@@ -223,7 +223,7 @@ func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	if _, ok := svc.startClassroomRefresh(svc.now()); ok {
+	if _, ok := svc.startClassroomRefresh(context.Background(), svc.now()); ok {
 		t.Fatal("refresh started after background shutdown began")
 	}
 

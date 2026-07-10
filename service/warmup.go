@@ -142,7 +142,7 @@ func (s *ClassroomService) warmupLoop(ctx context.Context) {
 }
 
 func (s *ClassroomService) runWarmupOnce(ctx context.Context) (classroomRefreshResult, bool) {
-	attempt, started := s.startClassroomRefresh(s.now())
+	attempt, started := s.startClassroomRefresh(ctx, s.now())
 	if !started {
 		return classroomRefreshResult{}, false
 	}

@@ -32,6 +32,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Gzip negotiation now honors Accept-Encoding q-values (including `gzip;q=0`)
+  instead of substring matching.
+- Unknown `/api` routes return a correlated `LogID` header and body `log_id`.
+- Shared classroom refresh workers preserve the initiator request log_id without
+  inheriting client cancellation.
 - Startup now resolves configuration once, honors `.env` values for `GIN_MODE`
   and `LOG_CALLER`, and fails safely on malformed/unreadable dotenv files or
   invalid listen addresses; process environment values still take precedence.

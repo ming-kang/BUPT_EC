@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-contrib/static"
@@ -39,13 +40,38 @@ func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
 	}
 }
 
+func isAPIPath(path string) bool {
+	return path == "/api" || strings.HasPrefix(path, "/api/")
+}
+
+// apiLogContextMiddleware attaches exactly one request log_id for /api paths,
+// including unknown routes handled by NoRoute. Non-API traffic is left alone.
+func apiLogContextMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if isAPIPath(c.Request.URL.Path) {
+			logs.SetNewContextForGinContext(c)
+		}
+		c.Next()
+	}
+}
+
+func writeAPINotFound(c *gin.Context) {
+	ctx := logs.GetContextFromGinContext(c)
+	c.JSON(http.StatusNotFound, gin.H{
+		"code":   http.StatusNotFound,
+		"msg":    "not found",
+		"log_id": logs.GetLogIDFromContext(ctx),
+	})
+}
+
 func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 	r.Use(gzipMiddleware())
+	r.Use(apiLogContextMiddleware())
 
 	r.GET("/healthz", server.Healthz)
 	r.GET("/readyz", server.Readyz)
 
-	apiGroup := r.Group("/api").Use(logs.SetNewContextForGinContext)
+	apiGroup := r.Group("/api")
 	{
 		apiGroup.GET("/get_data", server.GetData)
 	}
@@ -54,8 +80,8 @@ func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 
 	r.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		if path == "/api" || strings.HasPrefix(path, "/api/") {
-			c.JSON(http.StatusNotFound, gin.H{"code": http.StatusNotFound, "msg": "not found"})
+		if isAPIPath(path) {
+			writeAPINotFound(c)
 			return
 		}
 		file, err := f.Open("frontend/dist/index.html")
@@ -71,6 +97,89 @@ func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 		}
 		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 	})
+}
+
+// acceptsGzip implements Accept-Encoding negotiation for the gzip coding only.
+// It is case-insensitive, honors q-values, treats malformed tokens as rejected,
+// and allows gzip via "*" only when no explicit gzip token is present.
+func acceptsGzip(header string) bool {
+	header = strings.TrimSpace(header)
+	if header == "" {
+		return false
+	}
+
+	var (
+		gzipQ     float64
+		hasGzip   bool
+		starQ     float64
+		hasStar   bool
+		sawTokens bool
+	)
+
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		sawTokens = true
+		coding, params, _ := strings.Cut(part, ";")
+		coding = strings.ToLower(strings.TrimSpace(coding))
+		if coding == "" {
+			continue
+		}
+
+		q := 1.0
+		for _, param := range strings.Split(params, ";") {
+			param = strings.TrimSpace(param)
+			if param == "" {
+				continue
+			}
+			key, value, ok := strings.Cut(param, "=")
+			if !ok {
+				q = 0
+				break
+			}
+			if strings.ToLower(strings.TrimSpace(key)) != "q" {
+				continue
+			}
+			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+			if err != nil || parsed < 0 || parsed > 1 {
+				q = 0
+				break
+			}
+			q = parsed
+		}
+
+		switch coding {
+		case "gzip":
+			hasGzip = true
+			gzipQ = q
+		case "*":
+			hasStar = true
+			starQ = q
+		}
+	}
+
+	if !sawTokens {
+		return false
+	}
+	if hasGzip {
+		return gzipQ > 0
+	}
+	return hasStar && starQ > 0
+}
+
+func appendVaryAcceptEncoding(header http.Header) {
+	const token = "Accept-Encoding"
+	existing := header.Values("Vary")
+	for _, value := range existing {
+		for _, part := range strings.Split(value, ",") {
+			if strings.EqualFold(strings.TrimSpace(part), token) {
+				return
+			}
+		}
+	}
+	header.Add("Vary", token)
 }
 
 type gzipResponseWriter struct {
@@ -94,7 +203,7 @@ func gzipMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if !strings.Contains(c.GetHeader("Accept-Encoding"), "gzip") {
+		if !acceptsGzip(c.GetHeader("Accept-Encoding")) {
 			c.Next()
 			return
 		}
@@ -103,7 +212,7 @@ func gzipMiddleware() gin.HandlerFunc {
 		defer gz.Close()
 
 		c.Header("Content-Encoding", "gzip")
-		c.Header("Vary", "Accept-Encoding")
+		appendVaryAcceptEncoding(c.Writer.Header())
 		c.Writer.Header().Del("Content-Length")
 		c.Writer = gzipResponseWriter{ResponseWriter: c.Writer, writer: gz}
 		c.Next()

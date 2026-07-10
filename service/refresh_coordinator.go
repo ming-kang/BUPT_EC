@@ -33,7 +33,7 @@ type classroomRefreshResult struct {
 	err      error
 }
 
-func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
+func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.Time) (*classroomRefreshAttempt, bool) {
 	s.backgroundMu.Lock()
 	if s.backgroundStopping {
 		s.backgroundMu.Unlock()
@@ -61,9 +61,12 @@ func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefre
 	s.refreshMu.Unlock()
 	s.backgroundMu.Unlock()
 
+	// Keep request values such as log_id, but never inherit client cancellation
+	// or deadlines — shared workers outlive any single waiter.
+	parent := context.WithoutCancel(nonNilContext(ctx))
 	go func() {
 		defer s.refreshWorkers.Done()
-		refreshCtx, cancel := context.WithTimeout(context.Background(), ClassroomRefreshLimit)
+		refreshCtx, cancel := context.WithTimeout(parent, ClassroomRefreshLimit)
 		defer cancel()
 
 		result := s.refreshTodayClassrooms(refreshCtx)
@@ -109,7 +112,7 @@ func (s *ClassroomService) nextRefreshAllowedAt() time.Time {
 }
 
 func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
-	attempt, started := s.startClassroomRefresh(now)
+	attempt, started := s.startClassroomRefresh(ctx, now)
 	if !started {
 		if err := s.getLastRefreshError(); err != nil {
 			return classroomResponse(cached, true, staleAPIError(err))

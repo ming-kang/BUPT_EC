@@ -224,25 +224,38 @@ func TestNoRouteServesSPAFallback(t *testing.T) {
 	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
 		t.Fatalf("SPA fallback Content-Type = %q, want text/html", contentType)
 	}
-
-	responseRecorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/api/nonexistent", nil)
-	router.ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusNotFound {
-		t.Fatalf("unknown api route status = %d, want %d", responseRecorder.Code, http.StatusNotFound)
-	}
-	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
-		t.Fatalf("unknown api route Content-Type = %q, want application/json", contentType)
+	if logID := responseRecorder.Header().Get("LogID"); logID != "" {
+		t.Fatalf("SPA fallback must not force LogID header, got %q", logID)
 	}
 
-	responseRecorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/api", nil)
-	router.ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusNotFound {
-		t.Fatalf("GET /api status = %d, want %d", responseRecorder.Code, http.StatusNotFound)
-	}
-	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
-		t.Fatalf("GET /api Content-Type = %q, want application/json", contentType)
+	for _, path := range []string{"/api/nonexistent", "/api"} {
+		responseRecorder = httptest.NewRecorder()
+		request = httptest.NewRequest(http.MethodGet, path, nil)
+		router.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d, want %d", path, responseRecorder.Code, http.StatusNotFound)
+		}
+		if contentType := responseRecorder.Header().Get("Content-Type"); !strings.Contains(contentType, "application/json") {
+			t.Fatalf("%s Content-Type = %q, want application/json", path, contentType)
+		}
+		var envelope struct {
+			Code  int    `json:"code"`
+			Msg   string `json:"msg"`
+			LogID string `json:"log_id"`
+		}
+		if err := json.Unmarshal(responseRecorder.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("%s decode: %v", path, err)
+		}
+		logIDHeader := responseRecorder.Header().Get("LogID")
+		if logIDHeader == "" {
+			t.Fatalf("%s missing LogID header", path)
+		}
+		if envelope.LogID == "" || envelope.LogID != logIDHeader {
+			t.Fatalf("%s log_id = %q header = %q, want matching non-empty values", path, envelope.LogID, logIDHeader)
+		}
+		if envelope.Code != http.StatusNotFound || envelope.Msg != "not found" {
+			t.Fatalf("%s envelope = %#v", path, envelope)
+		}
 	}
 }
 
@@ -262,6 +275,9 @@ func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
 	if responseRecorder.Header().Get("Content-Encoding") != "gzip" {
 		t.Fatalf("Content-Encoding = %q, want gzip", responseRecorder.Header().Get("Content-Encoding"))
 	}
+	if !strings.Contains(responseRecorder.Header().Get("Vary"), "Accept-Encoding") {
+		t.Fatalf("Vary = %q, want Accept-Encoding", responseRecorder.Header().Get("Vary"))
+	}
 	gzipReader, err := gzip.NewReader(responseRecorder.Body)
 	if err != nil {
 		t.Fatalf("gzip reader: %v", err)
@@ -273,6 +289,17 @@ func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
 	}
 	if string(body) != strings.Repeat("x", 128) {
 		t.Fatalf("unexpected decompressed body %q", string(body))
+	}
+
+	responseRecorder = httptest.NewRecorder()
+	request = httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	request.Header.Set("Accept-Encoding", "gzip;q=0")
+	router.ServeHTTP(responseRecorder, request)
+	if responseRecorder.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("gzip;q=0 Content-Encoding = %q, want empty", responseRecorder.Header().Get("Content-Encoding"))
+	}
+	if responseRecorder.Body.String() != strings.Repeat("x", 128) {
+		t.Fatalf("gzip;q=0 body should remain identity")
 	}
 
 	responseRecorder = httptest.NewRecorder()
