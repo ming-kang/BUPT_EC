@@ -66,11 +66,12 @@ type CampusInfo struct {
 }
 
 type TodayClassrooms struct {
-	Date       string       `json:"date"`
-	UpdatedAt  time.Time    `json:"updated_at"`
-	ExpiresAt  time.Time    `json:"expires_at"`
-	StaleUntil time.Time    `json:"stale_until"`
-	Stale      bool         `json:"stale"`
-	Campuses   []CampusInfo `json:"campuses"`
-	Error      *APIError    `json:"error"`
+	Date            string       `json:"date"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+	ExpiresAt       time.Time    `json:"expires_at"`
+	StaleUntil      time.Time    `json:"stale_until"`
+	Stale           bool         `json:"stale"`
+	Campuses        []CampusInfo `json:"campuses"`
+	PartialCampuses []string     `json:"partial_campuses,omitempty"`
+	Error           *APIError    `json:"error"`
 }

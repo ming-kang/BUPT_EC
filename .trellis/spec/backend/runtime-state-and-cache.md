@@ -76,6 +76,89 @@ Tests in `service/realtime_data_test.go` lock this behavior down with
 When changing refresh behavior, keep the shared-attempt model. Do not start one
 JW query per HTTP caller during cache misses.
 
+## Scenario: Full, Partial, and Failed Refresh Outcomes
+
+### 1. Scope / Trigger
+
+Apply this contract whenever campus query aggregation, refresh backoff, stale
+response selection, runtime diagnostics, or the public classroom payload
+changes. The outcome must not be inferred only from `TodayClassrooms.error`.
+
+### 2. Signatures
+
+Internal coordination uses:
+
+```go
+type refreshKind int // refreshFull, refreshPartial, refreshFailed
+
+type classroomRefreshResult struct {
+    value    *model.TodayClassrooms
+    kind     refreshKind
+    failures []campusRefreshFailure
+    err      error // total failure only
+}
+```
+
+Public methods remain compatible:
+
+```go
+QueryAll(context.Context) (*model.TodayClassrooms, error)
+GetTodayClassrooms(context.Context) (*model.TodayClassrooms, error)
+```
+
+### 3. Contracts
+
+| Outcome | Cache | Backoff | Runtime/log |
+| --- | --- | --- | --- |
+| full | replace with complete payload | clear | success, no warning/error |
+| partial | cache usable payload and `partial_campuses` | 30 seconds | warning with failed campus IDs |
+| failed | preserve existing cache | 30 seconds | total error |
+
+`cache_fresh` describes cache age. `cache_partial` independently describes
+completeness. A fresh partial cache can be ready.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required response |
+| --- | --- |
+| all campuses succeed | HTTP 200 payload without `error` |
+| at least one campus succeeds | HTTP 200 payload with safe partial `error` |
+| all fail, no cache | service error -> HTTP 503 at handler |
+| stale partial cache, latest total failure | HTTP 200 stale payload with latest total-failure warning |
+| refresh still in flight after stale wait | cached warning remains until an outcome exists |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Shahe fails, Xitucheng succeeds; cache identifies `04` and remains ready.
+- Base: both campuses succeed; partial diagnostics are empty.
+- Bad: a later total outage still shows only the old “部分校区” warning.
+
+### 6. Tests Required
+
+- Full, partial, and failed outcomes have separate unit coverage.
+- Partial cache followed by total failure asserts latest-error precedence both
+  immediately and during backoff.
+- Runtime/readiness tests assert `cache_partial` and `partial_campuses`.
+- Race tests preserve the single shared refresh attempt.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+if result.value.Error != nil { /* infer partial */ }
+```
+
+#### Correct
+
+```go
+switch result.kind {
+case refreshFull:
+case refreshPartial:
+case refreshFailed:
+}
+```
+
 ## JW Token and API URL State
 
 `service/token_manager.go` owns JW token and API URL caching:

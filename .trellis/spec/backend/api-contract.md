@@ -47,11 +47,12 @@ errors, upstream response bodies, URLs, credentials, or tokens to clients.
 ```text
 TodayClassrooms
 ├── date: string
-├── updated_at: RFC3339 timestamp
+├── updated_at: RFC3339 timestamp (latest refresh-attempt completion)
 ├── expires_at: RFC3339 timestamp
 ├── stale_until: RFC3339 timestamp
 ├── stale: boolean
 ├── campuses: CampusInfo[]
+├── partial_campuses?: string[]
 └── error: APIError | null
 ```
 
@@ -97,6 +98,12 @@ Preserve these semantics unless the frontend is updated in the same change:
 - `stale=true` means the payload is usable but came from an expired same-day
   cache. If a refresh failed, `error` may describe the stale condition with a
   safe message.
+- `partial_campuses` lists configured campus IDs that failed during the usable
+  refresh. It is omitted for complete payloads; a partial payload may still be
+  fresh by age and is returned with HTTP 200.
+- `updated_at` is the refresh attempt completion time. If a partial refresh
+  reuses prior same-day campus data, do not present it as every campus's data
+  freshness timestamp.
 
 When changing this contract, update backend tests, frontend validation, affected
 components, user docs, and `CHANGELOG.md` if users can observe the change.
@@ -112,6 +119,14 @@ cache exists. Its body includes:
 - `status`: HTTP status text;
 - `jw_credentials_configured`: result of `config.HasJWCredentials()`;
 - `runtime`: `service.RuntimeStatus` diagnostics.
+
+Runtime cache diagnostics keep age and completeness separate:
+
+- `cache_fresh` / `cache_stale`: age state;
+- `cache_partial`: whether the usable payload is incomplete;
+- `partial_campuses`: affected campus IDs;
+- `last_refresh_warning`: sanitized partial outcome warning;
+- `last_refresh_error`: sanitized latest total failure.
 
 Do not put secrets or raw upstream payloads in readiness responses.
 

@@ -8,10 +8,13 @@ type RuntimeStatus struct {
 	LastLoginSuccessAt   *time.Time `json:"last_login_success_at,omitempty"`
 	LastLoginError       string     `json:"last_login_error,omitempty"`
 	LastRefreshSuccessAt *time.Time `json:"last_refresh_success_at,omitempty"`
+	LastRefreshWarning   string     `json:"last_refresh_warning,omitempty"`
 	LastRefreshError     string     `json:"last_refresh_error,omitempty"`
 	CacheAvailable       bool       `json:"cache_available"`
 	CacheFresh           bool       `json:"cache_fresh"`
 	CacheStale           bool       `json:"cache_stale"`
+	CachePartial         bool       `json:"cache_partial"`
+	PartialCampuses      []string   `json:"partial_campuses,omitempty"`
 	CacheDate            string     `json:"cache_date,omitempty"`
 }
 
@@ -32,6 +35,15 @@ func (s *ClassroomService) recordRefreshSuccess(at time.Time) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
 	s.status.LastRefreshSuccessAt = cloneTime(at)
+	s.status.LastRefreshWarning = ""
+	s.status.LastRefreshError = ""
+}
+
+func (s *ClassroomService) recordRefreshPartial(at time.Time) {
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	s.status.LastRefreshSuccessAt = cloneTime(at)
+	s.status.LastRefreshWarning = partialCampusErrorMessage
 	s.status.LastRefreshError = ""
 }
 
@@ -49,6 +61,8 @@ func (s *ClassroomService) GetRuntimeStatus() RuntimeStatus {
 		status.CacheFresh = !cached.ExpiresAt.Before(now)
 		// CacheStale means usable but past the fresh TTL (not merely "within StaleUntil").
 		status.CacheStale = !status.CacheFresh && now.Before(cached.StaleUntil)
+		status.CachePartial = len(cached.PartialCampuses) > 0
+		status.PartialCampuses = append([]string(nil), cached.PartialCampuses...)
 		status.CacheDate = cached.Date
 	}
 	return status

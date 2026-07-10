@@ -52,7 +52,7 @@ function CampusSettingsModal(props) {
           数据来源：教务系统当天空闲教室接口
         </Typography.Text>
         <Typography.Text type="secondary" style={{ display: "block", lineHeight: "1.9em" }}>
-          当前数据刷新时间：
+          最近刷新尝试时间：
           {props.todayData.data?.updated_at
             ? new Date(props.todayData.data.updated_at).toLocaleString()
             : "未知"}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -82,6 +83,42 @@ func TestReadyzRequiresConfiguredCredentialsAndUsableCache(t *testing.T) {
 	router.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Code != http.StatusOK {
 		t.Fatalf("readyz with credentials and cache status = %d, want %d", responseRecorder.Code, http.StatusOK)
+	}
+}
+
+func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
+	httpServer := newTestHTTPServer(&fakeClassroomService{
+		usableTodayCache: true,
+		runtimeStatus: service.RuntimeStatus{
+			CacheAvailable:     true,
+			CacheFresh:         true,
+			CachePartial:       true,
+			PartialCampuses:    []string{"04"},
+			LastRefreshWarning: "部分校区数据刷新失败，已展示可用数据",
+		},
+	}, nil)
+
+	router := gin.New()
+	router.GET("/readyz", httpServer.Readyz)
+
+	responseRecorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	router.ServeHTTP(responseRecorder, request)
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("partial cache readyz status = %d, want %d", responseRecorder.Code, http.StatusOK)
+	}
+
+	var body struct {
+		Runtime service.RuntimeStatus `json:"runtime"`
+	}
+	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode readyz partial response: %v", err)
+	}
+	if !body.Runtime.CachePartial || !reflect.DeepEqual(body.Runtime.PartialCampuses, []string{"04"}) {
+		t.Fatalf("readyz partial runtime = %#v", body.Runtime)
+	}
+	if body.Runtime.LastRefreshWarning == "" {
+		t.Fatalf("readyz missing partial warning: %#v", body.Runtime)
 	}
 }
 

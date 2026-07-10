@@ -48,7 +48,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Invalid `JW_TOKEN` no longer overrides a successfully re-logged-in token after
   an auth failure (override is invalidated until process restart).
 - Multi-campus refresh keeps partial results when one campus fails, merging prior
-  same-day data when available instead of failing the whole payload.
+  same-day data when available instead of failing the whole payload; responses
+  and readiness diagnostics now identify the affected campus IDs.
+- A total refresh failure after a partial cached result now replaces the older
+  partial warning, so users and operators see the latest upstream outage state.
 - Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
 - Stale/partial classroom payloads auto-refresh every few seconds instead of
   waiting a minimum of 60 seconds past `expires_at`.
@@ -68,6 +71,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   `main.go` and refreshing ignore rules for local-only project artifacts.
 - `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
   “still within the same calendar day”).
+- `/readyz` now separates cache age from completeness with `cache_partial`,
+  `partial_campuses`, and a sanitized `last_refresh_warning`.
 - Settings label for ended periods: “允许选择已结束节次”.
 - Background warmup re-runs after each Shanghai midnight for long-lived processes.
 

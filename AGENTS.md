@@ -23,11 +23,11 @@ User-facing documentation lives in `README.md` (overview) and `docs/` (`deployme
   - `Login`: AES-encrypted password login (`crypto.go`); the token is cached in memory by `TokenManager` with `singleflight` dedup and re-login on auth failures. `JW_TOKEN` is an emergency env override that is invalidated after an auth failure until process restart.
   - `QueryCampus`: `POST /todayClassrooms?campusId=01|04` for Xitucheng (`01`) and Shahe (`04`). Response shapes live in `service/model/realtime_data.go`.
 - Results are normalized into a `TodayClassrooms` payload grouped by `campus` → `buildings` → `rooms` with `free_nodes`/`free_times`, plus a `nodes` list of class periods. See `service/classroom_builder.go` (`buildCampusInfo`, `parseRoom`, `splitRoomName`) for rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)`.
-- Refreshes are single-flight (`refresh_coordinator.go`): concurrent requests share one attempt; total or partial refresh outcomes set a 30-second backoff; graceful shutdown waits via `WaitWarmup`.
+- Refreshes are single-flight (`refresh_coordinator.go`): concurrent requests share one attempt; internal outcomes distinguish full success, partial success, and total failure. Total or partial outcomes set a 30-second backoff; graceful shutdown waits via `WaitWarmup`.
 
 ## Caching
 - `cache/cache.go` wraps `github.com/patrickmn/go-cache`; `cache.GlobalCache` satisfies the `service.CacheStore` interface directly.
-- A single `TODAY_CLASSROOMS_CACHE` key holds the `*model.TodayClassrooms` value for the current **Asia/Shanghai** business day: fully successful data is fresh for ~5 minutes, then served with `stale=true` until next Shanghai midnight while background refreshes run. Partial campus success is cached with a top-level `error` and soft-stale revalidated inside the fresh TTL (return data + background retry). Cache day metadata is stamped at refresh completion. Cross-day cache reuse is rejected by `getCachedTodayClassrooms`.
+- A single `TODAY_CLASSROOMS_CACHE` key holds the `*model.TodayClassrooms` value for the current **Asia/Shanghai** business day: fully successful data is fresh for ~5 minutes, then served with `stale=true` until next Shanghai midnight while background refreshes run. Partial campus success is cached with `partial_campuses` plus a top-level `error` and soft-stale revalidated inside the fresh TTL (return data + background retry). A later total failure overrides the older partial warning on stale responses. Cache day metadata is stamped at refresh completion. Cross-day cache reuse is rejected by `getCachedTodayClassrooms`.
 - The cache is process-local; restarting the backend or running multiple instances does not share it.
 
 ## Logging

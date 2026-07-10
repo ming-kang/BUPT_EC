@@ -3,8 +3,23 @@ package service
 import (
 	"BUPT_EC/service/model"
 	"context"
+	"errors"
+	"fmt"
 	"time"
 )
+
+type refreshKind int
+
+const (
+	refreshFull refreshKind = iota
+	refreshPartial
+	refreshFailed
+)
+
+type campusRefreshFailure struct {
+	CampusID string
+	Err      error
+}
 
 type classroomRefreshAttempt struct {
 	done   chan struct{}
@@ -12,8 +27,10 @@ type classroomRefreshAttempt struct {
 }
 
 type classroomRefreshResult struct {
-	value *model.TodayClassrooms
-	err   error
+	value    *model.TodayClassrooms
+	kind     refreshKind
+	failures []campusRefreshFailure
+	err      error
 }
 
 func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
@@ -40,8 +57,8 @@ func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefre
 		refreshCtx, cancel := context.WithTimeout(context.Background(), ClassroomRefreshLimit)
 		defer cancel()
 
-		today, err := s.refreshTodayClassrooms(refreshCtx)
-		s.finishClassroomRefresh(attempt, classroomRefreshResult{value: today, err: err})
+		result := s.refreshTodayClassrooms(refreshCtx)
+		s.finishClassroomRefresh(attempt, result)
 	}()
 	return attempt, true
 }
@@ -55,18 +72,17 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 		s.refreshInFlight = false
 		s.refreshAttempt = nil
 	}
-	if result.err != nil {
+	if result.kind == refreshFailed || result.err != nil {
 		s.lastRefreshErr = result.err
+		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
+	} else if result.kind == refreshPartial {
+		s.lastRefreshErr = nil
+		// Partial campus success is usable, but still backs off so soft-stale
+		// requests do not hammer JW while a campus is unavailable.
 		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
 	} else {
 		s.lastRefreshErr = nil
-		// Partial campus success is not a hard failure (payload is cached), but
-		// still back off so soft-stale retries do not hammer JW every request.
-		if result.value != nil && result.value.Error != nil {
-			s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
-		} else {
-			s.nextRefreshAllowed = time.Time{}
-		}
+		s.nextRefreshAllowed = time.Time{}
 	}
 	close(attempt.done)
 }
@@ -96,7 +112,10 @@ func (s *ClassroomService) WaitWarmup(ctx context.Context) error {
 func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {
 	attempt, started := s.startClassroomRefresh(now)
 	if !started {
-		return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(s.getLastRefreshError())))
+		if err := s.getLastRefreshError(); err != nil {
+			return classroomResponse(cached, true, staleAPIError(err))
+		}
+		return classroomResponse(cached, true, cached.Error)
 	}
 
 	timer := time.NewTimer(staleRefreshWait)
@@ -109,9 +128,9 @@ func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *
 			if err == nil {
 				return fresh
 			}
-			return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(err)))
+			return classroomResponse(cached, true, staleAPIError(err))
 		}
-		return classroomResponse(cached, true, preferAPIError(cached.Error, staleAPIError(attempt.result.err)))
+		return classroomResponse(cached, true, staleAPIError(attempt.result.err))
 	case <-timer.C:
 		return classroomResponse(cached, true, cached.Error)
 	case <-ctx.Done():
@@ -119,10 +138,21 @@ func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *
 	}
 }
 
-// preferAPIError returns primary when set, otherwise fallback (e.g. stale refresh failure).
-func preferAPIError(primary, fallback *model.APIError) *model.APIError {
-	if primary != nil {
-		return primary
+func failedCampusIDs(failures []campusRefreshFailure) []string {
+	ids := make([]string, 0, len(failures))
+	for _, failure := range failures {
+		ids = append(ids, failure.CampusID)
 	}
-	return fallback
+	return ids
+}
+
+func joinCampusRefreshFailures(failures []campusRefreshFailure) error {
+	if len(failures) == 0 {
+		return newJWError(jwErrorQuery, "classroom refresh", nil, "all campus queries failed")
+	}
+	errs := make([]error, 0, len(failures))
+	for _, failure := range failures {
+		errs = append(errs, fmt.Errorf("campus %s: %w", failure.CampusID, failure.Err))
+	}
+	return errors.Join(errs...)
 }

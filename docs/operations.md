@@ -34,10 +34,12 @@ Returns `200` when JW credentials are configured **and** a usable same-day cache
     "last_login_success_at": "2026-07-03T08:15:04+08:00",
     "last_login_error": "",
     "last_refresh_success_at": "2026-07-03T08:15:05+08:00",
+    "last_refresh_warning": "",
     "last_refresh_error": "",
     "cache_available": true,
     "cache_fresh": true,
     "cache_stale": false,
+    "cache_partial": false,
     "cache_date": "2026-07-03"
   }
 }
@@ -45,9 +47,13 @@ Returns `200` when JW credentials are configured **and** a usable same-day cache
 
 - `cache_fresh`: within the ~5 minute fresh TTL.
 - `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
+- `cache_partial`: at least one configured campus used prior same-day data or an empty skeleton during the latest usable refresh. `partial_campuses` lists the affected campus IDs when present.
 - Business day boundaries use **Asia/Shanghai**.
 
-`last_login_error` and `last_refresh_error` hold the most recent sanitized failure and are the first place to look when the service is not ready. A `503` right after a restart is normal until the warmup refresh finishes.
+`last_refresh_warning` describes a usable partial outcome, while
+`last_refresh_error` describes the latest total refresh failure. A partial cache
+can remain ready; use `cache_partial` and `partial_campuses` to identify its
+scope. A `503` right after a restart is normal until the warmup refresh finishes.
 
 ## Logging
 
@@ -60,6 +66,10 @@ Example record:
 ```json
 {"time":"2026-07-03T08:15:05+08:00","level":"INFO","msg":"classroom refresh succeeded","elapsed":"1.2s","log_id":"20260703081504A1B2C3D4E5F6A7B8C9D2"}
 ```
+
+Partial refreshes use warning level and include `failed_campuses` plus the
+classified internal errors. These diagnostics never include JW credentials or
+tokens.
 
 Set `LOG_CALLER=1` in the environment file to add source file/line to each record (useful when debugging, off by default).
 
@@ -85,14 +95,14 @@ The backend keeps a single same-day in-memory cache of classroom data (business 
 
 - **Fresh TTL**: about 5 minutes. Fully successful fresh cache (`error` null) is served directly with no JW call.
 - **Stale window**: after the fresh TTL, the cached payload may still be served with `stale: true` until the next Shanghai midnight, while a refresh runs in the background (stale-while-revalidate).
-- **Partial campus success**: if one campus query fails but another succeeds, the payload is still cached; failed campuses keep prior same-day data when available, and a top-level `error` describes the partial failure. While that partial payload is still inside the fresh TTL, the API **soft-stale revalidates**: it returns the data immediately and kicks a single-flight background refresh so the failed campus is retried without waiting the full 5 minutes.
+- **Partial campus success**: if one campus query fails but another succeeds, the payload is still cached; failed campuses keep prior same-day data when available, `partial_campuses` lists their IDs, and a top-level `error` describes the partial failure. While that partial payload is still inside the fresh TTL, the API **soft-stale revalidates**: it returns the data immediately and kicks a single-flight background refresh so the failed campus is retried without waiting the full 5 minutes.
 - **Failure backoff**: after a **total** refresh failure **or** a **partial** refresh outcome (cached payload with top-level `error`), new refresh attempts are suppressed for 30 seconds so JW is not hammered. Stale/partial responses still carry the last user-facing error message where applicable.
 - **Day stamping**: `date` / `expires_at` / `stale_until` on a cache entry are taken when the refresh **finishes** (not when it starts), so a JW round-trip that crosses Shanghai midnight is labeled for the completion day.
 - **Cross-day reuse**: never. Yesterday's cache is ignored.
 
 Refreshes are triggered on demand by `GET /api/get_data`, once at startup (warmup), and again after each Shanghai midnight. Concurrent requests share a single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
-If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). The UI keeps the last successful snapshot on background poll failures instead of blanking the page.
+If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning. The UI keeps the last successful snapshot on background poll failures instead of blanking the page.
 
 ## Troubleshooting
 

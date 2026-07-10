@@ -58,9 +58,10 @@ lose correlation data.
 
 Current local pattern:
 
-- `InfoContext`: successful request entry, JW login success, classroom refresh
-  success.
-- `WarnContext`: JW login failure and classroom refresh failure.
+- `InfoContext`: successful request entry, JW login success, and complete
+  classroom refresh success.
+- `WarnContext`: JW login failure, partial classroom refresh, and total
+  classroom refresh failure.
 
 There is no debug-level logging in normal runtime because the configured level
 is info. If a future task adds debug logs, make them safe and useful when
@@ -77,7 +78,8 @@ private data:
 
 - API handler entry for `/api/get_data`.
 - JW login success or failure with elapsed time.
-- Classroom refresh success or failure with elapsed time.
+- Classroom refresh success, partial outcome, or failure with elapsed time.
+- Partial refresh warnings with `failed_campuses` and classified joined errors.
 - Errors already classified by service code.
 - Readiness/runtime status through `/readyz`, not by dumping status on every
   request.
@@ -98,6 +100,10 @@ Never log:
 
 `service.SafeErrorMessage` is for API clients, not logs. Logs may include the
 classified internal error, but keep secrets out of the error text.
+
+Partial refresh logs may include configured campus IDs and internal classified
+errors, but never request headers, raw upstream response bodies, or token
+values.
 
 ## Deployment Notes
 

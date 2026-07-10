@@ -45,7 +45,7 @@ func (s *ClassroomService) QueryOne(ctx context.Context, id string) ([]model.JWC
 }
 
 func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
-	return s.refreshTodayClassrooms(ctx)
+	return classroomResponseFromRefresh(s.refreshTodayClassrooms(ctx))
 }
 
 // StartWarmup kicks an immediate background refresh, then re-warms after each
@@ -146,17 +146,25 @@ func (s *ClassroomService) queryCampusWithToken(ctx context.Context, campusID st
 	return s.jwClient.QueryCampus(ctx, apiURL, campusID, token)
 }
 
-func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
+func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) classroomRefreshResult {
 	startedAt := time.Now()
-	today, err := s.doRefreshTodayClassrooms(ctx)
-	if err != nil {
-		s.recordRefreshFailure(err)
-		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", time.Since(startedAt), "err", err)
-		return nil, err
+	result := s.doRefreshTodayClassrooms(ctx)
+	completedAt := time.Now()
+	switch result.kind {
+	case refreshFailed:
+		s.recordRefreshFailure(result.err)
+		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", time.Since(startedAt), "err", result.err)
+	case refreshPartial:
+		s.recordRefreshPartial(completedAt)
+		slog.WarnContext(ctx, "classroom refresh partially succeeded",
+			"elapsed", time.Since(startedAt),
+			"failed_campuses", failedCampusIDs(result.failures),
+			"errors", joinCampusRefreshFailures(result.failures))
+	default:
+		s.recordRefreshSuccess(completedAt)
+		slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", time.Since(startedAt))
 	}
-	s.recordRefreshSuccess(time.Now())
-	slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", time.Since(startedAt))
-	return today, nil
+	return result
 }
 
 type campusQueryResult struct {
@@ -165,7 +173,7 @@ type campusQueryResult struct {
 	ok   bool
 }
 
-func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
+func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classroomRefreshResult {
 	results := make([]campusQueryResult, len(s.campuses))
 
 	var group errgroupNoCancel
@@ -186,21 +194,25 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model
 	group.Wait()
 
 	successCount := 0
-	var errs []error
-	for _, result := range results {
+	failures := make([]campusRefreshFailure, 0, len(results))
+	for i, result := range results {
 		if result.ok {
 			successCount++
 			continue
 		}
 		if result.err != nil {
-			errs = append(errs, result.err)
+			failures = append(failures, campusRefreshFailure{
+				CampusID: s.campuses[i].ID,
+				Err:      result.err,
+			})
 		}
 	}
 	if successCount == 0 {
-		if len(errs) == 0 {
-			return nil, newJWError(jwErrorQuery, "classroom refresh", nil, "all campus queries failed")
+		return classroomRefreshResult{
+			kind:     refreshFailed,
+			failures: failures,
+			err:      joinCampusRefreshFailures(failures),
 		}
-		return nil, errors.Join(errs...)
 	}
 
 	// Stamp metadata at refresh completion so a JW round-trip that straddles
@@ -228,25 +240,35 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) (*model
 	}
 
 	var apiErr *model.APIError
+	var kind refreshKind
+	partialCampuses := failedCampusIDs(failures)
 	if successCount < len(s.campuses) {
+		kind = refreshPartial
 		apiErr = &model.APIError{
 			Type:    string(jwErrorQuery),
 			Message: partialCampusErrorMessage,
 		}
+	} else {
+		kind = refreshFull
 	}
 
 	today := &model.TodayClassrooms{
-		Date:       now.Format("2006-01-02"),
-		UpdatedAt:  now,
-		ExpiresAt:  now.Add(classroomFreshTTL),
-		StaleUntil: endOfDay(now),
-		Stale:      false,
-		Campuses:   campuses,
-		Error:      apiErr,
+		Date:            now.Format("2006-01-02"),
+		UpdatedAt:       now,
+		ExpiresAt:       now.Add(classroomFreshTTL),
+		StaleUntil:      endOfDay(now),
+		Stale:           false,
+		Campuses:        campuses,
+		PartialCampuses: partialCampuses,
+		Error:           apiErr,
 	}
 
 	s.cache.Set(TodayCacheKey, today, cacheExpiration(now, today.StaleUntil))
-	return classroomResponse(today, false, apiErr), nil
+	return classroomRefreshResult{
+		value:    today,
+		kind:     kind,
+		failures: failures,
+	}
 }
 
 // cacheExpiration returns the go-cache TTL for a today-classrooms entry.

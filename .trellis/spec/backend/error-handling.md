@@ -87,6 +87,17 @@ same-day data with `stale=true` and `data.error` set to an `APIError` from
 `staleAPIError`. This is still an HTTP 200 success payload because the data is
 usable.
 
+Error precedence follows the latest known refresh outcome:
+
+- while a refresh is still in flight, return the cache's existing warning;
+- after a total refresh failure, its stale failure warning overrides an older
+  partial-campus warning;
+- during total-failure backoff, keep returning the latest total failure;
+- a new partial result replaces the old cached payload and warning.
+
+Do not use a generic “prefer cached error” helper: cached warnings are older
+facts and must not mask a completed total failure.
+
 ## Upstream Response Handling
 
 JW responses often use business codes inside JSON bodies. Keep HTTP status and
@@ -111,3 +122,4 @@ Tests such as `TestParseJWQueryResponseClassifiesBusinessAuthCode` and
 - Clearing whatever token is currently cached after an old request fails. Use
   `clearTokenIfCurrent` to avoid deleting a newer token.
 - Hiding stale refresh failures from `TodayClassrooms.error` or runtime status.
+- Preferring an older partial warning over a newer total refresh failure.
