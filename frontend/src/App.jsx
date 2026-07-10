@@ -16,6 +16,7 @@ import {
   getSystemPrefersDark,
   resolveDarkMode,
 } from "./darkMode";
+import { chooseCampusId } from "./campusSelection";
 
 const TodayClassroomTable = lazy(
   () => import("./components/TodayClassroomTable")
@@ -71,19 +72,15 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    if (campuses.length === 0) {
-      if (selectedCampus !== "") {
-        dispatch({ type: "SET_CAMPUS", id: "" });
-      }
-      return;
+    const nextCampusId = chooseCampusId({
+      campuses,
+      partialCampusIds: resp.data?.partial_campuses,
+      selectedCampusId: selectedCampus,
+    });
+    if (nextCampusId !== selectedCampus) {
+      dispatch({ type: "SET_CAMPUS", id: nextCampusId });
     }
-
-    if (!campuses.some((campus) => campus.id === selectedCampus)) {
-      const preferred =
-        campuses.find((campus) => campus.name === "沙河") || campuses[0];
-      dispatch({ type: "SET_CAMPUS", id: preferred.id });
-    }
-  }, [campuses, selectedCampus, dispatch]);
+  }, [campuses, resp.data?.partial_campuses, selectedCampus, dispatch]);
 
   return (
     <ConfigProvider

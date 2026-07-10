@@ -35,6 +35,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Partial campus success no longer auto-selects an empty failed campus
+  placeholder (for example cold 沙河 failure with usable 西土城 data).
+- Settings copy labels `updated_at` as the current data update time, not the
+  last refresh attempt.
 - Gzip negotiation now honors Accept-Encoding q-values (including `gzip;q=0`)
   instead of substring matching.
 - Unknown `/api` routes return a correlated `LogID` header and body `log_id`.
