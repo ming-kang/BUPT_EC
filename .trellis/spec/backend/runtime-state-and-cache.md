@@ -11,7 +11,8 @@ Reference files:
 - `service/classroom_service.go`: `ClassroomService` and `CacheStore`.
 - `service/realtime_data.go`: `GetTodayClassrooms`, `QueryAll`, cache TTLs, and
   `TodayCacheKey`.
-- `cache/cache.go`: `cache.GlobalCache` backed by `github.com/patrickmn/go-cache`.
+- `cache/cache.go`: explicit `cache.New()` constructor backed by
+  `github.com/patrickmn/go-cache`.
 - `service/runtime_status.go`: readiness and runtime diagnostics.
 
 Do not add ORM, migration, repository, or table abstractions unless a task
@@ -24,7 +25,7 @@ All mutable runtime state for classroom queries is on `ClassroomService`:
 
 - token and API URL state through `TokenManager`;
 - the `CacheStore` implementation;
-- configured campuses from `config.Config`;
+- configured campuses copied from `service.ClassroomServiceOptions`;
 - the injected `JWClient`;
 - refresh coordination fields guarded by `refreshMu`;
 - warmup/background lifecycle fields guarded by `backgroundMu`;
@@ -276,13 +277,14 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 
 ### 3. Contracts
 
-- Cached token state stores both value and source. `JW_TOKEN` is installed as
+- Cached token state stores both value and source. The startup `JW_TOKEN`
+  snapshot is injected into `TokenManager` and installed as
   `tokenSourceOverride`; successful login uses `tokenSourceLogin`.
 - `RefreshAfterAuthFailure` receives the exact rejected token and rechecks state
   inside the token singleflight closure.
 - If current token differs from `failedToken`, return it without login. If it
-  matches, clear it; invalidate the environment override only when its source
-  was `tokenSourceOverride`.
+  matches, clear it; invalidate the startup override only when its source was
+  `tokenSourceOverride`.
 - Auth recovery performs at most one login and `queryCampus` retries its JW query
   exactly once.
 - Token and API URL groups use `DoChan`. Shared work runs under
@@ -292,6 +294,8 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
   return early.
 - `EnsureToken(ctx, true)` still guarantees a real login even if it first joins
   an operation that only reused or installed a token.
+- `TokenManager` never re-reads the process environment. Changing credentials
+  requires constructing a new application/process.
 - Never log token values, credentials, request headers, or upstream bodies.
 
 ### 4. Validation & Error Matrix
@@ -349,7 +353,7 @@ validation.
 
 `/readyz` is based on two conditions:
 
-- `config.HasJWCredentials()` is true; and
+- the injected `config.RuntimeConfig.HasJWCredentials()` predicate is true; and
 - `ClassroomService.HasUsableTodayCache()` reports a same-day cache that is
   fresh or stale-but-usable.
 
@@ -366,3 +370,5 @@ do not add credentials, tokens, or raw upstream payloads.
 - Clearing a newly refreshed token because an older request failed; pass the
   failed token to `RefreshAfterAuthFailure` and recheck inside singleflight.
 - Hiding refresh failures from runtime status or stale response metadata.
+- Reading `JW_TOKEN` or login credentials from the environment inside
+  `service/`; inject the startup snapshot instead.

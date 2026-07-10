@@ -19,9 +19,13 @@ Primary references:
 ## Required Go Patterns
 
 - Format all Go code with `gofmt`. CI expects `gofmt -l .` to print nothing.
-- Keep service dependencies injectable. `ClassroomService` accepts a `CacheStore`
-  and internally uses a `JWClient`; tests create isolated services with
-  `newTestService(t, client)` and a fresh `gocache` instance.
+- Keep service dependencies injectable. `NewClassroomService` accepts explicit
+  `ClassroomServiceOptions`, a `CacheStore`, and a `JWClient`; tests create
+  isolated services with `newTestService(t, client)` / direct override
+  injection and a fresh `gocache` instance.
+- Keep runtime environment access in `config.Load` plus the `main.go`
+  composition root. Tests pass map-backed lookups and constructor values rather
+  than mutating config/cache globals.
 - Use contexts for external work. JW login, API URL fetch, classroom refreshes,
   and HTTP requests all use bounded contexts.
 - Keep handlers thin and service logic testable without Gin.
@@ -45,8 +49,8 @@ Local test patterns:
 
 - `service/realtime_data_test.go` defines `mockJWClient` and `newTestService`.
   Follow this pattern for service tests so unit tests do not touch the network.
-- Integration tests such as `TestLogin`, `TestQueryOne`, and `TestQueryAll`
-  require `JW_TOKEN` or `JW_USERNAME`/`JW_PASSWORD` and must skip cleanly when
+- `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; query integration tests may
+  use that pair or `JW_TOKEN`. All must skip cleanly when their required
   credentials are missing.
 - Handler tests should inject deterministic fakes through `NewHTTPServer` and
   use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
@@ -333,11 +337,15 @@ do not rely only on `set -e` when callers use `if`, `!`, `&&`, or `||`.
 - Do same-day cache and stale behavior still reject cross-day reuse?
 - Are docs and changelog updated for user-visible behavior?
 - Did the author run the relevant Go/frontend/script checks?
+- Can every production runtime value be traced from `config.Load` through
+  `main.go` constructors without downstream environment reads or globals?
 
 ## Forbidden Patterns
 
 - Network-dependent unit tests that do not skip without credentials.
 - Global mutable state in `service/` that bypasses injected test instances.
+- Package-level config/cache/HTTP singletons or hot-path runtime `os.Getenv`
+  calls outside the startup boundary.
 - Raw `err.Error()` in API responses.
 - Logging secrets or raw upstream payloads.
 - Reintroducing local timetable persistence as an incidental implementation

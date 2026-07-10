@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "07-06-behavior-safety-net",
-    "07-06-injected-http-boundary"
+    "07-06-injected-http-boundary",
+    "07-10-runtime-config-composition"
   ],
   "parent": null,
   "relatedFiles": [],

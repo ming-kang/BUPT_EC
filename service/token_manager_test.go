@@ -21,7 +21,6 @@ func tokenTestRows(campusID string) []model.JWClassInfo {
 }
 
 func TestConcurrentAuthFailuresShareOneLogin(t *testing.T) {
-	t.Setenv(LoginTokenKey, "")
 	var oldQueries atomic.Int32
 	var loginCalls atomic.Int32
 	bothOldQueries := make(chan struct{})
@@ -77,7 +76,6 @@ func TestConcurrentAuthFailuresShareOneLogin(t *testing.T) {
 }
 
 func TestDelayedAuthFailureReusesInstalledToken(t *testing.T) {
-	t.Setenv(LoginTokenKey, "")
 	var oldQueries atomic.Int32
 	var loginCalls atomic.Int32
 	var newTokenUsed sync.Once
@@ -138,9 +136,9 @@ func TestDelayedAuthFailureReusesInstalledToken(t *testing.T) {
 }
 
 func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
-	t.Setenv(LoginTokenKey, "override-token")
 	var loginCalls atomic.Int32
 	manager := &TokenManager{
+		overrideToken: "override-token",
 		jwClient: &mockJWClient{
 			login: func(ctx context.Context, apiURL string) (string, error) {
 				loginCalls.Add(1)
@@ -172,8 +170,8 @@ func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
 }
 
 func TestLoginTokenFailurePreservesOverrideInvalidationState(t *testing.T) {
-	t.Setenv(LoginTokenKey, "old-override")
 	manager := &TokenManager{
+		overrideToken: "old-override",
 		jwClient: &mockJWClient{
 			login: func(ctx context.Context, apiURL string) (string, error) {
 				return "new-login-token", nil
@@ -201,7 +199,6 @@ func TestLoginTokenFailurePreservesOverrideInvalidationState(t *testing.T) {
 }
 
 func TestCanceledTokenWaiterDoesNotCancelSharedLogin(t *testing.T) {
-	t.Setenv(LoginTokenKey, "")
 	loginStarted := make(chan struct{})
 	releaseLogin := make(chan struct{})
 	var once sync.Once

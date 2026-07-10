@@ -1,12 +1,9 @@
 package main
 
 import (
-	"BUPT_EC/cache"
-	"BUPT_EC/config"
-	"BUPT_EC/logs"
-	"BUPT_EC/service"
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -14,17 +11,49 @@ import (
 	"syscall"
 	"time"
 
+	"BUPT_EC/cache"
+	"BUPT_EC/config"
+	"BUPT_EC/logs"
+	"BUPT_EC/service"
+	"BUPT_EC/utils"
+
 	"github.com/gin-gonic/gin"
 )
 
-func Init() *service.ClassroomService {
-	logs.Init(true)
-	config.InitConfig()
-	if err := config.ValidateRuntimeConfig(); err != nil {
-		log.Fatalf("invalid runtime config: %v", err)
+type application struct {
+	runtimeConfig    config.RuntimeConfig
+	classroomService *service.ClassroomService
+	httpServer       *HTTPServer
+}
+
+func Init() (*application, error) {
+	runtimeConfig, err := config.Load(".env", os.LookupEnv)
+	if err != nil {
+		return nil, fmt.Errorf("load runtime config: %w", err)
 	}
-	cache.InitCache()
-	return service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
+
+	gin.SetMode(runtimeConfig.GinMode)
+	logs.Init(true, runtimeConfig.LogCaller)
+
+	store := cache.New()
+	httpClient := utils.NewHTTPClient()
+	jwClient, err := service.NewJWClient(runtimeConfig.JW.Username, runtimeConfig.JW.Password, httpClient)
+	if err != nil {
+		return nil, fmt.Errorf("create JW client: %w", err)
+	}
+	classroomService, err := service.NewClassroomService(service.ClassroomServiceOptions{
+		Campuses:      runtimeConfig.Campuses,
+		TokenOverride: runtimeConfig.JW.Token,
+	}, store, jwClient)
+	if err != nil {
+		return nil, fmt.Errorf("create classroom service: %w", err)
+	}
+
+	return &application{
+		runtimeConfig:    runtimeConfig,
+		classroomService: classroomService,
+		httpServer:       NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials),
+	}, nil
 }
 
 // httpWriteTimeout bounds how long the server may spend writing a response,
@@ -37,26 +66,19 @@ const httpWriteTimeout = 45 * time.Second
 // that was already running when shutdown began.
 const gracefulShutdownTimeout = httpWriteTimeout + 5*time.Second
 
-// listenAddr returns the HTTP listen address from APP_ADDR.
-// When env is empty, default to loopback so an unbound process is not
-// reachable on all interfaces.
-func listenAddr(env string) string {
-	if env == "" {
-		return "127.0.0.1:8080"
-	}
-	return env
-}
-
 func main() {
-	classroomService := Init()
+	app, err := Init()
+	if err != nil {
+		log.Fatalf("invalid startup configuration: %v", err)
+	}
+
 	appCtx, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()
 	r := gin.New()
 	r.Use(gin.Recovery())
-	httpServer := NewHTTPServer(classroomService, config.HasJWCredentials)
-	httpServer.RegisterRoutes(r)
-	classroomService.StartWarmup(appCtx)
-	addr := listenAddr(os.Getenv("APP_ADDR"))
+	app.httpServer.RegisterRoutes(r)
+	app.classroomService.StartWarmup(appCtx)
+	addr := app.runtimeConfig.AppAddr
 
 	server := &http.Server{
 		Addr:              addr,
@@ -100,7 +122,7 @@ func main() {
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown did not finish cleanly: %v", err)
 	}
-	if err := classroomService.WaitBackground(ctx); err != nil {
+	if err := app.classroomService.WaitBackground(ctx); err != nil {
 		log.Printf("background work did not finish before shutdown: %v", err)
 	}
 	if serveErr != nil {

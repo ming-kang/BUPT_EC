@@ -23,7 +23,7 @@ type ctxKey int
 
 const logIDCtxKey ctxKey = 1
 
-func Init(isMain bool) {
+func Init(isMain, addSource bool) {
 	var writer io.Writer
 	if isMain {
 		if err := os.MkdirAll("run_log", 0750); err != nil {
@@ -42,10 +42,8 @@ func Init(isMain bool) {
 	}
 
 	opts := &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}
-	if os.Getenv("LOG_CALLER") == "1" || strings.EqualFold(os.Getenv("LOG_CALLER"), "true") {
-		opts.AddSource = true
+		Level:     slog.LevelInfo,
+		AddSource: addSource,
 	}
 
 	baseHandler := slog.NewJSONHandler(writer, opts)

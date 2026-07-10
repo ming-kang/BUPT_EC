@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -26,6 +25,7 @@ type tokenOperationResult struct {
 
 type TokenManager struct {
 	jwClient       JWClient
+	overrideToken  string
 	onLoginSuccess func(time.Time)
 	onLoginFailure func(error)
 
@@ -59,7 +59,7 @@ func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (stri
 				if state := m.cachedTokenState(); state.token != "" {
 					return state, nil
 				}
-				if state := m.installEnvOverrideToken(); state.token != "" {
+				if state := m.installOverrideToken(); state.token != "" {
 					return state, nil
 				}
 			}
@@ -181,7 +181,7 @@ func (m *TokenManager) cachedTokenState() tokenOperationResult {
 	return tokenOperationResult{token: m.token, source: m.tokenSource}
 }
 
-func (m *TokenManager) installEnvOverrideToken() tokenOperationResult {
+func (m *TokenManager) installOverrideToken() tokenOperationResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.token != "" {
@@ -190,7 +190,7 @@ func (m *TokenManager) installEnvOverrideToken() tokenOperationResult {
 	if m.overrideInvalidated {
 		return tokenOperationResult{}
 	}
-	token := os.Getenv(LoginTokenKey)
+	token := m.overrideToken
 	if token == "" {
 		return tokenOperationResult{}
 	}

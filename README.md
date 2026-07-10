@@ -56,7 +56,7 @@ go run ./
 # open http://127.0.0.1:8080/
 ```
 
-Requires Go 1.25+, Node 22, pnpm 9.15.x, and a `.env` with JW credentials (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
+Requires Go 1.25+, Node 22, pnpm 9.15.x, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
 
 ## Documentation
 
@@ -71,7 +71,7 @@ Requires Go 1.25+, Node 22, pnpm 9.15.x, and a `.env` with JW credentials (see `
 
 ## Security
 
-- Credentials live in `.env` locally or `/etc/bupt-ec/bupt-ec.env` (root-only) on servers; tokens are held in memory only.
+- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-only) on servers; configuration is snapshotted at startup and tokens are held in memory only.
 - Never commit real credentials, tokens, or logs.
 
 ## Limitations

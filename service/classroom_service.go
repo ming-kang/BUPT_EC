@@ -1,10 +1,12 @@
 package service
 
 import (
-	"BUPT_EC/config"
 	"context"
+	"errors"
 	"sync"
 	"time"
+
+	"BUPT_EC/config"
 )
 
 // businessLocation is the calendar used for "today" and day-boundary cache expiry.
@@ -58,23 +60,34 @@ type ClassroomService struct {
 	status   RuntimeStatus
 }
 
-// NewClassroomService creates a ClassroomService backed by the real JW system client.
-func NewClassroomService(cfg config.Config, store CacheStore) *ClassroomService {
-	return newClassroomService(cfg, store, &defaultJWClient{})
+type ClassroomServiceOptions struct {
+	Campuses      []config.CampusConfig
+	TokenOverride string
 }
 
-func newClassroomService(cfg config.Config, store CacheStore, client JWClient) *ClassroomService {
+func NewClassroomService(options ClassroomServiceOptions, store CacheStore, client JWClient) (*ClassroomService, error) {
+	if isNilDependency(store) {
+		return nil, errors.New("classroom cache store is required")
+	}
+	if isNilDependency(client) {
+		return nil, errors.New("JW client is required")
+	}
+	if len(options.Campuses) == 0 {
+		return nil, errors.New("at least one campus is required")
+	}
+
 	s := &ClassroomService{
 		cache:        store,
-		campuses:     cfg.Campuses,
+		campuses:     append([]config.CampusConfig(nil), options.Campuses...),
 		jwClient:     client,
 		now:          businessNow,
 		warmupJitter: randomWarmupJitter,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,
+		overrideToken:  options.TokenOverride,
 		onLoginSuccess: s.recordLoginSuccess,
 		onLoginFailure: s.recordLoginFailure,
 	}
-	return s
+	return s, nil
 }

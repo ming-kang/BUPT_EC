@@ -4,7 +4,8 @@
 
 The backend uses Go `log/slog` with a JSON handler configured by `logs.Init`.
 Production-style startup writes logs to both stdout and `run_log/ec.log` through
-lumberjack rotation; test/helper startup writes to stdout only.
+lumberjack rotation; test/helper startup writes to stdout only. Caller-source
+selection is an explicit startup value, not a logging-package environment read.
 
 Reference files:
 
@@ -17,15 +18,18 @@ Reference files:
 
 ## Logger Initialization
 
-`logs.Init(true)` is called from application initialization and creates:
+`logs.Init(true, runtimeConfig.LogCaller)` is called from application
+initialization and creates:
 
 - a JSON `slog` handler at info level;
 - stdout output for systemd/journal collection;
 - `run_log/ec.log` with max size 10 MB, 5 backups, 30 days, compressed;
-- optional caller source fields when `LOG_CALLER=1` or `LOG_CALLER=true`.
+- optional caller source fields when startup config resolved `LOG_CALLER=1` or
+  case-insensitive `true`.
 
-Tests and non-main setup use `logs.Init(false)` so they do not create rotating
-log files.
+Tests and non-main setup use `logs.Init(false, false)` so they do not create
+rotating log files. `config.Load` owns dotenv/environment parsing and passes the
+boolean to logging; `logs.Init` must not call `os.Getenv`.
 
 Do not create independent loggers in handlers or service code. Use the default
 `slog` logger configured by `logs.Init`.
@@ -120,3 +124,5 @@ update `scripts/install.sh` and `docs/operations.md` together.
 - Adding plaintext logs of credentials to make JW debugging easier.
 - Relying only on file logs in environments where stdout is the primary log
   stream.
+- Re-reading `LOG_CALLER` inside `logs`; it must come from the immutable startup
+  configuration snapshot.

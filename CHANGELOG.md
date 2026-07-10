@@ -20,6 +20,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Startup now resolves configuration once, honors `.env` values for `GIN_MODE`
+  and `LOG_CALLER`, and fails safely on malformed/unreadable dotenv files or
+  invalid listen addresses; process environment values still take precedence.
 - Installer installs and upgrades are now transactional: downloads, checksums,
   extraction, and config rendering finish before existing files change; failed
   Nginx/service/health validation restores the previous installation (or

@@ -14,10 +14,6 @@ const (
 	ServerConfigURL = "https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json"
 	DefaultAPIURL   = "https://jwglweixin.bupt.edu.cn/bjyddx/"
 
-	LoginUsernameKey = "JW_USERNAME"
-	LoginPasswordKey = "JW_PASSWORD"
-	LoginTokenKey    = "JW_TOKEN"
-
 	TodayCacheKey = "TODAY_CLASSROOMS_CACHE"
 
 	jwRequestTimeout  = 12 * time.Second

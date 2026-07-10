@@ -4,6 +4,7 @@ import (
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service/model"
+	"BUPT_EC/utils"
 	"bytes"
 	"context"
 	"errors"
@@ -22,8 +23,7 @@ import (
 )
 
 func init() {
-	logs.Init(false)
-	config.InitConfig()
+	logs.Init(false, false)
 }
 
 type mockJWClient struct {
@@ -54,8 +54,21 @@ func (m *mockJWClient) FetchAPIURL(ctx context.Context) (string, error) {
 }
 
 func newTestService(t *testing.T, client JWClient) *ClassroomService {
+	return newTestServiceWithOverride(t, client, "")
+}
+
+func newTestServiceWithOverride(t *testing.T, client JWClient, tokenOverride string) *ClassroomService {
 	t.Helper()
-	svc := newClassroomService(config.GetConfig(), gocache.New(5*time.Minute, time.Minute), client)
+	svc, err := NewClassroomService(ClassroomServiceOptions{
+		Campuses: []config.CampusConfig{
+			{ID: "01", Name: "西土城"},
+			{ID: "04", Name: "沙河"},
+		},
+		TokenOverride: tokenOverride,
+	}, gocache.New(5*time.Minute, time.Minute), client)
+	if err != nil {
+		t.Fatalf("NewClassroomService() error = %v", err)
+	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -66,13 +79,37 @@ func newTestService(t *testing.T, client JWClient) *ClassroomService {
 	return svc
 }
 
+func newHTTPJWClientForTest(t *testing.T, username, password string) JWClient {
+	t.Helper()
+	client, err := NewJWClient(username, password, utils.NewHTTPClient())
+	if err != nil {
+		t.Fatalf("NewJWClient() error = %v", err)
+	}
+	return client
+}
+
+func newIntegrationService(t *testing.T) *ClassroomService {
+	t.Helper()
+	return newTestServiceWithOverride(t,
+		newHTTPJWClientForTest(t, os.Getenv(config.JWUsernameKey), os.Getenv(config.JWPasswordKey)),
+		os.Getenv(config.JWTokenKey),
+	)
+}
+
 func requireJWCredentials(t *testing.T) {
 	t.Helper()
-	if os.Getenv(LoginTokenKey) != "" {
+	if os.Getenv(config.JWTokenKey) != "" {
 		return
 	}
-	if os.Getenv(LoginUsernameKey) == "" || os.Getenv(LoginPasswordKey) == "" {
+	if os.Getenv(config.JWUsernameKey) == "" || os.Getenv(config.JWPasswordKey) == "" {
 		t.Skip("JW_TOKEN or JW_USERNAME/JW_PASSWORD are required for integration login/query tests")
+	}
+}
+
+func requireJWLoginCredentials(t *testing.T) {
+	t.Helper()
+	if os.Getenv(config.JWUsernameKey) == "" || os.Getenv(config.JWPasswordKey) == "" {
+		t.Skip("JW_USERNAME/JW_PASSWORD are required for the integration login test")
 	}
 }
 
@@ -189,17 +226,14 @@ func TestValidateJWAPIURL(t *testing.T) {
 }
 
 func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
-	svc := newTestService(t, &defaultJWClient{})
-	t.Setenv(LoginTokenKey, "override-token")
-	t.Setenv(LoginUsernameKey, "")
-	t.Setenv(LoginPasswordKey, "")
+	svc := newTestServiceWithOverride(t, newHTTPJWClientForTest(t, "", ""), "override-token")
 
 	token, err := svc.tokenManager.EnsureToken(context.Background(), false)
 	if err != nil {
 		t.Fatalf("EnsureToken(false) error = %v", err)
 	}
 	if token != "override-token" {
-		t.Fatalf("EnsureToken(false) = %q, want override-token", token)
+		t.Fatal("EnsureToken(false) did not return the injected override")
 	}
 
 	svc.tokenManager.setAPIURL(DefaultAPIURL)
@@ -367,7 +401,6 @@ func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 }
 
 func TestQueryAllBuildsTodayClassroomsFromJWFixture(t *testing.T) {
-	t.Setenv(LoginTokenKey, "fixture-token")
 	rowsByCampus := map[string][]model.JWClassInfo{
 		"01": {
 			{
@@ -398,7 +431,7 @@ func TestQueryAllBuildsTodayClassroomsFromJWFixture(t *testing.T) {
 			return rows, nil
 		},
 	}
-	classroomServiceUnderTest := newTestService(t, client)
+	classroomServiceUnderTest := newTestServiceWithOverride(t, client, "fixture-token")
 
 	response, err := classroomServiceUnderTest.QueryAll(context.Background())
 	if err != nil {
@@ -767,7 +800,6 @@ func TestQueryAllQueriesCampusesConcurrently(t *testing.T) {
 }
 
 func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
-	t.Setenv(LoginTokenKey, "")
 	var refreshCalls atomic.Int32
 	var seenTokens []string
 	client := &mockJWClient{
@@ -797,7 +829,7 @@ func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
 		t.Fatalf("expected one token refresh, got %d", refreshCalls.Load())
 	}
 	if len(seenTokens) != 2 || seenTokens[0] != "old-token" || seenTokens[1] != "new-token" {
-		t.Fatalf("unexpected token sequence: %#v", seenTokens)
+		t.Fatal("queryCampus() used an unexpected token sequence")
 	}
 }
 
@@ -814,10 +846,6 @@ func waitFor(t *testing.T, timeout time.Duration, ok func() bool) {
 }
 
 func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
-	t.Setenv(LoginTokenKey, "bad-override")
-	t.Setenv(LoginUsernameKey, "user")
-	t.Setenv(LoginPasswordKey, "pass")
-
 	var loginCalls atomic.Int32
 	client := &mockJWClient{
 		login: func(ctx context.Context, apiURL string) (string, error) {
@@ -829,7 +857,7 @@ func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
 				return nil, newJWError(jwErrorAuth, "jw query", nil, "token invalid")
 			}
 			if token != "fresh-login-token" {
-				return nil, fmt.Errorf("unexpected token %q", token)
+				return nil, errors.New("unexpected test token")
 			}
 			return []model.JWClassInfo{{
 				NodeName:   "1",
@@ -838,7 +866,7 @@ func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "bad-override")
 
 	rows, err := svc.queryCampus(context.Background(), "01")
 	if err != nil {
@@ -856,7 +884,7 @@ func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
 		t.Fatalf("EnsureToken(false) after recovery error = %v", err)
 	}
 	if token != "fresh-login-token" {
-		t.Fatalf("EnsureToken(false) = %q, want fresh-login-token (must not reapply JW_TOKEN)", token)
+		t.Fatal("EnsureToken(false) reapplied the invalidated override")
 	}
 	if loginCalls.Load() != 1 {
 		t.Fatalf("loginCalls after EnsureToken = %d, want 1", loginCalls.Load())
@@ -864,7 +892,6 @@ func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
 }
 
 func TestDoRefreshPartialCampusSuccess(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 			if campusID == "04" {
@@ -877,7 +904,7 @@ func TestDoRefreshPartialCampusSuccess(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 
 	resp, err := svc.QueryAll(context.Background())
 	if err != nil {
@@ -916,7 +943,6 @@ func TestDoRefreshPartialCampusSuccess(t *testing.T) {
 }
 
 func TestPartialRefreshWritesWarningLog(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 			if campusID == "04" {
@@ -935,7 +961,7 @@ func TestPartialRefreshWritesWarningLog(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(&buf, nil)))
 	t.Cleanup(func() { slog.SetDefault(previousLogger) })
 
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 	if _, err := svc.QueryAll(context.Background()); err != nil {
 		t.Fatalf("QueryAll() error = %v", err)
 	}
@@ -947,7 +973,6 @@ func TestPartialRefreshWritesWarningLog(t *testing.T) {
 }
 
 func TestFullRefreshClearsPartialRuntimeWarning(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	var failShahe atomic.Bool
 	failShahe.Store(true)
 	client := &mockJWClient{
@@ -962,7 +987,7 @@ func TestFullRefreshClearsPartialRuntimeWarning(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 
 	if _, err := svc.QueryAll(context.Background()); err != nil {
 		t.Fatalf("partial QueryAll() error = %v", err)
@@ -1028,7 +1053,6 @@ func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
 }
 
 func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 			if campusID == "04" {
@@ -1041,7 +1065,7 @@ func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 	now := svc.now()
 	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
@@ -1070,13 +1094,12 @@ func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
 }
 
 func TestDoRefreshAllCampusesFail(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 			return nil, newJWError(jwErrorQuery, "jw query", nil, "down")
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 
 	_, err := svc.QueryAll(context.Background())
 	if err == nil {
@@ -1092,13 +1115,12 @@ func TestDoRefreshAllCampusesFail(t *testing.T) {
 }
 
 func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
 			return nil, newJWError(jwErrorQuery, "jw query", nil, "all campuses down")
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
 	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
@@ -1141,8 +1163,6 @@ func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
 // Get inside the old ExpiresAt window should still kick a background refresh
 // (subject to single-flight + 30s backoff).
 func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
-
 	var mu sync.Mutex
 	var shaheCalls int
 	var allCalls int
@@ -1164,7 +1184,7 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
@@ -1229,8 +1249,6 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 }
 
 func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.T) {
-	t.Setenv(LoginTokenKey, "token")
-
 	var shaheCalls atomic.Int32
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
@@ -1249,7 +1267,7 @@ func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
+	svc := newTestServiceWithOverride(t, client, "token")
 
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
@@ -1360,8 +1378,8 @@ func TestSafeErrorMessageForNoTodayCache(t *testing.T) {
 }
 
 func TestLogin(t *testing.T) {
-	requireJWCredentials(t)
-	svc := newTestService(t, &defaultJWClient{})
+	requireJWLoginCredentials(t)
+	svc := newIntegrationService(t)
 	err := svc.Login(context.Background())
 	if err != nil {
 		t.Error(err)
@@ -1370,11 +1388,7 @@ func TestLogin(t *testing.T) {
 
 func TestQueryOne(t *testing.T) {
 	requireJWCredentials(t)
-	svc := newTestService(t, &defaultJWClient{})
-	err := svc.Login(context.Background())
-	if err != nil {
-		t.Error(err)
-	}
+	svc := newIntegrationService(t)
 	rows, err := svc.QueryOne(context.Background(), "01")
 	if err != nil {
 		t.Error(err)
@@ -1386,11 +1400,7 @@ func TestQueryOne(t *testing.T) {
 
 func TestQueryAll(t *testing.T) {
 	requireJWCredentials(t)
-	svc := newTestService(t, &defaultJWClient{})
-	err := svc.Login(context.Background())
-	if err != nil {
-		t.Error(err)
-	}
+	svc := newIntegrationService(t)
 	ans, err := svc.QueryAll(context.Background())
 	if err != nil {
 		t.Error(err)

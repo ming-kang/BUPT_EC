@@ -202,7 +202,8 @@ Use it for liveness only.
 cache exists. Its body includes:
 
 - `status`: HTTP status text;
-- `jw_credentials_configured`: result of `config.HasJWCredentials()`;
+- `jw_credentials_configured`: result of the injected immutable
+  `config.RuntimeConfig.HasJWCredentials()` predicate;
 - `runtime`: `service.RuntimeStatus` diagnostics.
 
 Runtime cache diagnostics keep age and completeness separate:
