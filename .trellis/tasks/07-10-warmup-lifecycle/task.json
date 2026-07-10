@@ -3,7 +3,7 @@
   "name": "warmup-lifecycle",
   "title": "Warmup 生命周期与跨日重试",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "backend",
   "package": null,

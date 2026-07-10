@@ -9,7 +9,9 @@ func (s *ClassroomService) StartWarmup(ctx context.Context)
 func (s *ClassroomService) WaitBackground(ctx context.Context) error
 ```
 
-`StartWarmup` 用 `sync.Once` 保护单 scheduler。main 使用 `signal.NotifyContext` 或等效应用 context；收到退出信号时 cancel，再 shutdown HTTP server，最后等待 background workers。
+`StartWarmup` 用 `backgroundMu` 下的 started/stopping 状态保护单 scheduler，
+并让同一把锁覆盖 refresh worker 的 Add/Wait gate。main 使用应用 context；
+收到退出信号时 cancel，再 shutdown HTTP server，最后等待 background workers。
 
 ## Scheduler State Machine
 
@@ -29,7 +31,7 @@ start
 将“下一次等待多久”抽成纯函数，例如：
 
 ```go
-func nextWarmupDelay(now time.Time, cacheState warmupCacheState, nextAllowed time.Time, failures int) time.Duration
+func nextWarmupDelay(now time.Time, cacheState warmupCacheState, nextAllowed time.Time, failures int, midnightJitter time.Duration) time.Duration
 ```
 
 loop 使用 `time.NewTimer` + `select` 等待 timer 或 context。纯函数覆盖跨午夜/backoff/退避测试；取消测试只需短期 context，不等待真实业务时间。

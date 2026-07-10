@@ -17,13 +17,13 @@
 
 ## Acceptance Criteria
 
-- [ ] backoff 横跨午夜时，测试证明 scheduler 在 `nextRefreshAllowed` 后重试。
-- [ ] 当日无缓存时连续失败使用有上限退避，成功后切换到下一午夜调度。
-- [ ] 部分缓存后不会每 30 秒永久打 JW，但会在合理间隔尝试补全。
-- [ ] cancel context 会停止 sleeping scheduler，并且 `WaitBackground`/替代接口可靠返回。
-- [ ] StartWarmup 重复调用只运行一个 scheduler。
-- [ ] race detector 不报告 WaitGroup Add/Wait 竞态。
-- [ ] main.go graceful shutdown、operations/development 文档和 backend runtime spec 更新。
+- [x] backoff 横跨午夜时，测试证明 scheduler 在 `nextRefreshAllowed` 后重试。
+- [x] 当日无缓存时连续失败使用有上限退避，成功后切换到下一午夜调度。
+- [x] 部分缓存后不会每 30 秒永久打 JW，但会在合理间隔尝试补全。
+- [x] cancel context 会停止 sleeping scheduler，并且 `WaitBackground`/替代接口可靠返回。
+- [x] StartWarmup 重复调用只运行一个 scheduler。
+- [x] race detector 不报告 WaitGroup Add/Wait 竞态。
+- [x] main.go graceful shutdown、operations/development 文档和 backend runtime spec 更新。
 
 ## Out of Scope
 
