@@ -236,7 +236,13 @@ resolve_download_base_url <repo> <version> <override-url>
 - Valid values are `latest`, `nightly`, or `vMAJOR.MINOR.PATCH`.
 - `latest` maps to `/releases/latest/download`; other valid values map to
   `/releases/download/<version>`.
-- A validated `DOWNLOAD_BASE_URL` overrides the GitHub-derived base URL.
+- Default download base is always official GitHub (`github.com`). Reachability
+  probes may only produce clearer errors; they must never select a third-party
+  host.
+- A validated `DOWNLOAD_BASE_URL` is the only non-GitHub source path and means
+  the operator already trusts that mirror. Same-origin `checksums.txt` proves
+  integrity, not independent publisher identity. Saved `DOWNLOAD_BASE_URL`
+  values come from prior explicit configuration only.
 
 ### 4. Validation & Error Matrix
 
@@ -245,6 +251,7 @@ resolve_download_base_url <repo> <version> <override-url>
 | `latest` / `nightly` | accepted |
 | `v0.1.4` | accepted |
 | empty final value, path separators, whitespace, shell punctuation | non-zero validation failure |
+| GitHub unreachable and no `DOWNLOAD_BASE_URL` | non-zero failure before download/snapshot |
 | HTTP mirror without explicit insecure opt-in | non-zero validation failure |
 
 ### 5. Good/Base/Bad Cases

@@ -14,6 +14,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   the reachable `quic-go` dependency is updated to v0.59.1.
 - PR and release quality gates now audit production frontend dependencies at
   moderate severity and the complete frontend toolchain at high severity.
+- Installer no longer auto-falls back to third-party download proxies when
+  GitHub is unreachable; operators must set an explicit `DOWNLOAD_BASE_URL`
+  for a mirror they trust (same-origin checksums verify integrity only).
 - Installer now fails closed when `checksums.txt` cannot be downloaded or the
   package hash is missing/fails verification (`SKIP_CHECKSUM=1` is the only
   explicit break-glass opt-out).

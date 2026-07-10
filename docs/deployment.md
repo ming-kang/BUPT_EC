@@ -99,21 +99,35 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install
 
 The installer prints its success message only after all commit validations pass. After installation the site is served at `https://<your-domain>/`.
 
-## IPv6-only servers
+## Offline or restricted networks (explicit mirrors)
 
-GitHub's release download endpoints are not reachable from every IPv6-only network. The installer automatically falls back to `gh-v6.com` when direct GitHub access fails. If the installer itself cannot be fetched from GitHub, download it through the proxy:
+By default the installer downloads only from official GitHub release URLs. It
+does **not** auto-select third-party proxies. If GitHub is unreachable, the
+installer fails before changing installed files and tells you how to pass an
+explicit mirror.
+
+When you control a trusted mirror (for example on an IPv6-only network that
+cannot reach GitHub), copy the matching release assets there and point the
+installer at that base URL:
 
 ```bash
-curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
+# Obtain install.sh from a machine that can reach GitHub (or your mirror),
+# inspect it, then run on the target host:
+sudo VERSION=v0.1.4 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash install.sh
 ```
 
-If both GitHub and `gh-v6.com` are unavailable, mirror the release files to an HTTPS location you control and point the installer at it:
+The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or
+`bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash
+(verification is required unless `SKIP_CHECKSUM=1`). Same-origin checksums prove
+download integrity only; they are not independent proof of GitHub publisher
+identity if the mirror itself is compromised.
 
-```bash
-curl -fsSL https://your-mirror.example/install.sh | sudo VERSION=v0.1.4 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash
-```
+`DOWNLOAD_BASE_URL` must use HTTPS. For a trusted local mirror only, set
+`ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP. A saved
+`DOWNLOAD_BASE_URL` from a previous explicit choice is reused on upgrades; the
+installer never writes a mirror URL discovered by network probing.
 
-The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash (verification is required unless `SKIP_CHECKSUM=1`). `DOWNLOAD_BASE_URL` must use HTTPS; for a trusted local mirror only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP.
+Do not pipe installers from unknown third-party hosts into `sudo bash`.
 
 ## Manual deployment
 

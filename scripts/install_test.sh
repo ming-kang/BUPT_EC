@@ -385,6 +385,71 @@ test_version_policy() {
     "https://mirror.example/releases/v0.1.4" \
     "$(resolve_download_base_url "ignored/repo" "nightly" "https://mirror.example/releases/v0.1.4/")" \
     "custom download URL"
+
+  local status output_file
+  output_file="${TEST_TMP}/github-unreachable.log"
+  set +e
+  (
+    host_reachable() { return 1; }
+    resolve_download_base_url "ming-kang/BUPT_EC" "nightly" ""
+  ) >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "unreachable GitHub unexpectedly selected a download base"
+  fi
+  assert_contains "${output_file}" "no longer auto-selects third-party proxies" \
+    "unreachable GitHub explains removed auto-proxy"
+  assert_contains "${output_file}" "DOWNLOAD_BASE_URL=" \
+    "unreachable GitHub suggests explicit mirror"
+  assert_not_contains "${output_file}" "gh-v6.com" \
+    "unreachable GitHub must not mention third-party proxy host"
+  assert_not_contains "${output_file}" "https://gh-v6.com" \
+    "unreachable GitHub must not select third-party proxy URL"
+
+  output_file="${TEST_TMP}/explicit-mirror.log"
+  set +e
+  (
+    host_reachable() { return 0; }
+    resolve_download_base_url "ignored/repo" "nightly" "https://mirror.example/releases/v0.1.4/"
+  ) >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status != 0 )); then
+    fail "explicit HTTPS mirror failed unexpectedly"
+  fi
+  assert_contains "${output_file}" "explicit DOWNLOAD_BASE_URL mirror" \
+    "explicit mirror announces operator trust choice"
+  assert_contains "${output_file}" "not independent GitHub publisher identity" \
+    "explicit mirror explains checksum integrity boundary"
+  assert_contains "${output_file}" "https://mirror.example/releases/v0.1.4" \
+    "explicit mirror still returns the override base URL"
+
+  output_file="${TEST_TMP}/insecure-mirror-rejected.log"
+  unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
+  set +e
+  (validate_download_base_url "http://mirror.example/releases/v0.1.4") >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "HTTP mirror without insecure opt-in was accepted"
+  fi
+  assert_contains "${output_file}" "must use https://" \
+    "HTTP mirror rejection names HTTPS requirement"
+
+  output_file="${TEST_TMP}/insecure-mirror-allowed.log"
+  set +e
+  (
+    ALLOW_INSECURE_DOWNLOAD_BASE_URL=true
+    validate_download_base_url "http://mirror.example/releases/v0.1.4"
+  ) >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status != 0 )); then
+    fail "HTTP mirror with insecure opt-in was rejected"
+  fi
+  assert_contains "${output_file}" "ALLOW_INSECURE_DOWNLOAD_BASE_URL=true" \
+    "HTTP insecure opt-in prints warning"
 }
 
 test_checksum_failures_preserve_targets() {

@@ -4,7 +4,6 @@ set -euo pipefail
 SERVICE_NAME="bupt-ec"
 DEFAULT_REPO="ming-kang/BUPT_EC"
 GITHUB_HOST="github.com"
-GITHUB_IPV6_PROXY_HOST="gh-v6.com"
 INSTALL_DIR="/opt/bupt-ec"
 CONFIG_DIR="/etc/bupt-ec"
 ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
@@ -297,31 +296,34 @@ host_reachable() {
   curl -fsSIL --connect-timeout 5 --max-time 10 "https://${host}/" >/dev/null 2>&1
 }
 
+# Official GitHub releases are the only automatic trust boundary. Operators may
+# point DOWNLOAD_BASE_URL at an explicit mirror they already trust; same-origin
+# checksums then prove download integrity only, not independent publisher identity.
 resolve_download_base_url() {
   local repo="$1"
   local version="$2"
   local override_url="$3"
-  local host="${GITHUB_HOST}"
 
   if [[ -n "${override_url}" ]]; then
+    echo "Using explicit DOWNLOAD_BASE_URL mirror: ${override_url%/}" >&2
+    echo "Warning: package and checksums.txt come from this operator-trusted source. Same-origin checksums verify integrity, not independent GitHub publisher identity." >&2
     printf "%s" "${override_url%/}"
     return
   fi
 
   if ! host_reachable "${GITHUB_HOST}"; then
-    echo "GitHub is not reachable directly; trying ${GITHUB_IPV6_PROXY_HOST}." >&2
-    if host_reachable "${GITHUB_IPV6_PROXY_HOST}"; then
-      host="${GITHUB_IPV6_PROXY_HOST}"
-    else
-      echo "Neither ${GITHUB_HOST} nor ${GITHUB_IPV6_PROXY_HOST} is reachable." >&2
-      exit 1
-    fi
+    echo "GitHub (${GITHUB_HOST}) is not reachable." >&2
+    echo "The installer no longer auto-selects third-party proxies." >&2
+    echo "Mirror the release assets to an HTTPS location you control, then rerun with:" >&2
+    echo "  DOWNLOAD_BASE_URL=https://your-mirror.example/path VERSION=<latest|nightly|vX.Y.Z>" >&2
+    echo "Package and checksums.txt must both be present under that base URL." >&2
+    exit 1
   fi
 
   if [[ "${version}" == "latest" ]]; then
-    printf "https://%s/%s/releases/latest/download" "${host}" "${repo}"
+    printf "https://%s/%s/releases/latest/download" "${GITHUB_HOST}" "${repo}"
   else
-    printf "https://%s/%s/releases/download/%s" "${host}" "${repo}" "${version}"
+    printf "https://%s/%s/releases/download/%s" "${GITHUB_HOST}" "${repo}" "${version}"
   fi
 }
 
