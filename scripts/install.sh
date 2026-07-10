@@ -9,6 +9,7 @@ INSTALL_DIR="/opt/bupt-ec"
 CONFIG_DIR="/etc/bupt-ec"
 ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
 SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+SYSTEMD_ENABLED_LINK="/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
 NGINX_SITE="/etc/nginx/sites-available/${SERVICE_NAME}.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 APP_USER="bupt-ec"
@@ -28,6 +29,33 @@ CURRENT_JW_TOKEN=""
 CURRENT_APP_ADDR=""
 CURRENT_GIN_MODE=""
 CURRENT_DOWNLOAD_BASE_URL=""
+
+INSTALLER_TMP_DIR=""
+TRANSACTION_ACTIVE=false
+TRANSACTION_BACKUP_DIR=""
+
+# Tests source this script and call this explicit helper. Production main never
+# reads a path override from the environment, so normal installer execution
+# always targets the fixed /opt and /etc locations above.
+configure_installer_test_root() {
+  local root="$1"
+  if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+    echo "configure_installer_test_root is only available when install.sh is sourced." >&2
+    return 1
+  fi
+  if [[ "${root}" != /* ]]; then
+    echo "Installer test root must be absolute: ${root}" >&2
+    return 1
+  fi
+
+  INSTALL_DIR="${root}/opt/bupt-ec"
+  CONFIG_DIR="${root}/etc/bupt-ec"
+  ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
+  SERVICE_FILE="${root}/etc/systemd/system/${SERVICE_NAME}.service"
+  SYSTEMD_ENABLED_LINK="${root}/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
+  NGINX_SITE="${root}/etc/nginx/sites-available/${SERVICE_NAME}.conf"
+  NGINX_ENABLED="${root}/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
+}
 
 require_installer_environment() {
   if [[ "${EUID}" -ne 0 ]]; then
@@ -333,48 +361,48 @@ download_release() {
   (cd "${work_dir}" && grep " ${package_name}$" checksums.txt | sha256sum -c -)
 }
 
-install_binary() {
+stage_release() {
   local archive="$1"
   local work_dir="$2"
+  local staging_dir="$3"
   local extract_dir="${work_dir}/extract"
   local binary_path
 
-  rm -rf "${extract_dir}"
-  mkdir -p "${extract_dir}"
-  tar -xzf "${archive}" -C "${extract_dir}"
-
-  binary_path="$(find "${extract_dir}" -type f -name bupt-ec | head -n 1)"
-  if [[ -z "${binary_path}" ]]; then
-    echo "Release archive does not contain bupt-ec binary." >&2
-    exit 1
+  rm -rf "${extract_dir}" "${staging_dir}" || return
+  mkdir -p "${extract_dir}" "${staging_dir}" || return
+  chmod 0700 "${extract_dir}" "${staging_dir}" || return
+  if ! tar -xzf "${archive}" -C "${extract_dir}"; then
+    echo "Failed to extract release archive." >&2
+    return 1
   fi
 
-  mkdir -p "${INSTALL_DIR}/run_log"
-
-  # Install the binary as root-owned so the running service cannot rewrite
-  # its own executable. Only the log directory is owned by the service user.
-  install -m 0755 "${binary_path}" "${INSTALL_DIR}/bupt-ec"
-  chown root:root "${INSTALL_DIR}" "${INSTALL_DIR}/bupt-ec"
-  chmod 0755 "${INSTALL_DIR}"
-  chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}/run_log"
-  chmod 0750 "${INSTALL_DIR}/run_log"
+  if ! binary_path="$(find "${extract_dir}" -type f -name bupt-ec -print -quit)"; then
+    echo "Failed to inspect extracted release archive." >&2
+    return 1
+  fi
+  if [[ -z "${binary_path}" ]]; then
+    echo "Release archive does not contain bupt-ec binary." >&2
+    return 1
+  fi
+  install -m 0755 "${binary_path}" "${staging_dir}/bupt-ec" || return
+  chown root:root "${staging_dir}/bupt-ec" || return
 }
 
-write_env() {
-  local repo="$1"
-  local version="$2"
-  local domain="$3"
-  local ssl_cert="$4"
-  local ssl_key="$5"
-  local username="$6"
-  local password="$7"
-  local token="$8"
-  local app_addr="$9"
-  local gin_mode="${10}"
-  local download_base_url="${11}"
+render_env_file() {
+  local destination="$1"
+  local repo="$2"
+  local version="$3"
+  local domain="$4"
+  local ssl_cert="$5"
+  local ssl_key="$6"
+  local username="$7"
+  local password="$8"
+  local token="$9"
+  local app_addr="${10}"
+  local gin_mode="${11}"
+  local download_base_url="${12}"
 
-  mkdir -p "${CONFIG_DIR}"
-  cat > "${ENV_FILE}" <<EOF
+  (umask 077; cat > "${destination}" <<EOF
 RELEASE_REPO=$(shell_quote "${repo}")
 RELEASE_VERSION=$(shell_quote "${version}")
 DOMAIN=$(shell_quote "${domain}")
@@ -387,12 +415,15 @@ APP_ADDR=$(shell_quote "${app_addr}")
 GIN_MODE=$(shell_quote "${gin_mode}")
 DOWNLOAD_BASE_URL=$(shell_quote "${download_base_url}")
 EOF
-  chmod 0600 "${ENV_FILE}"
-  chown root:root "${ENV_FILE}"
+  ) || return
+  chmod 0600 "${destination}" || return
+  chown root:root "${destination}" || return
 }
 
-write_systemd_service() {
-  cat > "${SERVICE_FILE}" <<EOF
+render_systemd_service() {
+  local destination="$1"
+
+  cat > "${destination}" <<EOF || return
 [Unit]
 Description=BUPT_EC
 After=network-online.target
@@ -428,19 +459,18 @@ ReadWritePaths=${INSTALL_DIR}/run_log
 [Install]
 WantedBy=multi-user.target
 EOF
-
-  systemctl daemon-reload
-  systemctl enable "${SERVICE_NAME}"
+  chmod 0644 "${destination}" || return
+  chown root:root "${destination}" || return
 }
 
-write_nginx_site() {
-  local domain="$1"
-  local ssl_cert="$2"
-  local ssl_key="$3"
-  local app_addr="$4"
+render_nginx_site() {
+  local destination="$1"
+  local domain="$2"
+  local ssl_cert="$3"
+  local ssl_key="$4"
+  local app_addr="$5"
 
-  mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-  cat > "${NGINX_SITE}" <<EOF
+  cat > "${destination}" <<EOF || return
 limit_req_zone \$binary_remote_addr zone=bupt_ec_api:10m rate=30r/m;
 
 server {
@@ -491,13 +521,279 @@ server {
     }
 }
 EOF
+  chmod 0644 "${destination}" || return
+  chown root:root "${destination}" || return
+}
 
-  ln -sfn "${NGINX_SITE}" "${NGINX_ENABLED}"
-  nginx -t
+prepare_staging() {
+  local archive="$1"
+  local work_dir="$2"
+  local staging_dir="$3"
+  local repo="$4"
+  local version="$5"
+  local domain="$6"
+  local ssl_cert="$7"
+  local ssl_key="$8"
+  local username="$9"
+  local password="${10}"
+  local token="${11}"
+  local app_addr="${12}"
+  local gin_mode="${13}"
+  local download_base_url="${14}"
+
+  stage_release "${archive}" "${work_dir}" "${staging_dir}" || return
+  render_env_file "${staging_dir}/bupt-ec.env" \
+    "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" \
+    "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}" || return
+  render_systemd_service "${staging_dir}/${SERVICE_NAME}.service" || return
+  render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" \
+    "${domain}" "${ssl_cert}" "${ssl_key}" "${app_addr}" || return
+}
+
+transaction_targets() {
+  printf '%s\t%s\n' \
+    binary "${INSTALL_DIR}/bupt-ec" \
+    env "${ENV_FILE}" \
+    service "${SERVICE_FILE}" \
+    systemd_enabled "${SYSTEMD_ENABLED_LINK}" \
+    nginx_site "${NGINX_SITE}" \
+    nginx_enabled "${NGINX_ENABLED}"
+}
+
+snapshot_installation() {
+  local backup_dir="$1"
+  local manifest="${backup_dir}/manifest"
+  local role target
+
+  rm -rf "${backup_dir}" || return
+  mkdir -p "${backup_dir}" || return
+  chmod 0700 "${backup_dir}" || return
+  (umask 077; : > "${manifest}") || return
+
+  while IFS=$'\t' read -r role target; do
+    if [[ -e "${target}" || -L "${target}" ]]; then
+      if ! cp -a -- "${target}" "${backup_dir}/${role}"; then
+        echo "Failed to snapshot ${role}." >&2
+        return 1
+      fi
+      printf '%s\t1\t%s\n' "${role}" "${target}" >> "${manifest}" || return
+    else
+      printf '%s\t0\t%s\n' "${role}" "${target}" >> "${manifest}" || return
+    fi
+  done < <(transaction_targets)
+  chmod 0600 "${manifest}" || return
+  if [[ -f "${backup_dir}/env" ]]; then
+    chmod 0600 "${backup_dir}/env" || return
+  fi
+}
+
+atomic_install_file() {
+  local source="$1"
+  local target="$2"
+  local mode="$3"
+  local owner="$4"
+  local target_dir tmp
+
+  target_dir="$(dirname "${target}")"
+  tmp="${target}.new.$$"
+  mkdir -p "${target_dir}" || return
+  rm -f -- "${tmp}" || return
+  install -m "${mode}" "${source}" "${tmp}" || { rm -f -- "${tmp}"; return 1; }
+  chown "${owner}" "${tmp}" || { rm -f -- "${tmp}"; return 1; }
+  mv -Tf -- "${tmp}" "${target}" || { rm -f -- "${tmp}"; return 1; }
+}
+
+atomic_install_symlink() {
+  local link_target="$1"
+  local target="$2"
+  local target_dir tmp
+
+  target_dir="$(dirname "${target}")"
+  tmp="${target}.new.$$"
+  mkdir -p "${target_dir}" || return
+  rm -f -- "${tmp}" || return
+  ln -s "${link_target}" "${tmp}" || { rm -f -- "${tmp}"; return 1; }
+  mv -Tf -- "${tmp}" "${target}" || { rm -f -- "${tmp}"; return 1; }
+}
+
+restore_snapshot_target() {
+  local backup="$1"
+  local target="$2"
+  local target_dir tmp
+
+  target_dir="$(dirname "${target}")"
+  tmp="${target}.rollback.$$"
+  mkdir -p "${target_dir}" || return
+  rm -rf -- "${tmp}" || return
+  cp -a -- "${backup}" "${tmp}" || { rm -rf -- "${tmp}"; return 1; }
+  mv -Tf -- "${tmp}" "${target}" || { rm -rf -- "${tmp}"; return 1; }
+}
+
+rollback_installation() {
+  local backup_dir="$1"
+  local role existed target
+  local failed=0
+  local had_service=false
+  local had_nginx=false
+
+  if [[ ! -r "${backup_dir}/manifest" ]]; then
+    echo "Rollback manifest is missing or unreadable." >&2
+    return 1
+  fi
+
+  echo "Installation failed; rolling back previous files..." >&2
+  while IFS=$'\t' read -r role existed target; do
+    if [[ "${existed}" == "1" && "${role}" == "service" ]]; then
+      had_service=true
+    fi
+    if [[ "${existed}" == "1" && ( "${role}" == "nginx_site" || "${role}" == "nginx_enabled" ) ]]; then
+      had_nginx=true
+    fi
+    if ! rm -f -- "${target}.new.$$" "${target}.rollback.$$"; then
+      echo "Rollback failed while cleaning temporary ${role} files." >&2
+      failed=1
+    fi
+    if [[ "${existed}" == "1" ]]; then
+      if ! restore_snapshot_target "${backup_dir}/${role}" "${target}"; then
+        echo "Rollback failed while restoring ${role}." >&2
+        failed=1
+      fi
+    elif ! rm -rf -- "${target}"; then
+      echo "Rollback failed while removing new ${role}." >&2
+      failed=1
+    fi
+  done < "${backup_dir}/manifest"
+
+  systemctl daemon-reload >/dev/null 2>&1 || failed=1
+  nginx -t >/dev/null 2>&1 || failed=1
+  if [[ "${had_service}" == "true" ]]; then
+    systemctl restart "${SERVICE_NAME}" >/dev/null 2>&1 || failed=1
+  fi
+  if [[ "${had_nginx}" == "true" ]]; then
+    systemctl reload nginx >/dev/null 2>&1 || failed=1
+  fi
+
+  if (( failed == 0 )); then
+    echo "Rollback completed." >&2
+  else
+    echo "Rollback completed with errors; inspect systemd and nginx state." >&2
+  fi
+  return "${failed}"
+}
+
+local_health_url() {
+  local app_addr="$1"
+  if [[ "${app_addr}" =~ ^(127\.0\.0\.1|localhost):[0-9]{1,5}$ || "${app_addr}" =~ ^\[::1\]:[0-9]{1,5}$ ]]; then
+    printf 'http://%s/healthz' "${app_addr}"
+    return
+  fi
+  return 1
+}
+
+wait_for_health() {
+  local health_url="$1"
+  local attempt
+
+  for attempt in {1..10}; do
+    if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 2 "${health_url}" >/dev/null; then
+      return
+    fi
+    if (( attempt < 10 )); then
+      sleep 1
+    fi
+  done
+
+  echo "Service health check failed: ${health_url}" >&2
+  return 1
+}
+
+commit_installation() {
+  local staging_dir="$1"
+  local app_addr="$2"
+  local health_url
+
+  mkdir -p "${INSTALL_DIR}/run_log" "${CONFIG_DIR}" || return
+  chmod 0755 "${INSTALL_DIR}" || return
+  chown root:root "${INSTALL_DIR}" || return
+  chown -R "${APP_USER}:${APP_GROUP}" "${INSTALL_DIR}/run_log" || return
+  chmod 0750 "${INSTALL_DIR}/run_log" || return
+
+  atomic_install_file "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" 0755 root:root || return
+  atomic_install_file "${staging_dir}/bupt-ec.env" "${ENV_FILE}" 0600 root:root || return
+  atomic_install_file "${staging_dir}/${SERVICE_NAME}.service" "${SERVICE_FILE}" 0644 root:root || return
+  atomic_install_file "${staging_dir}/${SERVICE_NAME}.conf" "${NGINX_SITE}" 0644 root:root || return
+  atomic_install_symlink "${NGINX_SITE}" "${NGINX_ENABLED}" || return
+
+  systemctl daemon-reload || return
+  systemctl enable "${SERVICE_NAME}" || return
+  nginx -t || return
+  systemctl restart "${SERVICE_NAME}" || return
+  systemctl is-active --quiet "${SERVICE_NAME}" || return
+  systemctl reload nginx || return
+
+  if health_url="$(local_health_url "${app_addr}")"; then
+    wait_for_health "${health_url}" || return
+  else
+    echo "Skipping local health check for non-loopback APP_ADDR=${app_addr}." >&2
+  fi
+}
+
+perform_install_transaction() {
+  local staging_dir="$1"
+  local backup_dir="$2"
+  local app_addr="$3"
+  local status
+
+  snapshot_installation "${backup_dir}" || return
+  TRANSACTION_BACKUP_DIR="${backup_dir}"
+  TRANSACTION_ACTIVE=true
+  commit_installation "${staging_dir}" "${app_addr}" || {
+    status=$?
+    return "${status}"
+  }
+  TRANSACTION_ACTIVE=false
+  if ! rm -rf "${backup_dir}"; then
+    echo "Installation validated, but the transaction backup could not be removed." >&2
+    return 1
+  fi
+  TRANSACTION_BACKUP_DIR=""
+}
+
+installer_cleanup() {
+  local status="$1"
+  local rollback_status=0
+  local preserve_tmp=false
+
+  trap - ERR EXIT
+  set +e
+  if [[ "${TRANSACTION_ACTIVE}" == "true" && -n "${TRANSACTION_BACKUP_DIR}" ]]; then
+    if (( status == 0 )); then
+      status=1
+    fi
+    rollback_installation "${TRANSACTION_BACKUP_DIR}"
+    rollback_status=$?
+    if (( rollback_status != 0 )); then
+      preserve_tmp=true
+    fi
+  fi
+  if [[ -n "${INSTALLER_TMP_DIR}" && "${preserve_tmp}" == "false" ]]; then
+    rm -rf "${INSTALLER_TMP_DIR}"
+  fi
+  if (( rollback_status != 0 )); then
+    echo "Automatic rollback was incomplete; root-only recovery files were preserved at ${TRANSACTION_BACKUP_DIR}." >&2
+  fi
+  exit "${status}"
+}
+
+initialize_installer_session() {
+  local tmp_dir="$1"
+  INSTALLER_TMP_DIR="${tmp_dir}"
+  trap 'installer_cleanup "$?"' EXIT
 }
 
 main() {
-  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr gin_mode download_base_url tmp_dir archive
+  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr gin_mode download_base_url
+  local tmp_dir archive staging_dir backup_dir
   local has_password has_token
 
   require_installer_environment
@@ -572,19 +868,19 @@ main() {
 
   arch="$(detect_arch)"
   tmp_dir="$(mktemp -d)"
-  trap 'rm -rf "${tmp_dir}"' EXIT
+  chmod 0700 "${tmp_dir}"
+  initialize_installer_session "${tmp_dir}"
+  staging_dir="${tmp_dir}/staging"
+  backup_dir="${tmp_dir}/backup"
 
   install_packages
   create_user
-  write_env "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
   download_release "${repo}" "${version}" "${arch}" "${tmp_dir}" "${download_base_url}"
   archive="${tmp_dir}/bupt-ec-linux-${arch}.tar.gz"
-  install_binary "${archive}" "${tmp_dir}"
-  write_systemd_service
-  write_nginx_site "${domain}" "${ssl_cert}" "${ssl_key}" "${app_addr}"
-
-  systemctl restart "${SERVICE_NAME}"
-  systemctl reload nginx
+  prepare_staging "${archive}" "${tmp_dir}" "${staging_dir}" \
+    "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" \
+    "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
+  perform_install_transaction "${staging_dir}" "${backup_dir}" "${app_addr}"
 
   echo
   echo "BUPT_EC is installed."

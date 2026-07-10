@@ -89,13 +89,15 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install
 - Installs `ca-certificates`, `curl`, `tar`, and `nginx` via apt.
 - Creates a dedicated `bupt-ec` system user and group.
 - Downloads the release tarball matching the CPU architecture and requires a matching `checksums.txt` entry (install fails if the checksum file is missing or verification fails). Set `SKIP_CHECKSUM=1` only as an explicit break-glass to skip verification.
+- Extracts the archive and renders candidate env, systemd, and Nginx files in a root-only staging directory before changing any installed target.
+- Snapshots the existing binary, env, systemd unit/enablement, and Nginx site/enablement, then replaces files with same-filesystem atomic renames.
 - Installs the binary to `/opt/bupt-ec/bupt-ec`, owned by root so the running service cannot rewrite its own executable. Only `/opt/bupt-ec/run_log` is writable by the service user.
 - Writes the configuration to `/etc/bupt-ec/bupt-ec.env` (mode `0600`, owned by root).
 - Installs a hardened systemd unit (`NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, empty capability bounding set, and more) and enables it.
 - Writes an Nginx site with HTTP→HTTPS redirect, TLS 1.2/1.3, security headers, and rate limiting on `/api/` (30 requests/minute per IP with a burst of 20).
-- Starts the service and reloads Nginx.
+- Validates Nginx, restarts and checks the service, reloads Nginx, and checks `/healthz` when `APP_ADDR` is loopback. A failure restores the snapshot (or removes newly created first-install files) and attempts to restart the previous service before the installer exits non-zero.
 
-After installation the site is served at `https://<your-domain>/`.
+The installer prints its success message only after all commit validations pass. After installation the site is served at `https://<your-domain>/`.
 
 ## IPv6-only servers
 
@@ -156,7 +158,7 @@ EnvironmentFile=/etc/bupt-ec/bupt-ec.env
 WantedBy=multi-user.target
 ```
 
-For production, also add the hardening directives used by the installer (see `scripts/install.sh::write_systemd_service`).
+For production, also add the hardening directives used by the installer (see `scripts/install.sh::render_systemd_service`).
 
 Enable and start:
 
@@ -183,4 +185,4 @@ server {
 }
 ```
 
-The full production site written by the installer (TLS, security headers, rate limiting) is in `scripts/install.sh::write_nginx_site` and can be used as a template.
+The full production site written by the installer (TLS, security headers, rate limiting) is in `scripts/install.sh::render_nginx_site` and can be used as a template.

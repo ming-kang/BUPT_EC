@@ -24,6 +24,8 @@ matching `VERSION=vX.Y.Z`. The installer persists that choice as
 
 Versioning follows [Semantic Versioning](https://semver.org/). While the project is pre-1.0, minor bumps may contain breaking changes.
 
+`install.sh` is intentionally a self-contained release asset. Its transaction flow is preflight → snapshot → atomic commit → validation/rollback; do not add runtime helper files to the published layout. `scripts/install_test.sh` uses a temporary root and mocked network/system commands to cover checksum and archive failures, upgrade rollback, first-install cleanup, permissions, and successful commit behavior.
+
 ## Changelog conventions
 
 [CHANGELOG.md](../CHANGELOG.md) follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/):
@@ -61,7 +63,7 @@ Two workflows, no overlap:
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), installer behavior tests, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 

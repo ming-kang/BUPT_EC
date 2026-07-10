@@ -24,13 +24,21 @@ Nightly (edge):
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
 ```
 
-Existing configuration from `/etc/bupt-ec/bupt-ec.env` is offered back as defaults, so pressing Enter at each prompt keeps the current values. Secrets (password/token) are kept by pressing Enter at their prompts. The installer downloads the new binary, replaces `/opt/bupt-ec/bupt-ec`, rewrites the systemd unit and Nginx site, and restarts the service.
+Existing configuration from `/etc/bupt-ec/bupt-ec.env` is offered back as defaults, so pressing Enter at each prompt keeps the current values. Secrets (password/token) are kept by pressing Enter at their prompts. The installer downloads and verifies the archive, renders every candidate file before touching the installation, snapshots the current targets, then atomically replaces the binary, env, systemd unit, and Nginx site.
 
 The selected release channel or tag is stored as `RELEASE_VERSION`. Rerunning
 the installer without `VERSION` reuses it; pass an explicit value to switch
 between `latest`, `nightly`, or a pinned `vX.Y.Z` release.
 
 See [CHANGELOG.md](../CHANGELOG.md) for what changed between versions.
+
+## Automatic transaction rollback
+
+After committing the candidates, the installer runs `systemctl daemon-reload`, enables the unit, validates Nginx, restarts and checks `bupt-ec`, reloads Nginx, and probes loopback `/healthz`. It prints success only after these checks pass.
+
+If any commit or validation step fails, the installer exits non-zero and restores the previous binary, env, systemd unit/enablement, and Nginx site/enablement. It then attempts to restart the previous service and reload the previous Nginx configuration. A failed first install removes the new target files instead of leaving a half-installed service.
+
+Candidate and backup directories are mode `0700`; env candidates, backups, and installed env files are mode `0600`. If automatic rollback itself is incomplete, the error output names a root-only recovery directory containing the snapshot. Preserve that directory until the service is repaired, and do not copy or expose its env file to non-root users.
 
 ## Verify the upgrade
 
@@ -45,7 +53,7 @@ sudo journalctl -u bupt-ec -n 50 --no-pager
 
 Then open `https://<your-domain>/` in a browser and confirm the page loads today's data.
 
-## Rollback
+## Roll back to an earlier release
 
 Rerun the installer pinned to the previous version:
 
@@ -53,7 +61,7 @@ Rerun the installer pinned to the previous version:
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.2/install.sh | sudo VERSION=v0.1.2 bash
 ```
 
-Stable releases are immutable, so this restores the exact previous binary. Configuration in `/etc/bupt-ec/bupt-ec.env` is not versioned; if a new version introduced config changes you also reverted, adjust the prompts accordingly.
+Stable releases are immutable, so a successful transaction installs the exact previous binary. Configuration prompts still default to the current values; adjust them if the earlier version requires different settings. This deliberate version rollback is separate from the installer's automatic recovery from a failed upgrade.
 
 ## Certificate renewal
 

@@ -20,6 +20,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Installer installs and upgrades are now transactional: downloads, checksums,
+  extraction, and config rendering finish before existing files change; failed
+  Nginx/service/health validation restores the previous installation (or
+  removes new first-install files) instead of leaving mixed binary/config state.
 - Stable, nightly, and pinned installer commands now select the matching release
   explicitly; the installer remembers the selected channel or tag for later
   upgrades instead of silently falling back to `nightly`.

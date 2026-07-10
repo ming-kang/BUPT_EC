@@ -189,6 +189,127 @@ curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sud
 curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sudo VERSION=latest bash
 ```
 
+## Scenario: Transactional Installer Commit and Rollback
+
+### 1. Scope / Trigger
+
+Apply this contract whenever `scripts/install.sh` changes release staging,
+installed paths, file ownership/modes, systemd or Nginx activation, health
+validation, or rollback behavior. The installer runs as root and updates a live
+service, so a partially applied change is a production correctness and secret
+handling failure.
+
+### 2. Signatures
+
+```bash
+configure_installer_test_root <absolute-root>   # sourced tests only
+prepare_staging <archive> <work-dir> <staging-dir> <config...>
+snapshot_installation <backup-dir>
+atomic_install_file <source> <target> <mode> <owner>
+atomic_install_symlink <link-target> <target>
+commit_installation <staging-dir> <app-addr>
+rollback_installation <backup-dir>
+perform_install_transaction <staging-dir> <backup-dir> <app-addr>
+```
+
+### 3. Contracts
+
+The seven stages are ordered and must not be interleaved:
+
+1. Validate input, certificates, release selection, and platform prerequisites.
+2. Download the architecture archive and verify its `checksums.txt` entry.
+3. Extract the archive and render every candidate under a mode-`0700` staging
+   directory; candidate env is root-owned mode `0600`.
+4. Snapshot binary, env, systemd unit + enabled link, and Nginx site + enabled
+   link. The manifest records both existing and absent targets under a
+   mode-`0700` backup directory; env and manifest are mode `0600`.
+5. Copy each candidate to `<target>.new.$$` in the target directory, set
+   owner/mode, then use `mv -T` for same-filesystem atomic replacement.
+6. Run daemon reload, unit enablement, `nginx -t`, service restart,
+   `is-active`, Nginx reload, and loopback `/healthz` retry validation.
+7. On success remove the backup and only then print success. On failure restore
+   originally present targets, remove originally absent targets, reload the old
+   configuration, and attempt to restart the old service. Preserve root-only
+   recovery files when rollback itself is incomplete.
+
+Production paths are fixed constants. Environment variables must not redirect
+them. Tests opt into a temporary root only by sourcing the script and calling
+`configure_installer_test_root` explicitly. Release archives and top-level
+assets remain self-contained; no runtime helper beside `install.sh` is allowed.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+| --- | --- |
+| checksum download/entry/hash failure | non-zero; installed targets byte-identical |
+| archive missing `bupt-ec` or candidate render failure | non-zero; snapshot/commit not entered |
+| snapshot copy/manifest failure | non-zero; transaction inactive; installed targets unchanged |
+| atomic write, daemon reload, enable, or `nginx -t` failure | restore every recorded target/existence state |
+| restart, `is-active`, reload, or loopback health failure | restore files and attempt old-service restart |
+| first-install commit failure | remove newly created transaction targets |
+| rollback command failure | non-zero; preserve and print root-only recovery directory |
+| all validations pass | remove backup; clear transaction state; print success |
+| non-loopback `APP_ADDR` | explicitly log that direct health probing is skipped |
+
+### 5. Good/Base/Bad Cases
+
+- Good: an upgrade stages and snapshots everything, atomically installs all
+  candidates, passes validation, removes the backup, then reports success.
+- Base: a first install records every target as absent; a failed validation
+  removes all newly created transaction targets and does not restart a nonexistent
+  old service.
+- Bad: write `/etc/bupt-ec/bupt-ec.env` before checksum verification, or keep a
+  new binary after `nginx -t`/health validation fails.
+
+### 6. Tests Required
+
+`bash scripts/install_test.sh` must use an explicit temporary root plus mocked
+`curl`, `chown`, `systemctl`, and `nginx`, and assert:
+
+- missing/invalid checksums, missing binary, render failure, and snapshot copy
+  failure leave old targets unchanged;
+- Nginx, restart, and health failures restore file content, modes, symlink
+  targets, and attempt the old-service restart where one existed;
+- first-install rollback removes all transaction targets;
+- incomplete rollback preserves a mode-`0700` recovery directory and mode-`0600`
+  env backup;
+- successful upgrade replaces every target, enables both services/sites,
+  installs env mode `0600`, clears transaction state, and removes the backup;
+- `bash -n scripts/install.sh scripts/install_test.sh`, `shellcheck scripts/*.sh`,
+  and release asset layout checks remain green.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+snapshot_installation() {
+  cp -a "${ENV_FILE}" "${backup_dir}/env"
+  printf 'env\t1\t%s\n' "${ENV_FILE}" >> "${backup_dir}/manifest"
+}
+
+# Bash suppresses errexit inside a function used in an OR-list. A failed cp can
+# be masked by the later successful printf.
+snapshot_installation "${backup_dir}" || return
+```
+
+#### Correct
+
+```bash
+snapshot_installation() {
+  if ! cp -a "${ENV_FILE}" "${backup_dir}/env"; then
+    echo "Failed to snapshot env." >&2
+    return 1
+  fi
+  printf 'env\t1\t%s\n' "${ENV_FILE}" >> "${backup_dir}/manifest" || return
+}
+
+snapshot_installation "${backup_dir}" || return
+```
+
+Critical installer helpers must explicitly propagate each filesystem failure;
+do not rely only on `set -e` when callers use `if`, `!`, `&&`, or `||`.
+
 ## Security Checklist
 
 - Never commit real `.env` files, `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, or

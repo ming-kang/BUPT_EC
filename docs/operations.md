@@ -116,8 +116,16 @@ The UI keeps the last successful snapshot after a browser/network refresh failur
 
 ## Troubleshooting
 
+### Installer rollback failures
+
+An installer failure before commit (download, checksum, extraction, or rendering) leaves the installed binary and configuration untouched. A failure after commit starts an automatic rollback and should end with `Rollback completed.` before the installer exits non-zero.
+
+If the message instead says the automatic rollback was incomplete, note the printed recovery directory immediately. It is mode `0700` and contains the snapshot manifest plus any previous binary/config files, including a mode-`0600` env backup. Keep it root-only, inspect `systemctl status bupt-ec`, `nginx -t`, and the installer output, then restore or rerun the installer only after understanding which validation failed. The directory is intentionally preserved for manual recovery; delete it securely after recovery succeeds.
+
 | Symptom | Check | Likely cause / fix |
 |---|---|---|
+| Installer exits during upgrade | Look for `Rollback completed.` and run `sudo systemctl status bupt-ec` | New Nginx/service/health validation failed; the previous installation was restored. Fix the reported cause before retrying. |
+| Installer reports incomplete rollback | Preserve the printed root-only recovery directory; run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; use the preserved snapshot for manual recovery. |
 | `/readyz` 503, `last_login_error` mentions credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Rerun the installer to re-enter them. |
 | `/readyz` 503, `last_refresh_error` set, login OK | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
