@@ -4,7 +4,7 @@ Local development setup, testing, and a tour of the architecture.
 
 ## Requirements
 
-- Go 1.25+ (per `go.mod`)
+- Go 1.25.12+ (per `go.mod`); Go 1.26 users need 1.26.5 or newer
 - Node.js 22 LTS
 - pnpm 9.15.x — `corepack enable && corepack prepare pnpm@9.15.0 --activate`
 - A valid BUPT teaching affairs account (only for integration tests and running against the real JW system; unit tests run without one)
@@ -56,13 +56,14 @@ go test -race ./...        # what CI runs
 go vet ./...
 gofmt -l .                 # must print nothing
 cd frontend && pnpm lint && pnpm test && pnpm build
+cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
 
 Integration tests in `service/realtime_data_test.go` hit the real JW system. `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; `TestQueryOne` and `TestQueryAll` accept that pair or `JW_TOKEN`. Without the required credentials they skip with a clear message.
 
 Unit tests never touch the network: they inject a `mockJWClient` (implementing the `JWClient` interface) into a fresh `ClassroomService` with an isolated cache per test — see `newTestService` in `service/realtime_data_test.go`.
 
-Frontend behavior tests use Vitest and focus on API envelope normalization plus selection-state transitions and preference persistence. Run them with `pnpm test` from `frontend/`.
+Frontend behavior tests use Vitest and focus on API envelope normalization plus selection-state transitions and preference persistence. Run them with `pnpm test` from `frontend/`. `pnpm audit:prod` rejects moderate-or-higher production dependency advisories; `pnpm audit:dev` rejects high-or-critical findings across the full frontend toolchain.
 
 ## Project structure
 

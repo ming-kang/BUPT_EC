@@ -77,6 +77,8 @@ also run:
 pnpm --dir "frontend" lint
 pnpm --dir "frontend" test
 pnpm --dir "frontend" build
+pnpm --dir "frontend" audit:prod
+pnpm --dir "frontend" audit:dev
 ```
 
 CI and release quality gates also run:
@@ -89,6 +91,87 @@ bash scripts/install_test.sh
 shellcheck scripts/*.sh
 cd frontend && pnpm lint
 cd frontend && pnpm build
+cd frontend && pnpm audit:prod
+cd frontend && pnpm audit:dev
+```
+
+Frontend audit policy is executable through `frontend/package.json` so local,
+PR, and release checks share the same thresholds: production dependencies fail
+at moderate or above; the full development toolchain fails at high or above.
+Generate and verify `frontend/pnpm-lock.yaml` with pnpm 9.15.x.
+
+## Scenario: Dependency Security Baseline
+
+### 1. Scope / Trigger
+
+Apply this contract whenever Go or frontend dependencies, toolchain versions,
+lockfiles, lint configuration, or CI/release quality gates change.
+
+### 2. Signatures
+
+```bash
+GOTOOLCHAIN=go1.25.12 go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
+pnpm --dir frontend audit:prod
+pnpm --dir frontend audit:dev
+```
+
+### 3. Contracts
+
+- `go.mod` and every `actions/setup-go` step use Go `1.25.12`; Go 1.26 users
+  need `1.26.5` or newer.
+- `frontend/package.json` owns the audit thresholds: `audit:prod` checks
+  production dependencies at `moderate`, while `audit:dev` checks the complete
+  toolchain at `high`.
+- PR and release workflows run both scripts after
+  `pnpm install --frozen-lockfile`.
+- Generate `frontend/pnpm-lock.yaml` with pnpm 9.15.x and keep the manifest's
+  `packageManager` field aligned with that line.
+- Upgrade the smallest compatible dependency set. Do not use an unrelated
+  framework or application rewrite to clear a transitive advisory.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+| --- | --- |
+| Reachable Go vulnerability | `govulncheck` fails the change |
+| Production moderate/high/critical advisory | `audit:prod` fails |
+| Full-toolchain high/critical advisory | `audit:dev` fails |
+| Low/moderate development-only advisory | document the finding or patch it; `audit:dev` may pass |
+| Lockfile differs under frozen install | CI/release fails before audit |
+| Toolchain version is below the documented security floor | update is incomplete |
+
+### 5. Good/Base/Bad Cases
+
+- Good: patch the vulnerable dependency, regenerate with pnpm 9.15.x, then run
+  frozen install, lint, tests, build, both audits, and `govulncheck`.
+- Base: an unreachable module advisory remains visible in verbose
+  `govulncheck`, but the symbol scan reports zero reachable vulnerabilities.
+- Bad: widen `go-version` to `1.25`, suppress audit errors, or upgrade React/
+  Ant Design solely to replace one compatible transitive dependency.
+
+### 6. Tests Required
+
+- Run `go mod tidy -diff`, `go vet ./...`, `go test -race ./...`, a full Go
+  build, and pinned `govulncheck` with the safe Go toolchain.
+- Run pnpm 9.15.x frozen install, lint, behavior tests, production build,
+  `audit:prod`, and `audit:dev`.
+- Run `actionlint` after editing either workflow and `git diff --check` before
+  commit.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```yaml
+with:
+  go-version: "1.25"
+```
+
+#### Correct
+
+```yaml
+with:
+  go-version: "1.25.12"
 ```
 
 The Go build embeds `frontend/dist/` through `router.go`, so local full builds

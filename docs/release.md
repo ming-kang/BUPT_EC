@@ -63,7 +63,7 @@ Two workflows, no overlap:
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 
@@ -91,7 +91,7 @@ bupt-ec-linux-${arch}/
 
 Pinned via the workflows and `go.mod`; no Dependabot — bump by hand:
 
-- Go 1.25 (`go.mod`, `actions/setup-go`)
+- Go 1.25.12 (`go.mod`, `actions/setup-go`; Go 1.26 users need 1.26.5+)
 - Node 22 LTS (`actions/setup-node`)
 - pnpm 9.15.x (`corepack prepare`, lockfile v9)
 

@@ -7,7 +7,7 @@ architecture changes.
 
 ## Project Shape
 
-The backend is a small Go 1.25 service built around Gin handlers and a single
+The backend is a small Go 1.25.12+ service built around Gin handlers and a single
 `service.ClassroomService` instance. It does not store classroom timetables in a
 database. Runtime data comes from the BUPT JW HTTP API, is normalized into
 `service/model.TodayClassrooms`, and is cached in process for the current day.

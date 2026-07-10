@@ -56,7 +56,7 @@ go run ./
 # open http://127.0.0.1:8080/
 ```
 
-Requires Go 1.25+, Node 22, pnpm 9.15.x, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
+Requires Go 1.25.12+ (or Go 1.26.5+), Node 22, pnpm 9.15.x, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
 
 ## Documentation
 

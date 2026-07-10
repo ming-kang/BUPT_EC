@@ -10,6 +10,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Security
 
+- Go builds and releases now require patched Go 1.25.12 (or Go 1.26.5+), and
+  the reachable `quic-go` dependency is updated to v0.59.1.
+- PR and release quality gates now audit production frontend dependencies at
+  moderate severity and the complete frontend toolchain at high severity.
 - Installer now fails closed when `checksums.txt` cannot be downloaded or the
   package hash is missing/fails verification (`SKIP_CHECKSUM=1` is the only
   explicit break-glass opt-out).
@@ -90,6 +94,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Background warmup runs immediately, retries partial cache at a low frequency,
   and schedules complete-cache refreshes after each Shanghai midnight with a
   small jitter. Graceful shutdown stops the scheduler before draining workers.
+
+### Dependencies
+
+- Frontend tooling now uses Vite 6.4.3 and ESLint 9.39.4 flat config; patched
+  Babel runtime and ESLint transitive dependency versions clear the previous
+  production and high-severity development audit findings.
 
 ## [0.1.4] - 2026-07-03
 
