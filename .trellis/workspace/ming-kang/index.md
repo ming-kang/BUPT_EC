@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 9
+- **Total Sessions**: 10
 - **Last Active**: 2026-07-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~316 | Active |
+| `journal-1.md` | ~351 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 10 | 2026-07-10 | Dependency security refresh | `215d736`, `3c98705`, `2a66e93` | `main` |
 | 9 | 2026-07-10 | 运行时配置与依赖组装 | `d4bda80` | `main` |
 | 8 | 2026-07-10 | Complete reliability audit hardening | `363ac0f`, `c9a2543`, `9447524`, `51b3019`, `8dd6851`, `17efab4`, `ec3f2ff` | `main` |
 | 7 | 2026-07-10 | Make installer updates transactional | `17efab4`, `75752f5` | `main` |

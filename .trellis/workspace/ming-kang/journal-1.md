@@ -314,3 +314,38 @@ Closed the six-child reliability audit hardening program after a parent-level cr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Dependency security refresh
+
+**Date**: 2026-07-10
+**Task**: Dependency security refresh
+**Branch**: `main`
+
+### Summary
+
+Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and ESLint toolchain, added production/full frontend audit gates, synchronized documentation and executable Trellis quality contracts, and archived the completed P0 child task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `215d736` | (see git log) |
+| `3c98705` | (see git log) |
+| `2a66e93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
