@@ -160,6 +160,9 @@ implemented, validated, and committed one by one.
 - `07-10-dependency-security-refresh` completed and was archived on 2026-07-10;
   Go 1.25.12 `govulncheck` reports zero reachable vulnerabilities and both pnpm
   audit policies pass with no known vulnerabilities.
+- `07-10-installer-provenance-hardening` completed on 2026-07-10: removed
+  automatic `gh-v6.com` fallback, GitHub-unreachable fails closed with explicit
+  `DOWNLOAD_BASE_URL` guidance, and docs/tests/spec were synchronized.
 - A parent-level integration re-review on 2026-07-10 found additional security,
   HTTP-boundary, installer, frontend, and observability work. The parent remains
   open until those findings are handled through reviewable child tasks.
@@ -261,27 +264,39 @@ implemented, validated, and committed one by one.
 1. **Dependency security refresh (P0, completed 2026-07-10)**: updated quic-go
    and the safe Go patch floor, refreshed Vite/ESLint/Babel dependencies, and
    added production/dev audit policy in separate Go and frontend commits.
-2. **Installer trust and rollback hardening (P1)**: remove implicit third-party
-   trust or verify independent provenance, fix late first-install rollback,
-   align proxy/backend timeouts, and add failure-path tests plus docs/changelog.
-3. **HTTP protocol and error-observability hardening (P1)**: correct gzip
-   negotiation, cover every `/api/*` response with log IDs, preserve or replace
-   request correlation for shared refreshes, sanitize remote messages, and make
-   startup constructors fail explicitly.
-4. **Frontend partial-data and request lifecycle (P1/P2)**: choose a usable
-   campus on partial cold start, add request timeout/visibility behavior, make
-   preference persistence pure, resolve CSP bootstrap behavior, and align
-   polling with deployment rate limits.
-5. **Runtime metrics and adaptive upstream protection (P2)**: expose cache/
-   refresh/login/error metrics and add jittered adaptive backoff or a small JW
-   circuit breaker.
-6. **Cache/time domain cleanup (P2)**: introduce a typed classroom cache,
-   remove unused generic operations/default TTL ambiguity, and inject one clock
-   through cache, refresh, login, and status paths.
-7. **Delivery reuse and scaling guidance (P3)**: deduplicate reusable quality
-   workflow steps, keep stable notes changelog-only, add the AES known vector and
-   real hook lifecycle coverage, and document the recommended single-instance
-   topology plus a future shared cache/leader route.
+2. **`07-10-installer-provenance-hardening` (P1, completed)**: remove implicit
+   third-party proxy trust and require an explicit operator-selected mirror.
+3. **`07-10-installer-late-rollback-timeouts` (P1, planning)**: after item 2,
+   reconcile first-install service/Nginx state on late failure and align the
+   `/api/` proxy timeout with backend/server budgets.
+4. **`07-10-protocol-lifecycle-test-coverage` (P1, planning)**: add independent
+   AES vectors, deterministic JW protocol fixtures, and a real React hook
+   lifecycle harness before higher-churn protocol/frontend work.
+5. **`07-10-http-protocol-correlation` (P1, planning)**: correct gzip
+   negotiation, cover unknown API responses with log IDs, and preserve request
+   values in detached shared refresh work.
+6. **`07-10-upstream-error-startup-safety` (P1, planning)**: after item 4,
+   bound/redact upstream messages and make logging/HTTP constructor failures
+   propagate through the composition root.
+7. **`07-10-frontend-partial-data-semantics` (P1, planning)**: choose a campus
+   with usable data on cold partial success and correct the `updated_at` label.
+8. **`07-10-frontend-lifecycle-state-hardening` (P1, planning)**: after items
+   3, 4, and 7, add fetch timeout/visibility/rate-aware scheduling, pure
+   preference persistence, and a CSP-compliant dark bootstrap.
+9. **`07-10-typed-cache-clock` (P2, planning)**: replace the generic cache seam
+   and inject one clock across cache, refresh, login, and runtime status.
+10. **`07-10-runtime-observability-protection` (P2, planning)**: after item 9,
+    add low-cardinality metrics and deterministic adaptive JW backoff.
+11. **`07-10-delivery-workflow-release-contract` (P3, planning)**: after the
+    quality commands stabilize, reuse one PR/main gate and keep stable release
+    notes changelog-only.
+12. **`07-10-deployment-topology-guidance` (P3, planning)**: last, document the
+    supported single-instance topology and future shared-cache/leader options
+    without claiming they are implemented.
+
+Ten remaining child directories contain converged `prd.md`, `design.md`, and
+`implement.md` artifacts. They remain in `planning` until the user reviews that
+child's final scope (user authorized sequential completion on 2026-07-10).
 
 ## Acceptance Criteria
 
@@ -298,6 +313,8 @@ implemented, validated, and committed one by one.
       from this parent task.
 - [x] P0 dependency/toolchain findings pass `govulncheck` and the agreed pnpm
       audit policy.
+- [ ] Each of the eleven planned remaining children is reviewed before activation,
+      and implementation follows the dependency order above.
 - [ ] P1 installer, HTTP correlation/error-sanitization, and partial-campus UX
       findings are completed through linked child tasks.
 - [ ] Remaining P2/P3 work is either completed or explicitly accepted/deferred
@@ -305,6 +322,7 @@ implemented, validated, and committed one by one.
 
 ## Notes
 
-- The original first three maintainability children and the six-child reliability
-  audit are complete. The P0 dependency security refresh is also complete; the
-  current recommended next task is installer trust and rollback hardening.
+- The original first three maintainability children, the six-child reliability
+  audit, the P0 dependency security refresh, and installer provenance hardening
+  are complete. The next planned task is
+  `07-10-installer-late-rollback-timeouts`.
