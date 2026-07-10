@@ -140,3 +140,37 @@ Added shared Shanghai business-day snapshot validation, hard-empty cross-day han
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Make warmup lifecycle cancellable
+
+**Date**: 2026-07-10
+**Task**: Make warmup lifecycle cancellable
+**Branch**: `main`
+
+### Summary
+
+Added a single context-cancellable warmup scheduler, deterministic cache-state retry policy, cross-midnight backoff recovery, safe background worker draining, graceful shutdown ordering, tests, docs, and runtime specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `51b3019` | (see git log) |
+| `109dd6a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
