@@ -281,3 +281,36 @@ Closed the six-child reliability audit hardening program after a parent-level cr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 运行时配置与依赖组装
+
+**Date**: 2026-07-10
+**Task**: 运行时配置与依赖组装
+**Branch**: `main`
+
+### Summary
+
+集中启动配置加载与校验，在 main composition root 显式组装 cache、HTTP、JW client 和 ClassroomService；移除生产路径全局依赖与热路径环境读取，并补齐测试、文档和后端规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d4bda80` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
