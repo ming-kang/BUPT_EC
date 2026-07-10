@@ -16,13 +16,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 两个并发 campus 请求使用同一失效 token 时只调用一次 login。
-- [ ] 第二个 auth failure 延迟到第一次 login 完成后返回时，仍复用第一次的新 token。
-- [ ] JW 系统若在第二次登录时使第一次 token 失效，测试证明不会发生第二次登录，因此无互相失效。
-- [ ] invalid `JW_TOKEN` 被拒绝后不会重新覆盖登录 token。
-- [ ] 普通登录 token 过期不会错误恢复已失效 override。
-- [ ] 一个 waiter cancellation 不会取消共享登录；该 waiter 自身及时返回 context error。
-- [ ] `go test -race ./service` 通过，现有 integration tests 保持可跳过行为。
+- [x] 两个并发 campus 请求使用同一失效 token 时只调用一次 login。
+- [x] 第二个 auth failure 延迟到第一次 login 完成后返回时，仍复用第一次的新 token。
+- [x] JW 系统若在第二次登录时使第一次 token 失效，测试证明不会发生第二次登录，因此无互相失效。
+- [x] invalid `JW_TOKEN` 被拒绝后不会重新覆盖登录 token。
+- [x] 普通登录 token 过期不会错误恢复已失效 override。
+- [x] 一个 waiter cancellation 不会取消共享登录；该 waiter 自身及时返回 context error。
+- [x] `go test -race ./service` 通过，现有 integration tests 保持可跳过行为。
 
 ## Out of Scope
 

@@ -3,7 +3,7 @@
   "name": "token-refresh-coordination",
   "title": "Token 并发刷新协调",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "backend",
   "package": null,
