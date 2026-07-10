@@ -784,9 +784,9 @@ func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
 		},
 	}
 	svc := newTestService(t, client)
-	svc.tokenManager.setToken("old-token")
+	svc.tokenManager.setToken("old-token", tokenSourceLogin)
 
-	rows, err := svc.queryCampus(context.Background(), "01", false)
+	rows, err := svc.queryCampus(context.Background(), "01")
 	if err != nil {
 		t.Fatalf("queryCampus() error = %v", err)
 	}
@@ -840,7 +840,7 @@ func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 
-	rows, err := svc.queryCampus(context.Background(), "01", false)
+	rows, err := svc.queryCampus(context.Background(), "01")
 	if err != nil {
 		t.Fatalf("queryCampus() error = %v", err)
 	}

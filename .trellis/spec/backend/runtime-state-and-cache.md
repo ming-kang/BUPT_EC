@@ -256,18 +256,90 @@ case refreshFailed:
 }
 ```
 
-## JW Token and API URL State
+## Scenario: Token Auth Recovery and Shared Cancellation
 
-`service/token_manager.go` owns JW token and API URL caching:
+### 1. Scope / Trigger
 
-- `EnsureToken(ctx, false)` first honors `JW_TOKEN`, then an in-memory token,
-  then performs login.
-- `EnsureToken(ctx, true)` bypasses the `JW_TOKEN` override and cached token so
-  auth retries can force a real login.
-- `singleflight.Group` deduplicates concurrent login and API URL resolution.
-- Login and API URL fetches use bounded contexts based on `jwRequestTimeout`.
-- On auth failure, `queryCampus` clears only the current token and retries once
-  with a forced login.
+Apply this contract whenever token caching, `JW_TOKEN`, auth retry, login/API URL
+singleflight, or caller cancellation changes. It prevents delayed auth failures
+from deleting a newer token or starting mutually invalidating logins.
+
+### 2. Signatures
+
+```go
+type tokenSource int // none, override, login
+
+func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error)
+func (m *TokenManager) RefreshAfterAuthFailure(ctx context.Context, failedToken string) (string, error)
+func (m *TokenManager) APIURL(ctx context.Context) (string, error)
+```
+
+### 3. Contracts
+
+- Cached token state stores both value and source. `JW_TOKEN` is installed as
+  `tokenSourceOverride`; successful login uses `tokenSourceLogin`.
+- `RefreshAfterAuthFailure` receives the exact rejected token and rechecks state
+  inside the token singleflight closure.
+- If current token differs from `failedToken`, return it without login. If it
+  matches, clear it; invalidate the environment override only when its source
+  was `tokenSourceOverride`.
+- Auth recovery performs at most one login and `queryCampus` retries its JW query
+  exactly once.
+- Token and API URL groups use `DoChan`. Shared work runs under
+  `context.WithTimeout(context.WithoutCancel(caller), jwRequestTimeout)` so one
+  waiter cannot cancel the operation for others.
+- Each caller selects the shared result against its own `ctx.Done()` and may
+  return early.
+- `EnsureToken(ctx, true)` still guarantees a real login even if it first joins
+  an operation that only reused or installed a token.
+- Never log token values, credentials, request headers, or upstream bodies.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+| --- | --- |
+| simultaneous failures for same token | one login, all waiters receive replacement |
+| old failure arrives after replacement installed | reuse replacement, no login |
+| rejected source is override | set `overrideInvalidated=true` |
+| rejected source is login | preserve existing override-invalidated state |
+| one waiter cancels | that waiter gets context error; shared operation continues |
+| shared login/API URL exceeds timeout | bounded operation returns timeout error |
+| retry query fails | return joined original-auth and retry errors; do not loop |
+
+### 5. Good/Base/Bad Cases
+
+- Good: both campus queries fail with token A; one login installs token B, and a
+  delayed second failure for A observes/reuses B.
+- Base: cached login token succeeds and no singleflight operation runs.
+- Bad: delayed failure for A blindly clears current token B and forces login C,
+  making the first retry fail because B was invalidated upstream.
+
+### 6. Tests Required
+
+- Concurrent and deliberately delayed auth failures assert exactly one login.
+- The delayed test rejects any second generated token to model upstream token
+  invalidation between logins.
+- Override-source and login-source tests assert `overrideInvalidated` behavior.
+- Token and API URL cancellation tests assert canceled waiter + surviving waiter
+  outcomes and one underlying operation.
+- Run `go test -race ./service`; integration tests must still skip without
+  credentials.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+m.clearTokenIfCurrent(failedToken)
+token, err := m.EnsureToken(ctx, true)
+```
+
+#### Correct
+
+```go
+token, err := m.RefreshAfterAuthFailure(ctx, failedToken)
+// The singleflight closure checks whether another goroutine already replaced it.
+```
 
 `service/urlutil.go` validates the server-provided API URL. Keep the HTTPS and
 `*.bupt.edu.cn` restrictions; never trust or log a raw upstream URL that failed
@@ -291,6 +363,6 @@ do not add credentials, tokens, or raw upstream payloads.
   cannot be canceled and drained during shutdown.
 - Treating the process-local cache as shared across instances.
 - Returning stale data after midnight.
-- Clearing a newly refreshed token because an older request failed; use
-  `clearTokenIfCurrent` semantics.
+- Clearing a newly refreshed token because an older request failed; pass the
+  failed token to `RefreshAfterAuthFailure` and recheck inside singleflight.
 - Hiding refresh failures from runtime status or stale response metadata.

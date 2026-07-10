@@ -55,11 +55,13 @@ Gin into `service/`.
 
 `service/realtime_data.go::queryCampus` has the only token-retry flow:
 
-- call `TokenManager.EnsureToken(ctx, forceRefresh)`;
+- call `TokenManager.EnsureToken(ctx, false)`;
 - query the campus;
 - if the error is not `jwErrorAuth`, return it;
-- if it is `jwErrorAuth`, clear only the token that failed with
-  `clearTokenIfCurrent`, force a login, and retry once.
+- if it is `jwErrorAuth`, call
+  `RefreshAfterAuthFailure(ctx, failedToken)`; that method rechecks token state
+  inside singleflight, logs in only when still necessary, and returns the token
+  for one retry.
 
 `service/refresh_coordinator.go` separately prevents refresh storms. A failed
 refresh stores `lastRefreshErr` and sets `nextRefreshAllowed` for the 30-second
@@ -119,7 +121,8 @@ Tests such as `TestParseJWQueryResponseClassifiesBusinessAuthCode` and
   upstream bodies.
 - Treating every upstream non-200 response as a generic query failure; business
   auth codes must clear and refresh the token.
-- Clearing whatever token is currently cached after an old request fails. Use
-  `clearTokenIfCurrent` to avoid deleting a newer token.
+- Clearing whatever token is currently cached after an old request fails, or
+  clearing outside the singleflight recovery closure. Pass the rejected value to
+  `RefreshAfterAuthFailure` so delayed requests reuse a newer token.
 - Hiding stale refresh failures from `TodayClassrooms.error` or runtime status.
 - Preferring an older partial warning over a newer total refresh failure.

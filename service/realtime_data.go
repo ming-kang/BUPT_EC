@@ -40,7 +40,7 @@ func (s *ClassroomService) Login(ctx context.Context) error {
 }
 
 func (s *ClassroomService) QueryOne(ctx context.Context, id string) ([]model.JWClassInfo, error) {
-	return s.queryCampus(ctx, id, false)
+	return s.queryCampus(ctx, id)
 }
 
 func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
@@ -83,8 +83,8 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 	}
 }
 
-func (s *ClassroomService) queryCampus(ctx context.Context, campusID string, forceRefresh bool) ([]model.JWClassInfo, error) {
-	token, err := s.tokenManager.EnsureToken(ctx, forceRefresh)
+func (s *ClassroomService) queryCampus(ctx context.Context, campusID string) ([]model.JWClassInfo, error) {
+	token, err := s.tokenManager.EnsureToken(ctx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -97,8 +97,7 @@ func (s *ClassroomService) queryCampus(ctx context.Context, campusID string, for
 		return nil, err
 	}
 
-	s.tokenManager.clearTokenIfCurrent(token)
-	token, refreshErr := s.tokenManager.EnsureToken(ctx, true)
+	token, refreshErr := s.tokenManager.RefreshAfterAuthFailure(ctx, token)
 	if refreshErr != nil {
 		return nil, errors.Join(err, refreshErr)
 	}
@@ -151,7 +150,7 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 	for i, campusConfig := range s.campuses {
 		i, campusConfig := i, campusConfig
 		group.Go(func() {
-			jwRows, err := s.queryCampus(ctx, campusConfig.ID, false)
+			jwRows, err := s.queryCampus(ctx, campusConfig.ID)
 			if err != nil {
 				results[i] = campusQueryResult{err: err}
 				return
