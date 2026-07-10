@@ -3,7 +3,7 @@
   "name": "installer-transaction-safety",
   "title": "安装器事务安全",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "deployment",
   "package": null,

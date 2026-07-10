@@ -18,15 +18,15 @@
 
 ## Acceptance Criteria
 
-- [ ] checksum 下载/验证失败测试证明已有 env 和 binary 未改变。
-- [ ] archive 缺少 binary 时未进入 commit。
-- [ ] nginx validation failure 测试恢复旧 binary/config。
-- [ ] service restart/health failure 测试恢复并尝试重启旧服务。
-- [ ] 首次安装 commit failure 不留下声称成功的 service/nginx 文件。
-- [ ] 成功升级测试安装新 binary/config 并清理备份。
-- [ ] env 权限和 ownership 逻辑保持符合文档。
-- [ ] bash tests、bash -n、shellcheck 和 release workflow 资产检查通过。
-- [ ] deployment/upgrading/operations/release 文档和 CHANGELOG 更新。
+- [x] checksum 下载/验证失败测试证明已有 env 和 binary 未改变。
+- [x] archive 缺少 binary 时未进入 commit。
+- [x] nginx validation failure 测试恢复旧 binary/config。
+- [x] service restart/health failure 测试恢复并尝试重启旧服务。
+- [x] 首次安装 commit failure 不留下声称成功的 service/nginx 文件。
+- [x] 成功升级测试安装新 binary/config 并清理备份。
+- [x] env 权限和 ownership 逻辑保持符合文档。
+- [x] bash tests、bash -n、shellcheck 和 release workflow 资产检查通过。
+- [x] deployment/upgrading/operations/release 文档和 CHANGELOG 更新。
 
 ## Out of Scope
 

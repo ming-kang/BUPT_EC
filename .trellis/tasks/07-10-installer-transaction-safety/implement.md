@@ -6,26 +6,26 @@
 
 ## Implementation
 
-- [ ] 搜索 install.sh 所有直接写 `/etc`、`/opt`、systemd、nginx 的调用点。
-- [ ] 将 download/verify/stage 移到任何配置写入之前。
-- [ ] 将 env/systemd/nginx 生成重构为 destination 参数的 render 函数。
-- [ ] 实现 snapshot manifest，记录目标原先存在状态和备份路径。
-- [ ] 使用目标目录 `.new` + atomic rename 提交文件。
-- [ ] 为 commit 安装 ERR/EXIT rollback trap，并防止 rollback 递归触发。
-- [ ] 成功验证后禁用 rollback、清理备份并打印成功。
-- [ ] 扩展 `scripts/install_test.sh`，用临时根和 mocked commands 测试 preflight/commit/rollback。
-- [ ] 更新 CI shell tests、部署/升级/运维/发布文档和 changelog。
+- [x] 搜索 install.sh 所有直接写 `/etc`、`/opt`、systemd、nginx 的调用点。
+- [x] 将 download/verify/stage 移到任何配置写入之前。
+- [x] 将 env/systemd/nginx 生成重构为 destination 参数的 render 函数。
+- [x] 实现 snapshot manifest，记录目标原先存在状态和备份路径。
+- [x] 使用目标目录 `.new` + atomic rename 提交文件。
+- [x] 为 commit 安装 EXIT rollback trap，并防止 rollback 递归触发。
+- [x] 成功验证后禁用 rollback、清理备份并打印成功。
+- [x] 扩展 `scripts/install_test.sh`，用临时根和 mocked commands 测试 preflight/commit/rollback。
+- [x] 更新 CI shell tests、部署/升级/运维/发布文档和 changelog。
 
 ## Focused Tests
 
-- [ ] checksum missing/mismatch leaves targets unchanged。
-- [ ] malformed archive leaves targets unchanged。
-- [ ] render failure leaves targets unchanged。
-- [ ] nginx -t failure restores all target files。
-- [ ] service restart/health failure restores old binary and env。
-- [ ] successful commit replaces all targets and removes backups。
-- [ ] first install rollback removes newly created files。
-- [ ] env candidate/installed/backup permissions do not broaden secret access。
+- [x] checksum missing/mismatch leaves targets unchanged。
+- [x] malformed archive leaves targets unchanged。
+- [x] render failure leaves targets unchanged。
+- [x] nginx -t failure restores all target files。
+- [x] service restart/health failure restores old binary and env。
+- [x] successful commit replaces all targets and removes backups。
+- [x] first install rollback removes newly created files。
+- [x] env candidate/installed/backup permissions do not broaden secret access。
 
 ## Validation
 
