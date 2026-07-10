@@ -75,5 +75,8 @@ jobs:
       - name: Install shellcheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
 
+      - name: Test shell scripts
+        run: bash scripts/install_test.sh
+
       - name: Lint shell scripts
         run: shellcheck scripts/*.sh

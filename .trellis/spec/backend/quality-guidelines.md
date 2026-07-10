@@ -81,6 +81,7 @@ CI and release quality gates also run:
 go test -race ./...
 go build -o bupt-ec -v ./
 govulncheck ./...
+bash scripts/install_test.sh
 shellcheck scripts/*.sh
 cd frontend && pnpm lint
 cd frontend && pnpm build
@@ -122,6 +123,71 @@ User-visible changes must update documentation and changelog in the same change:
 Release automation depends on exact asset names and layout. If changing release
 assets or installer behavior, update `scripts/release.sh`, `scripts/install.sh`,
 `.github/workflows/release.yml`, and `docs/release.md` together.
+
+## Scenario: Installer Release Selection
+
+### 1. Scope / Trigger
+
+Apply this contract whenever installer version defaults, release URLs,
+deployment commands, or persisted installer metadata change. It prevents a
+stable installer URL from silently downloading the rolling nightly package.
+
+### 2. Signatures
+
+```bash
+resolve_release_version <explicit-version> <saved-version>
+validate_version <version>
+resolve_download_base_url <repo> <version> <override-url>
+```
+
+### 3. Contracts
+
+- `VERSION`: optional command environment value; highest precedence.
+- `RELEASE_VERSION`: saved in `/etc/bupt-ec/bupt-ec.env`; reused when
+  `VERSION` is absent.
+- First install with neither value uses `nightly`.
+- Valid values are `latest`, `nightly`, or `vMAJOR.MINOR.PATCH`.
+- `latest` maps to `/releases/latest/download`; other valid values map to
+  `/releases/download/<version>`.
+- A validated `DOWNLOAD_BASE_URL` overrides the GitHub-derived base URL.
+
+### 4. Validation & Error Matrix
+
+| Input | Result |
+| --- | --- |
+| `latest` / `nightly` | accepted |
+| `v0.1.4` | accepted |
+| empty final value, path separators, whitespace, shell punctuation | non-zero validation failure |
+| HTTP mirror without explicit insecure opt-in | non-zero validation failure |
+
+### 5. Good/Base/Bad Cases
+
+- Good: latest installer command passes `sudo VERSION=latest bash`.
+- Base: no explicit or saved version resolves to `nightly`.
+- Bad: download `releases/latest/download/install.sh` and invoke `sudo bash`;
+  the script cannot infer which URL supplied its stdin.
+
+### 6. Tests Required
+
+- `bash scripts/install_test.sh` asserts precedence, accepted/rejected values,
+  GitHub URL mapping, and custom mirror preservation.
+- Both CI quality gates must execute the behavior test before shellcheck.
+- Search README and `docs/` for stable/nightly installer commands without a
+  matching explicit `VERSION`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sudo bash
+```
+
+#### Correct
+
+```bash
+curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sudo VERSION=latest bash
+```
 
 ## Security Checklist
 

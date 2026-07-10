@@ -6,7 +6,7 @@ How versioning, the changelog, and the release pipeline work, and how to cut a r
 
 | Flavor | Trigger | Audience |
 |---|---|---|
-| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; installer default when `VERSION` is unset (edge) |
+| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; first-install fallback when no release choice exists (edge) |
 | `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible production deployments (recommended) |
 
 Both flavors publish the same four assets, which the installer depends on by exact name:
@@ -15,6 +15,12 @@ Both flavors publish the same four assets, which the installer depends on by exa
 - `bupt-ec-linux-arm64.tar.gz`
 - `checksums.txt`
 - `install.sh`
+
+Installer commands select the release explicitly: production latest uses
+`VERSION=latest`, edge uses `VERSION=nightly`, and immutable deployments use a
+matching `VERSION=vX.Y.Z`. The installer persists that choice as
+`RELEASE_VERSION`; only a first-time install without either value falls back to
+`nightly`.
 
 Versioning follows [Semantic Versioning](https://semver.org/). While the project is pre-1.0, minor bumps may contain breaking changes.
 
@@ -55,7 +61,7 @@ Two workflows, no overlap:
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), installer behavior tests, and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 

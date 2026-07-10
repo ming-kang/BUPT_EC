@@ -32,13 +32,14 @@ One command on a Debian/Ubuntu server with a domain and TLS certificate already 
 **Production** — prefer a stable release:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 ```
 
-**Edge** — rolling `nightly` (freshest `main`; also the installer default when `VERSION` is unset):
+**Edge** — rolling `nightly` (freshest `main`; also the first-install fallback
+when neither `VERSION` nor a saved release choice exists):
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
 ```
 
 The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command (pin a stable tag in production).

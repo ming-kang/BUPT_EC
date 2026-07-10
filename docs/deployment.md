@@ -45,12 +45,14 @@ Renewal stays the responsibility of your certificate manager (for example Certbo
 
 ## One-command install
 
-**Production:** prefer an immutable stable tag (or GitHub `latest` stable). The installer default when `VERSION` is unset is the rolling `nightly` prerelease (edge / freshest `main`).
+**Production:** prefer an immutable stable tag (or GitHub `latest` stable). On
+a first install with no explicit or saved release choice, the fallback remains
+the rolling `nightly` prerelease (edge / freshest `main`).
 
 Stable release (recommended for production):
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 # or a fixed version:
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo VERSION=v0.1.4 bash
 ```
@@ -58,8 +60,14 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install
 Rolling nightly (edge):
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
 ```
+
+The installer stores the selected `latest`, `nightly`, or fixed `vX.Y.Z` value
+as `RELEASE_VERSION` in `/etc/bupt-ec/bupt-ec.env`. Rerunning it without an
+explicit `VERSION` keeps that channel or pinned tag; an explicit `VERSION`
+always overrides the saved value. A first-time install with no `VERSION` keeps
+the historical `nightly` default.
 
 The script asks interactively for:
 
@@ -94,13 +102,13 @@ After installation the site is served at `https://<your-domain>/`.
 GitHub's release download endpoints are not reachable from every IPv6-only network. The installer automatically falls back to `gh-v6.com` when direct GitHub access fails. If the installer itself cannot be fetched from GitHub, download it through the proxy:
 
 ```bash
-curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo bash
+curl -fsSL https://gh-v6.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
 ```
 
 If both GitHub and `gh-v6.com` are unavailable, mirror the release files to an HTTPS location you control and point the installer at it:
 
 ```bash
-curl -fsSL https://your-mirror.example/install.sh | sudo DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash
+curl -fsSL https://your-mirror.example/install.sh | sudo VERSION=v0.1.4 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash
 ```
 
 The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or `bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash (verification is required unless `SKIP_CHECKSUM=1`). `DOWNLOAD_BASE_URL` must use HTTPS; for a trusted local mirror only, set `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP.

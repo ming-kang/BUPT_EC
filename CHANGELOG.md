@@ -20,6 +20,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Stable, nightly, and pinned installer commands now select the matching release
+  explicitly; the installer remembers the selected channel or tag for later
+  upgrades instead of silently falling back to `nightly`.
 - Dark mode follows system `prefers-color-scheme` only (no conflicting
   `localStorage.darkMode` bootstrap), so React no longer thrash-overwrites the
   pre-hydration theme.
@@ -60,7 +63,7 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Docs (README, deployment/upgrading/operations/development, AGENTS) now describe
   partial-campus soft-stale retry, day-stamped cache metadata, frontend
   keep-last-good reload, and recommend stable tags for production installs
-  (installer `VERSION` default remains `nightly`).
+  (the installer keeps `nightly` only as its first-install fallback).
 - Tidied repository structure by folding backend startup initialization into
   `main.go` and refreshing ignore rules for local-only project artifacts.
 - `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely

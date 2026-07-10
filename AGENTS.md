@@ -58,7 +58,7 @@ See [docs/release.md](docs/release.md) for the full picture. Key facts:
 
 - Every push to `main` republishes the rolling `nightly` prerelease; pushing a `v*` tag publishes an immutable stable release whose notes come from the matching `CHANGELOG.md` section (extracted by `scripts/extract-changelog.sh`).
 - Cut stable releases with `scripts/release.sh vX.Y.Z` — it rolls the changelog, bumps `frontend/package.json`, commits, tags, and pushes. Do not hand-edit tags or release notes.
-- PRs are validated by `.github/workflows/ci.yml`; direct pushes to `main` are validated by the `quality-gate` job in `release.yml` (frontend lint/test/build, gofmt, vet, `go test -race`, govulncheck, shellcheck on `scripts/*.sh`).
+- PRs are validated by `.github/workflows/ci.yml`; direct pushes to `main` are validated by the `quality-gate` job in `release.yml` (frontend lint/test/build, gofmt, vet, `go test -race`, govulncheck, `bash scripts/install_test.sh`, and shellcheck on `scripts/*.sh`).
 - Release assets must keep their exact names and layout (`bupt-ec-linux-${arch}.tar.gz` containing `bupt-ec`, `.env.example`, `README.md`, `install.sh`, plus top-level `checksums.txt` and `install.sh`) because `scripts/install.sh` depends on them.
 - Toolchain: Go 1.25, Node 22, pnpm 9.15.x. All GitHub Actions are pinned to 40-character commit SHAs; bump pins by resolving the new SHA with `git ls-remote` and updating both the ref and the comment.
 
@@ -69,3 +69,4 @@ See [docs/release.md](docs/release.md) for the full picture. Key facts:
 - The AES key for JW password encryption (`tokenPasswordKey` in `service/crypto.go`) matches the JW system protocol and is compiled into the binary; do not change it, and do not log JW passwords or tokens.
 - The backend talks directly to the BUPT teaching affairs HTTP endpoints and uses only same-day in-memory cache data; do not reintroduce local timetable databases unless explicitly requested.
 - The installer (`scripts/install.sh`) hardens the systemd unit with `NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, and a dedicated `bupt-ec` system user. Keep the env file at `/etc/bupt-ec/bupt-ec.env` mode `0600` and owned by `root`.
+- Installer release selection precedence is explicit `VERSION`, then saved `RELEASE_VERSION`, then the first-install `nightly` default. Documentation commands must pass `VERSION=latest`, `VERSION=nightly`, or a matching fixed tag so the downloaded installer and package cannot diverge.

@@ -17,17 +17,8 @@ DEFAULT_APP_ADDR="127.0.0.1:8080"
 DEFAULT_GIN_MODE="release"
 TTY="/dev/tty"
 
-if [[ "${EUID}" -ne 0 ]]; then
-  echo "This installer must run as root. Use: curl -fsSL <url> | sudo bash" >&2
-  exit 1
-fi
-
-if [[ ! -r "${TTY}" ]]; then
-  echo "Interactive input requires a TTY." >&2
-  exit 1
-fi
-
 CURRENT_RELEASE_REPO=""
+CURRENT_RELEASE_VERSION=""
 CURRENT_DOMAIN=""
 CURRENT_SSL_CERT=""
 CURRENT_SSL_KEY=""
@@ -38,12 +29,29 @@ CURRENT_APP_ADDR=""
 CURRENT_GIN_MODE=""
 CURRENT_DOWNLOAD_BASE_URL=""
 
-if [[ -f "${ENV_FILE}" ]]; then
+require_installer_environment() {
+  if [[ "${EUID}" -ne 0 ]]; then
+    echo "This installer must run as root. Use: curl -fsSL <url> | sudo bash" >&2
+    exit 1
+  fi
+
+  if [[ ! -r "${TTY}" ]]; then
+    echo "Interactive input requires a TTY." >&2
+    exit 1
+  fi
+}
+
+load_current_config() {
+  if [[ ! -f "${ENV_FILE}" ]]; then
+    return
+  fi
+
   set -a
   # shellcheck disable=SC1090
   . "${ENV_FILE}"
   set +a
   CURRENT_RELEASE_REPO="${RELEASE_REPO:-}"
+  CURRENT_RELEASE_VERSION="${RELEASE_VERSION:-}"
   CURRENT_DOMAIN="${DOMAIN:-}"
   CURRENT_SSL_CERT="${SSL_CERT:-}"
   CURRENT_SSL_KEY="${SSL_KEY:-}"
@@ -53,7 +61,7 @@ if [[ -f "${ENV_FILE}" ]]; then
   CURRENT_APP_ADDR="${APP_ADDR:-}"
   CURRENT_GIN_MODE="${GIN_MODE:-}"
   CURRENT_DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-}"
-fi
+}
 
 prompt() {
   local label="$1"
@@ -132,6 +140,28 @@ validate_repo() {
     echo "Invalid GitHub repository: ${repo}" >&2
     exit 1
   fi
+}
+
+resolve_release_version() {
+  local explicit_version="${1:-}"
+  local current_version="${2:-}"
+
+  if [[ -n "${explicit_version}" ]]; then
+    printf "%s" "${explicit_version}"
+  elif [[ -n "${current_version}" ]]; then
+    printf "%s" "${current_version}"
+  else
+    printf "nightly"
+  fi
+}
+
+validate_version() {
+  local version="$1"
+  if [[ "${version}" == "latest" || "${version}" == "nightly" || "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    return
+  fi
+  echo "VERSION must be latest, nightly, or a stable tag such as v0.1.4: ${version}" >&2
+  return 1
 }
 
 validate_domain() {
@@ -332,19 +362,21 @@ install_binary() {
 
 write_env() {
   local repo="$1"
-  local domain="$2"
-  local ssl_cert="$3"
-  local ssl_key="$4"
-  local username="$5"
-  local password="$6"
-  local token="$7"
-  local app_addr="$8"
-  local gin_mode="$9"
-  local download_base_url="${10}"
+  local version="$2"
+  local domain="$3"
+  local ssl_cert="$4"
+  local ssl_key="$5"
+  local username="$6"
+  local password="$7"
+  local token="$8"
+  local app_addr="$9"
+  local gin_mode="${10}"
+  local download_base_url="${11}"
 
   mkdir -p "${CONFIG_DIR}"
   cat > "${ENV_FILE}" <<EOF
 RELEASE_REPO=$(shell_quote "${repo}")
+RELEASE_VERSION=$(shell_quote "${version}")
 DOMAIN=$(shell_quote "${domain}")
 SSL_CERT=$(shell_quote "${ssl_cert}")
 SSL_KEY=$(shell_quote "${ssl_key}")
@@ -468,10 +500,13 @@ main() {
   local repo version arch domain ssl_cert ssl_key username password_input password token app_addr gin_mode download_base_url tmp_dir archive
   local has_password has_token
 
+  require_installer_environment
+  load_current_config
+
   repo="${REPO:-${CURRENT_RELEASE_REPO:-${DEFAULT_REPO}}}"
-  # Default to the rolling 'nightly' release (rewritten on every push to main).
-  # Set VERSION=v0.1.0 (or any semver tag) to install a specific stable release.
-  version="${VERSION:-nightly}"
+  # Explicit VERSION wins; otherwise preserve the installed channel/tag. A
+  # first-time install keeps the historical rolling-nightly default.
+  version="$(resolve_release_version "${VERSION:-}" "${CURRENT_RELEASE_VERSION}")"
 
   echo "BUPT_EC installer"
   echo
@@ -518,6 +553,7 @@ main() {
   download_base_url="${DOWNLOAD_BASE_URL:-${CURRENT_DOWNLOAD_BASE_URL}}"
 
   validate_repo "${repo}"
+  validate_version "${version}"
   validate_domain "${domain}"
   validate_absolute_path "SSL certificate path" "${ssl_cert}"
   validate_absolute_path "SSL private key path" "${ssl_key}"
@@ -540,7 +576,7 @@ main() {
 
   install_packages
   create_user
-  write_env "${repo}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
+  write_env "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
   download_release "${repo}" "${version}" "${arch}" "${tmp_dir}" "${download_base_url}"
   archive="${tmp_dir}/bupt-ec-linux-${arch}.tar.gz"
   install_binary "${archive}" "${tmp_dir}"
@@ -557,4 +593,6 @@ main() {
   echo "Upgrade later: rerun this installer."
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
