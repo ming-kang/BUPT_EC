@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
 import { nextReloadDelay } from "./reloadSchedule";
 import {
   extractMessage,
@@ -9,11 +10,10 @@ import {
 } from "./todayClassroomsResponse";
 
 /** True when the response can still drive the classroom UI. */
-export function hasUsableClassroomData(resp) {
+export function hasUsableClassroomData(resp, nowMs = Date.now()) {
   return (
     resp?.code === 0 &&
-    resp?.data != null &&
-    Array.isArray(resp.data.campuses)
+    isUsableBusinessDaySnapshot(resp?.data, nowMs)
   );
 }
 
@@ -28,13 +28,18 @@ export function shouldFullPageSpin(isBackground, hasUsableData) {
   return !hasUsableData;
 }
 
+export function nextFailureCount(current, succeeded) {
+  return succeeded ? 0 : current + 1;
+}
+
 /**
  * Merge a new fetch outcome into prior UI state.
  * On failure after a successful snapshot, keep campuses and attach a soft error
  * (reuses the existing stale/error Alert). Hard-empty only with no prior good data.
  */
-export function mergeFetchResult(prev, next) {
-  if (next?.code === 0 && next.data != null) {
+export function mergeFetchResult(prev, next, nowMs = Date.now()) {
+  const nextIsSuccessfulEnvelope = next?.code === 0 && next.data != null;
+  if (hasUsableClassroomData(next, nowMs)) {
     return next;
   }
 
@@ -43,7 +48,7 @@ export function mergeFetchResult(prev, next) {
       ? next.msg.trim()
       : "") || fallbackErrorMessage;
 
-  if (hasUsableClassroomData(prev)) {
+  if (hasUsableClassroomData(prev, nowMs)) {
     return {
       code: 0,
       msg: typeof prev.msg === "string" ? prev.msg : "",
@@ -58,7 +63,7 @@ export function mergeFetchResult(prev, next) {
     };
   }
 
-  const code = Number(next?.code);
+  const code = nextIsSuccessfulEnvelope ? 500 : Number(next?.code);
   return {
     code: Number.isFinite(code) ? code : 500,
     msg,
@@ -81,6 +86,7 @@ export default function useTodayClassrooms() {
   });
   const [spinning, setSpinning] = useState(true);
   const [reloading, setReloading] = useState(false);
+  const [failureCount, setFailureCount] = useState(0);
   const [resp, setResp] = useState(loadingResponse);
   const respRef = useRef(resp);
   respRef.current = resp;
@@ -116,8 +122,11 @@ export default function useTodayClassrooms() {
         }
 
         const normalized = normalizeResponse(payload);
+        const nowMs = Date.now();
+        const succeeded = hasUsableClassroomData(normalized, nowMs);
+        setFailureCount((current) => nextFailureCount(current, succeeded));
         setResp((current) => {
-          const merged = mergeFetchResult(current, normalized);
+          const merged = mergeFetchResult(current, normalized, nowMs);
           respRef.current = merged;
           return merged;
         });
@@ -128,8 +137,10 @@ export default function useTodayClassrooms() {
         const failed = errorEnvelope(
           error instanceof Error ? error.message : fallbackErrorMessage
         );
+        const nowMs = Date.now();
+        setFailureCount((current) => nextFailureCount(current, false));
         setResp((current) => {
-          const merged = mergeFetchResult(current, failed);
+          const merged = mergeFetchResult(current, failed, nowMs);
           respRef.current = merged;
           return merged;
         });
@@ -153,21 +164,26 @@ export default function useTodayClassrooms() {
   }, []);
 
   useEffect(() => {
-    if (!hasUsableClassroomData(resp)) {
+    if (spinning || reloading) {
       return;
     }
-    const delay = nextReloadDelay(resp.data);
+    const delay = nextReloadDelay(resp.data, { failureCount });
     if (delay == null) {
       return;
     }
     const timer = setTimeout(() => {
+      if (resp.code === 0 && !hasUsableClassroomData(resp)) {
+        const expired = errorEnvelope("当前缓存已失效，正在重新获取");
+        respRef.current = expired;
+        setResp(expired);
+      }
       setReloadRequest((current) => ({
         key: current.key + 1,
         background: true,
       }));
     }, delay);
     return () => clearTimeout(timer);
-  }, [resp]);
+  }, [failureCount, reloading, resp, spinning]);
 
   return {
     resp,

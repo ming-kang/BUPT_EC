@@ -2,6 +2,38 @@ export const loadingResponse = { code: 1, msg: "加载中", data: null };
 
 export const fallbackErrorMessage = "数据获取失败，请稍后重试";
 
+export function classroomWarningMessage(data) {
+  const fallback =
+    (typeof data?.error?.message === "string" &&
+    data.error.message.trim() !== ""
+      ? data.error.message.trim()
+      : "") || "当前展示的是今天最后一次成功刷新数据";
+  const ids = Array.isArray(data?.partial_campuses)
+    ? [
+        ...new Set(
+          data.partial_campuses
+            .filter(
+              (value) => typeof value === "string" || typeof value === "number"
+            )
+            .map((value) => String(value).trim())
+            .filter(Boolean)
+        ),
+      ]
+    : [];
+  if (ids.length === 0) {
+    return fallback;
+  }
+
+  const campuses = Array.isArray(data?.campuses) ? data.campuses : [];
+  const labels = ids.map((id) => {
+    const campus = campuses.find((item) => String(item?.id) === id);
+    const name =
+      typeof campus?.name === "string" ? campus.name.trim() : "";
+    return name && name !== id ? `${name}（${id}）` : id;
+  });
+  return `受影响校区：${labels.join("、")}。${fallback}`;
+}
+
 export function extractMessage(payload) {
   return typeof payload?.msg === "string" && payload.msg.trim() !== ""
     ? payload.msg.trim()

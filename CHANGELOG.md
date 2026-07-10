@@ -29,12 +29,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Exact path `/api` now returns JSON 404 like other unknown API routes, instead
   of the SPA `index.html`.
 - Day-boundary auto-reload considers Asia/Shanghai business date and
-  `stale_until`, so yesterday’s “fresh” payload is not held until `expires_at`
-  after midnight.
+  `stale_until`; failed reloads now clear cross-day or expired snapshots instead
+  of retaining yesterday's classroom filters and table.
 - Background auto-refresh no longer full-page spins or replaces a successful
-  classroom snapshot with an empty error envelope; last-good data is kept with
-  a soft warning until the next successful fetch (hard empty only when there is
-  no prior good data).
+  same-day classroom snapshot with an empty error envelope. Hard-empty and
+  repeated client failures retry after 5s/10s/20s/30s, while a successful fetch
+  resets the backoff.
 - Partial-campus cache hits no longer skip JW retries for the full 5-minute
   fresh TTL; soft-stale revalidation runs immediately (still single-flight,
   with the same 30s backoff after total or partial refresh outcomes).
@@ -49,12 +49,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   an auth failure (override is invalidated until process restart).
 - Multi-campus refresh keeps partial results when one campus fails, merging prior
   same-day data when available instead of failing the whole payload; responses
-  and readiness diagnostics now identify the affected campus IDs.
+  and readiness diagnostics identify the affected campus IDs, and the frontend
+  warning names the affected campus when possible.
 - A total refresh failure after a partial cached result now replaces the older
   partial warning, so users and operators see the latest upstream outage state.
 - Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
-- Stale/partial classroom payloads auto-refresh every few seconds instead of
-  waiting a minimum of 60 seconds past `expires_at`.
+- Stale classroom payloads can poll after 5 seconds for an in-flight refresh;
+  partial-campus payloads follow the backend's 30-second refresh backoff.
 - Ended class periods are dropped from the selection so they cannot block room
   filters; empty/malformed period times are not treated as ended.
 - Settings modal secondary text follows the theme (readable in dark mode).

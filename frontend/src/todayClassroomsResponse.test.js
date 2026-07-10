@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fallbackErrorMessage, normalizeResponse } from "./todayClassroomsResponse";
+import {
+  classroomWarningMessage,
+  fallbackErrorMessage,
+  normalizeResponse,
+} from "./todayClassroomsResponse";
 
 describe("normalizeResponse", () => {
   it("preserves a successful classroom payload with campuses", () => {
@@ -45,6 +49,27 @@ describe("normalizeResponse", () => {
     );
     expect(() => normalizeResponse({ code: 0, data: { campuses: {} } })).toThrow(
       "服务返回校区数据异常"
+    );
+  });
+});
+
+describe("classroomWarningMessage", () => {
+  it("names affected campuses and falls back to IDs", () => {
+    expect(
+      classroomWarningMessage({
+        campuses: [{ id: "04", name: "沙河" }],
+        partial_campuses: ["04", "01"],
+        error: { message: "部分数据刷新失败" },
+      })
+    ).toBe("受影响校区：沙河（04）、01。部分数据刷新失败");
+  });
+
+  it("keeps the generic warning when partial_campuses is absent", () => {
+    expect(
+      classroomWarningMessage({ error: { message: "刷新失败" } })
+    ).toBe("刷新失败");
+    expect(classroomWarningMessage({ stale: true })).toBe(
+      "当前展示的是今天最后一次成功刷新数据"
     );
   });
 });

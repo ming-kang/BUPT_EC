@@ -108,6 +108,91 @@ Preserve these semantics unless the frontend is updated in the same change:
 When changing this contract, update backend tests, frontend validation, affected
 components, user docs, and `CHANGELOG.md` if users can observe the change.
 
+## Scenario: Frontend Snapshot Validity and Reload Backoff
+
+### 1. Scope / Trigger
+
+Apply this contract whenever frontend fetch merging, classroom cache timestamps,
+reload scheduling, or partial-campus warnings change. It prevents a browser tab
+from retaining yesterday's classroom data or polling faster than the backend can
+refresh.
+
+### 2. Signatures
+
+```js
+isUsableBusinessDaySnapshot(data, nowMs = Date.now())
+mergeFetchResult(prev, next, nowMs = Date.now())
+failureRetryDelay(failureCount)
+nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
+```
+
+### 3. Contracts
+
+- A displayable snapshot has an array `campuses`, a `date` equal to the current
+  Asia/Shanghai date, and a parseable future `stale_until`.
+- `mergeFetchResult` keeps prior data after a client failure only while that
+  snapshot remains displayable; otherwise it returns `data: null`.
+- Consecutive client failures retry after 5s, 10s, 20s, then 30s maximum. A
+  valid HTTP 200 classroom payload resets the count.
+- A partial payload polls at 30s; an ordinary stale payload may poll at 5s; a
+  fresh payload waits for `expires_at`.
+- Every scheduled delay is capped by `stale_until`, even when `expires_at` or
+  failure backoff would cross Shanghai midnight.
+- Background retries never enable the full-page spinner. If the timer wakes at
+  an invalid boundary, clear the campuses before starting the reload.
+- `partial_campuses` is optional. When present, warnings resolve IDs through the
+  payload's campus names and fall back to the ID when no name is available.
+
+### 4. Validation & Error Matrix
+
+| Condition | Frontend result |
+| --- | --- |
+| same-day snapshot, future `stale_until`, fetch failure | preserve data, set `stale` and `client_refresh_failed` |
+| previous-day or expired snapshot, fetch failure | hard error envelope with `data: null` |
+| missing/invalid `date`, `stale_until`, or `campuses` | fail closed without throwing |
+| hard error with failure count 1/2/3/4+ | retry after 5s/10s/20s/30s |
+| valid partial payload | reset client-failure count, poll after 30s |
+| valid stale payload | poll after at most 5s |
+| fresh expiry later than `stale_until` | wake at `stale_until` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a tab opened before midnight wakes at `stale_until`; if the reload
+  fails, yesterday's campus filters and table disappear and automatic retry
+  continues.
+- Base: a fresh complete payload waits until `expires_at` and resets prior
+  transport failure backoff.
+- Bad: testing only `campuses` and retaining any prior `code: 0` payload after
+  midnight.
+
+### 6. Tests Required
+
+- `classroomDataValidity.test.js`: same-day, cross-day, expired, and malformed
+  required fields.
+- `useTodayClassrooms.test.js`: preserve valid prior data, hard-empty invalid
+  prior data, and reset/increment consecutive failure count.
+- `reloadSchedule.test.js`: 5/10/20/30 cap, hard-empty retry, 30s partial poll,
+  5s stale poll, and `stale_until` earlier than expiry/backoff.
+- `todayClassroomsResponse.test.js`: campus-name warning and missing-field
+  compatibility.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```js
+if (prev?.code === 0 && Array.isArray(prev.data?.campuses)) return prev;
+```
+
+#### Correct
+
+```js
+const canPreserve = isUsableBusinessDaySnapshot(prev?.data, nowMs);
+return canPreserve
+  ? { code: 0, data: { ...prev.data, stale: true, error: clientError } }
+  : { code: 500, msg: message, data: null };
+```
+
 ## Health and Readiness
 
 `/healthz` must stay cheap and independent of JW credentials or cache state.

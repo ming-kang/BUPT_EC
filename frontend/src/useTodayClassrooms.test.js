@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   hasUsableClassroomData,
   mergeFetchResult,
+  nextFailureCount,
   shouldFullPageSpin,
 } from "./useTodayClassrooms";
 import { fallbackErrorMessage } from "./todayClassroomsResponse";
+
+const now = Date.parse("2026-07-10T12:00:00+08:00");
 
 const goodPrev = {
   code: 0,
@@ -12,6 +15,7 @@ const goodPrev = {
   data: {
     date: "2026-07-10",
     expires_at: "2026-07-10T12:05:00+08:00",
+    stale_until: "2026-07-10T23:59:59.999+08:00",
     campuses: [
       {
         id: "04",
@@ -36,16 +40,40 @@ const serviceError = {
 
 describe("hasUsableClassroomData", () => {
   it("accepts code 0 payloads with campuses", () => {
-    expect(hasUsableClassroomData(goodPrev)).toBe(true);
+    expect(hasUsableClassroomData(goodPrev, now)).toBe(true);
   });
 
   it("rejects loading, hard errors, and missing campuses", () => {
-    expect(hasUsableClassroomData({ code: 1, msg: "加载中", data: null })).toBe(
-      false
-    );
-    expect(hasUsableClassroomData(hardError)).toBe(false);
     expect(
-      hasUsableClassroomData({ code: 0, msg: "", data: { campuses: null } })
+      hasUsableClassroomData({ code: 1, msg: "加载中", data: null }, now)
+    ).toBe(false);
+    expect(hasUsableClassroomData(hardError, now)).toBe(false);
+    expect(
+      hasUsableClassroomData(
+        { code: 0, msg: "", data: { campuses: null } },
+        now
+      )
+    ).toBe(false);
+  });
+
+  it("rejects cross-day and expired classroom snapshots", () => {
+    expect(
+      hasUsableClassroomData(
+        { ...goodPrev, data: { ...goodPrev.data, date: "2026-07-09" } },
+        now
+      )
+    ).toBe(false);
+    expect(
+      hasUsableClassroomData(
+        {
+          ...goodPrev,
+          data: {
+            ...goodPrev.data,
+            stale_until: "2026-07-10T12:00:00+08:00",
+          },
+        },
+        now
+      )
     ).toBe(false);
   });
 });
@@ -62,9 +90,17 @@ describe("shouldFullPageSpin", () => {
   });
 });
 
+describe("nextFailureCount", () => {
+  it("increments consecutive failures and resets after valid success", () => {
+    expect(nextFailureCount(0, false)).toBe(1);
+    expect(nextFailureCount(2, false)).toBe(3);
+    expect(nextFailureCount(3, true)).toBe(0);
+  });
+});
+
 describe("mergeFetchResult", () => {
   it("keeps last good campuses on background/hard fetch failure", () => {
-    const merged = mergeFetchResult(goodPrev, hardError);
+    const merged = mergeFetchResult(goodPrev, hardError, now);
 
     expect(merged.code).toBe(0);
     expect(merged.data.campuses).toEqual(goodPrev.data.campuses);
@@ -77,7 +113,7 @@ describe("mergeFetchResult", () => {
   });
 
   it("keeps last good data when the service returns a non-ok envelope", () => {
-    const merged = mergeFetchResult(goodPrev, serviceError);
+    const merged = mergeFetchResult(goodPrev, serviceError, now);
 
     expect(merged.code).toBe(0);
     expect(merged.data.campuses).toHaveLength(1);
@@ -103,6 +139,41 @@ describe("mergeFetchResult", () => {
     });
   });
 
+  it("clears previous-day or expired snapshots after a fetch failure", () => {
+    const previousDay = {
+      ...goodPrev,
+      data: { ...goodPrev.data, date: "2026-07-09" },
+    };
+    const expired = {
+      ...goodPrev,
+      data: {
+        ...goodPrev.data,
+        stale_until: "2026-07-10T12:00:00+08:00",
+      },
+    };
+
+    expect(mergeFetchResult(previousDay, hardError, now)).toEqual(hardError);
+    expect(mergeFetchResult(expired, hardError, now)).toEqual(hardError);
+  });
+
+  it("fails closed when a successful envelope has invalid cache metadata", () => {
+    expect(
+      mergeFetchResult(
+        null,
+        {
+          code: 0,
+          msg: "",
+          data: { date: "2026-07-10", campuses: [] },
+        },
+        now
+      )
+    ).toEqual({
+      code: 500,
+      msg: fallbackErrorMessage,
+      data: null,
+    });
+  });
+
   it("replaces prior state with a successful payload", () => {
     const next = {
       code: 0,
@@ -113,7 +184,9 @@ describe("mergeFetchResult", () => {
       },
     };
 
-    expect(mergeFetchResult(goodPrev, next)).toEqual(next);
+    next.data.stale_until = "2026-07-10T23:59:59.999+08:00";
+
+    expect(mergeFetchResult(goodPrev, next, now)).toEqual(next);
     expect(
       mergeFetchResult(
         {
@@ -124,7 +197,8 @@ describe("mergeFetchResult", () => {
             error: { type: "client_refresh_failed", message: "old" },
           },
         },
-        next
+        next,
+        now
       )
     ).toEqual(next);
   });

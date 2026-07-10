@@ -1,41 +1,66 @@
-import { formatShanghaiDate } from "./classTimeUtils";
+import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
 
 export const STALE_POLL_MS = 5_000;
+export const PARTIAL_POLL_MS = 30_000;
 export const MIN_FRESH_DELAY_MS = 1_000;
+export const FAILURE_RETRY_DELAYS_MS = [5_000, 10_000, 20_000, 30_000];
+
+export function failureRetryDelay(failureCount) {
+  const parsed = Number(failureCount);
+  const count = Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1;
+  return FAILURE_RETRY_DELAYS_MS[
+    Math.min(count - 1, FAILURE_RETRY_DELAYS_MS.length - 1)
+  ];
+}
 
 /**
  * Delay until the next automatic /api/get_data reload.
- * Stale or partial-error payloads poll quickly so background JW recovery shows up soon.
- * Cross-day payloads (or past stale_until) reload ASAP so yesterday's "fresh" cache
- * is not held until expires_at after Shanghai midnight.
+ * Transport failures use bounded backoff. Partial payloads follow the backend's
+ * refresh backoff, while stale payloads can poll briefly for an in-flight result.
  */
-export function nextReloadDelay(data, nowMs = Date.now()) {
-  if (!data?.expires_at) {
-    return null;
+export function nextReloadDelay(
+  data,
+  { failureCount = 0, nowMs = Date.now() } = {}
+) {
+  if (failureCount > 0) {
+    const retryDelay = failureRetryDelay(failureCount);
+    if (!isUsableBusinessDaySnapshot(data, nowMs)) {
+      return retryDelay;
+    }
+    const staleUntil = Date.parse(data.stale_until);
+    return Math.min(retryDelay, staleUntil - nowMs);
   }
-  const expiresAt = new Date(data.expires_at).getTime();
-  if (!Number.isFinite(expiresAt)) {
+
+  if (data == null) {
     return null;
   }
 
-  // Payload is for a previous Shanghai business day — do not wait on expires_at.
-  if (data.date) {
-    const today = formatShanghaiDate(new Date(nowMs));
-    if (data.date !== today) {
-      return MIN_FRESH_DELAY_MS;
-    }
+  // Cross-day, expired, or malformed snapshots must be revalidated promptly.
+  if (!isUsableBusinessDaySnapshot(data, nowMs)) {
+    return MIN_FRESH_DELAY_MS;
   }
+  const staleUntilDelay = Date.parse(data.stale_until) - nowMs;
 
-  // Past end-of-day stale window — cache is no longer usable same-day.
-  if (data.stale_until) {
-    const staleUntil = new Date(data.stale_until).getTime();
-    if (Number.isFinite(staleUntil) && nowMs >= staleUntil) {
-      return MIN_FRESH_DELAY_MS;
-    }
+  const partialCampuses = Array.isArray(data.partial_campuses)
+    ? data.partial_campuses
+    : [];
+  if (
+    partialCampuses.length > 0 ||
+    (data.error && !data.stale && data.error.type !== "client_refresh_failed")
+  ) {
+    return Math.min(PARTIAL_POLL_MS, staleUntilDelay);
   }
 
   if (data.stale || data.error) {
+    return Math.min(STALE_POLL_MS, staleUntilDelay);
+  }
+
+  const expiresAt = Date.parse(data.expires_at);
+  if (!Number.isFinite(expiresAt)) {
     return STALE_POLL_MS;
   }
-  return Math.max(expiresAt - nowMs, MIN_FRESH_DELAY_MS);
+  return Math.min(
+    Math.max(expiresAt - nowMs, MIN_FRESH_DELAY_MS),
+    staleUntilDelay
+  );
 }

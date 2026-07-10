@@ -102,7 +102,9 @@ The backend keeps a single same-day in-memory cache of classroom data (business 
 
 Refreshes are triggered on demand by `GET /api/get_data`, once at startup (warmup), and again after each Shanghai midnight. Concurrent requests share a single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
-If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning. The UI keeps the last successful snapshot on background poll failures instead of blanking the page.
+If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). When `partial_campuses` is present, the banner names the affected campus or shows its ID. If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning.
+
+The UI keeps the last successful snapshot after a browser/network refresh failure only while its `date` still matches the current Asia/Shanghai business day, `stale_until` is valid and in the future, and `campuses` remains an array. Once the snapshot crosses midnight or passes `stale_until`, the page clears the classroom filters/table and shows the hard error state instead of yesterday's data. Hard-empty and repeated client-refresh failures retry automatically after 5, 10, 20, then at most 30 seconds; a valid response resets the failure count. Partial-campus payloads poll no faster than the backend's 30-second refresh backoff, while ordinary stale-while-revalidate payloads may poll after 5 seconds to pick up an in-flight result. These background retries do not trigger the full-page loading spinner.
 
 ## Troubleshooting
 

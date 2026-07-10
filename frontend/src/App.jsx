@@ -8,6 +8,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
+import { classroomWarningMessage } from "./todayClassroomsResponse";
 import SelectionProvider from "./SelectionProvider";
 import { useSelection } from "./selectionContext";
 import {
@@ -107,10 +108,7 @@ function AppContent() {
               className="stale-alert"
               type="warning"
               showIcon
-              message={
-                resp.data.error?.message ||
-                "当前展示的是今天最后一次成功刷新数据"
-              }
+              message={classroomWarningMessage(resp.data)}
             />
           ) : null}
           <CampusButtonGroup campuses={campuses} todayData={resp} />
