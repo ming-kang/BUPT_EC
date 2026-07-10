@@ -15,6 +15,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Security
 
+- Upstream JW error text is now sanitized before internal logs/errors: control
+  characters collapse, sensitive key/value fragments redact, and messages cap at
+  256 runes (clients still only see fixed SafeErrorMessage text).
 - Go builds and releases now require patched Go 1.25.12 (or Go 1.26.5+), and
   the reachable `quic-go` dependency is updated to v0.59.1.
 - PR and release quality gates now audit production frontend dependencies at
@@ -37,6 +40,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Unknown `/api` routes return a correlated `LogID` header and body `log_id`.
 - Shared classroom refresh workers preserve the initiator request log_id without
   inheriting client cancellation.
+- Logging initialization returns an error instead of calling `log.Fatal`, and
+  `NewHTTPServer` rejects nil classroom services before route registration.
 - Startup now resolves configuration once, honors `.env` values for `GIN_MODE`
   and `LOG_CALLER`, and fails safely on malformed/unreadable dotenv files or
   invalid listen addresses; process environment values still take precedence.

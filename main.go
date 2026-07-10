@@ -33,7 +33,9 @@ func Init() (*application, error) {
 	}
 
 	gin.SetMode(runtimeConfig.GinMode)
-	logs.Init(true, runtimeConfig.LogCaller)
+	if err := logs.Init(true, runtimeConfig.LogCaller); err != nil {
+		return nil, fmt.Errorf("init logging: %w", err)
+	}
 
 	store := cache.New()
 	httpClient := utils.NewHTTPClient()
@@ -48,11 +50,15 @@ func Init() (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create classroom service: %w", err)
 	}
+	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials)
+	if err != nil {
+		return nil, fmt.Errorf("create HTTP server: %w", err)
+	}
 
 	return &application{
 		runtimeConfig:    runtimeConfig,
 		classroomService: classroomService,
-		httpServer:       NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials),
+		httpServer:       httpServer,
 	}, nil
 }
 

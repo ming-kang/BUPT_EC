@@ -34,7 +34,7 @@ User-facing documentation lives in `README.md` (overview) and `docs/` (`deployme
 - The cache is process-local; restarting the backend or running multiple instances does not share it.
 
 ## Logging
-- The `logs` package configures `log/slog` with a JSON handler writing to stdout, plus `run_log/ec.log` (lumberjack rotation) when `logs.Init(true, runtimeConfig.LogCaller)` is called from `main.go::Init`; logging setup does not read the environment itself.
+- The `logs` package configures `log/slog` with a JSON handler writing to stdout, plus `run_log/ec.log` (lumberjack rotation) when `logs.Init(true, runtimeConfig.LogCaller)` is called from `main.go::Init` and must succeed (it returns an error and never calls `log.Fatal`/`os.Exit`); logging setup does not read the environment itself.
 - Every `/api/*` request gets a `log_id` (set by `logs.SetNewContextForGinContext`); a custom handler wrapper stamps it onto every record. It is also returned in the `LogID` response header and in the body of API error responses.
 - Log with `slog.InfoContext(ctx, "msg", "key", value)` style calls so the `log_id` is attached; do not use `log.Printf` in request paths.
 

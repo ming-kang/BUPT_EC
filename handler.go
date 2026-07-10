@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
+	"reflect"
 
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
@@ -23,7 +25,23 @@ type HTTPServer struct {
 	hasJWCredentials func() bool
 }
 
-func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool) *HTTPServer {
+func isNilClassroomService(classroomService classroomDataService) bool {
+	if classroomService == nil {
+		return true
+	}
+	value := reflect.ValueOf(classroomService)
+	switch value.Kind() {
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
+		return value.IsNil()
+	default:
+		return false
+	}
+}
+
+func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool) (*HTTPServer, error) {
+	if isNilClassroomService(classroomService) {
+		return nil, errors.New("classroom service is required")
+	}
 	if hasJWCredentials == nil {
 		hasJWCredentials = func() bool { return false }
 	}
@@ -31,7 +49,7 @@ func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func(
 	return &HTTPServer{
 		classroomService: classroomService,
 		hasJWCredentials: hasJWCredentials,
-	}
+	}, nil
 }
 
 func (server *HTTPServer) GetData(c *gin.Context) {

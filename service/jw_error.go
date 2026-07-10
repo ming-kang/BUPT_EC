@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type jwErrorKind string
@@ -85,11 +87,88 @@ func SafeErrorMessage(err error) string {
 	}
 }
 
+const safeRemoteMessageRuneLimit = 256
+
+// safeRemoteMessage normalizes upstream JW text for internal errors and logs.
+// Clients never receive this string; they only see SafeErrorMessage.
 func safeRemoteMessage(message string) string {
-	if message == "" {
+	normalized := sanitizeRemoteMessage(message)
+	if normalized == "" {
 		return "remote service returned failure"
 	}
-	return strings.TrimSpace(message)
+	return normalized
+}
+
+func sanitizeRemoteMessage(message string) string {
+	if message == "" {
+		return ""
+	}
+
+	// Collapse control characters and all whitespace to single spaces so log
+	// lines stay single-line and cannot inject fake structured fields.
+	var b strings.Builder
+	b.Grow(len(message))
+	lastSpace := false
+	for _, r := range message {
+		if r < 0x20 || r == 0x7f {
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+			continue
+		}
+		if r == ' ' || r == '\u00a0' {
+			if !lastSpace {
+				b.WriteByte(' ')
+				lastSpace = true
+			}
+			continue
+		}
+		b.WriteRune(r)
+		lastSpace = false
+	}
+	out := strings.TrimSpace(b.String())
+	if out == "" {
+		return ""
+	}
+
+	out = redactSensitiveRemoteFragments(out)
+	out = truncateRunes(out, safeRemoteMessageRuneLimit)
+	return strings.TrimSpace(out)
+}
+
+var (
+	remoteASCIISecretKV = regexp.MustCompile(`(?i)\b(token|authorization|password|passwd|username|account)\b\s*[:=：]\s*[^\s,;]+`)
+	remoteCJKSecretKV   = regexp.MustCompile(`(令牌|密码|账号|学号)\s*[:=：]\s*[^\s,;]+`)
+	remoteBearerSecret  = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
+)
+
+func redactSensitiveRemoteFragments(message string) string {
+	out := remoteASCIISecretKV.ReplaceAllStringFunc(message, func(match string) string {
+		// Keep the sensitive key label; drop only the value.
+		idx := strings.IndexAny(match, ":=：")
+		if idx < 0 {
+			return "[REDACTED]"
+		}
+		return strings.TrimSpace(match[:idx]) + "=[REDACTED]"
+	})
+	out = remoteCJKSecretKV.ReplaceAllStringFunc(out, func(match string) string {
+		idx := strings.IndexAny(match, ":=：")
+		if idx < 0 {
+			return "[REDACTED]"
+		}
+		return strings.TrimSpace(match[:idx]) + "=[REDACTED]"
+	})
+	out = remoteBearerSecret.ReplaceAllString(out, "Bearer [REDACTED]")
+	return out
+}
+
+func truncateRunes(s string, limit int) string {
+	if limit <= 0 || utf8.RuneCountInString(s) <= limit {
+		return s
+	}
+	runes := []rune(s)
+	return string(runes[:limit])
 }
 
 func isAuthFailureCode(code string) bool {

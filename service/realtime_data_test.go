@@ -23,7 +23,9 @@ import (
 )
 
 func init() {
-	logs.Init(false, false)
+	if err := logs.Init(false, false); err != nil {
+		panic(err)
+	}
 }
 
 type mockJWClient struct {

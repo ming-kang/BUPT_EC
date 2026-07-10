@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
-	"log"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -23,14 +24,20 @@ type ctxKey int
 
 const logIDCtxKey ctxKey = 1
 
-func Init(isMain, addSource bool) {
+// mainLogDir is the production log directory relative to the process working
+// directory. Tests may override it via setMainLogDirForTest.
+var mainLogDir = "run_log"
+
+// Init configures the process logger. It never exits the process; callers must
+// handle the returned error at the composition root.
+func Init(isMain, addSource bool) error {
 	var writer io.Writer
 	if isMain {
-		if err := os.MkdirAll("run_log", 0750); err != nil {
-			log.Fatalf("create log directory failed: %v", err)
+		if err := os.MkdirAll(mainLogDir, 0750); err != nil {
+			return fmt.Errorf("create log directory: %w", err)
 		}
 		fileWriter := &lumberjack.Logger{
-			Filename:   "run_log/ec.log",
+			Filename:   filepath.Join(mainLogDir, "ec.log"),
 			MaxSize:    10,
 			MaxBackups: 5,
 			MaxAge:     30,
@@ -49,6 +56,7 @@ func Init(isMain, addSource bool) {
 	baseHandler := slog.NewJSONHandler(writer, opts)
 	logger := slog.New(&logIDHandler{Handler: baseHandler})
 	slog.SetDefault(logger)
+	return nil
 }
 
 func SetNewContextForGinContext(c *gin.Context) {
