@@ -7,6 +7,9 @@
 # Session/window scoped runtime state
 .runtime/
 
+# Trellis-generated template baseline (derived local state)
+.template-hashes.json
+
 # Ralph Loop state file
 .ralph-state.json
 
