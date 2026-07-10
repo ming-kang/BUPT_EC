@@ -13,6 +13,14 @@ func TestHTTPWriteTimeoutExceedsClassroomRefreshLimit(t *testing.T) {
 	}
 }
 
+func TestGracefulShutdownTimeoutCoversClassroomRefresh(t *testing.T) {
+	t.Parallel()
+	if gracefulShutdownTimeout <= service.ClassroomRefreshLimit {
+		t.Fatalf("gracefulShutdownTimeout (%v) must exceed ClassroomRefreshLimit (%v)",
+			gracefulShutdownTimeout, service.ClassroomRefreshLimit)
+	}
+}
+
 func TestListenAddr(t *testing.T) {
 	t.Parallel()
 

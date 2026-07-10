@@ -34,15 +34,23 @@ type classroomRefreshResult struct {
 }
 
 func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefreshAttempt, bool) {
+	s.backgroundMu.Lock()
+	if s.backgroundStopping {
+		s.backgroundMu.Unlock()
+		return nil, false
+	}
+
 	s.refreshMu.Lock()
 	if s.refreshInFlight {
 		attempt := s.refreshAttempt
 		s.refreshMu.Unlock()
+		s.backgroundMu.Unlock()
 		return attempt, true
 	}
 
 	if !s.nextRefreshAllowed.IsZero() && now.Before(s.nextRefreshAllowed) {
 		s.refreshMu.Unlock()
+		s.backgroundMu.Unlock()
 		return nil, false
 	}
 
@@ -51,6 +59,7 @@ func (s *ClassroomService) startClassroomRefresh(now time.Time) (*classroomRefre
 	s.refreshAttempt = attempt
 	s.refreshWorkers.Add(1)
 	s.refreshMu.Unlock()
+	s.backgroundMu.Unlock()
 
 	go func() {
 		defer s.refreshWorkers.Done()
@@ -93,20 +102,10 @@ func (s *ClassroomService) getLastRefreshError() error {
 	return s.lastRefreshErr
 }
 
-// WaitWarmup blocks until in-flight background refresh workers finish,
-// or until ctx is done. Used to drain work during graceful shutdown.
-func (s *ClassroomService) WaitWarmup(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() {
-		s.refreshWorkers.Wait()
-		close(done)
-	}()
-	select {
-	case <-done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+func (s *ClassroomService) nextRefreshAllowedAt() time.Time {
+	s.refreshMu.Lock()
+	defer s.refreshMu.Unlock()
+	return s.nextRefreshAllowed
 }
 
 func (s *ClassroomService) getStaleTodayClassrooms(ctx context.Context, cached *model.TodayClassrooms, now time.Time) *model.TodayClassrooms {

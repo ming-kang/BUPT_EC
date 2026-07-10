@@ -56,6 +56,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
 - Stale classroom payloads can poll after 5 seconds for an in-flight refresh;
   partial-campus payloads follow the backend's 30-second refresh backoff.
+- Startup/midnight warmup is now cancellable and retries a missing cache with a
+  bounded 30s/1m/2m/5m schedule instead of waiting until the following day
+  after a transient failure or midnight backoff.
 - Ended class periods are dropped from the selection so they cannot block room
   filters; empty/malformed period times are not treated as ended.
 - Settings modal secondary text follows the theme (readable in dark mode).
@@ -75,7 +78,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - `/readyz` now separates cache age from completeness with `cache_partial`,
   `partial_campuses`, and a sanitized `last_refresh_warning`.
 - Settings label for ended periods: “允许选择已结束节次”.
-- Background warmup re-runs after each Shanghai midnight for long-lived processes.
+- Background warmup runs immediately, retries partial cache at a low frequency,
+  and schedules complete-cache refreshes after each Shanghai midnight with a
+  small jitter. Graceful shutdown stops the scheduler before draining workers.
 
 ## [0.1.4] - 2026-07-03
 

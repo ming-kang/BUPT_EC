@@ -56,7 +56,13 @@ func (m *mockJWClient) FetchAPIURL(ctx context.Context) (string, error) {
 func newTestService(t *testing.T, client JWClient) *ClassroomService {
 	t.Helper()
 	svc := newClassroomService(config.GetConfig(), gocache.New(5*time.Minute, time.Minute), client)
-	t.Cleanup(svc.refreshWorkers.Wait)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := svc.WaitBackground(ctx); err != nil {
+			t.Errorf("WaitBackground() cleanup error = %v", err)
+		}
+	})
 	return svc
 }
 
@@ -654,7 +660,7 @@ func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 
-	svc.StartWarmup()
+	svc.StartWarmup(context.Background())
 	select {
 	case <-started:
 	case <-time.After(time.Second):

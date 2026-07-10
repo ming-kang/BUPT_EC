@@ -71,7 +71,8 @@ service/
   realtime_data.go       public API: GetTodayClassrooms, QueryOne/All, refresh data flow
   jw_client.go           JWClient interface + defaultJWClient (HTTP protocol layer)
   token_manager.go       TokenManager: token/API-URL caching with singleflight
-  refresh_coordinator.go single-flight refresh attempts, backoff, WaitWarmup
+  refresh_coordinator.go single-flight refresh attempts and backoff
+  warmup.go            cancellable startup/midnight scheduler + background drain
   runtime_status.go      RuntimeStatus for /readyz
   classroom_builder.go   JW rows → campuses/buildings/rooms normalization
   jw_error.go            error classification (auth/config/query/parse) + safe messages
@@ -105,7 +106,7 @@ All classroom-query runtime state lives on the `ClassroomService` struct. `main.
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `defaultJWClient` talks to the real system; tests substitute `mockJWClient`.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, deduplicates concurrent logins with `singleflight`, honors an emergency `JW_TOKEN` override (applied only while memory token is empty and the override has not been invalidated), and re-logs-in when a query fails with an auth error. Auth failure clears the current token and **invalidates** the env override until process restart so a stale `JW_TOKEN` cannot clobber a good login token.
 - **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Internal outcomes explicitly distinguish full success, partial success, and total failure. Total or partial outcomes set a 30-second backoff; partial results are cached with `partial_campuses`, a safe top-level `error`, and prior same-day data for failed campuses when available. Partial payloads still inside the fresh TTL trigger soft-stale revalidation (return data + background refresh) instead of waiting the full 5 minutes. A newer total failure overrides an older partial warning on stale responses.
-- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fully successful data is fresh for ~5 minutes, then served stale until the next **Asia/Shanghai** midnight while refreshes happen in the background. Cache `date` / TTLs are stamped at refresh **completion**. Cross-day reuse is rejected. Warmup re-runs after each Shanghai midnight. See [operations.md](operations.md#caching-behavior) for the operator view.
+- **Caching**: one `TODAY_CLASSROOMS_CACHE` key holds today's normalized payload — fully successful data is fresh for ~5 minutes, then served stale until the next **Asia/Shanghai** midnight while refreshes happen in the background. Cache `date` / TTLs are stamped at refresh **completion**. Cross-day reuse is rejected. The context-cancellable warmup scheduler runs immediately at startup, retries a missing cache with a 30s/1m/2m/5m cap, retries partial cache no faster than the fresh TTL, and schedules a new-day refresh after Shanghai midnight plus a small jitter. `main.go` cancels the scheduler before HTTP shutdown and calls `WaitBackground` only after handlers are drained. See [operations.md](operations.md#caching-behavior) for the operator view.
 - Rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)` are parsed in `classroom_builder.go`.
 - Outbound JW HTTP (`utils/http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-path handlers may wait up to the classroom refresh budget; HTTP `WriteTimeout` is set higher so near-limit successes are not cut off.
 
@@ -113,7 +114,7 @@ Logging is `log/slog` with a JSON handler; a custom wrapper adds the per-request
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via `reloadSchedule.js`: near `expires_at` when fully fresh; every few seconds while `stale` / `error` is set; and ASAP when `data.date` is not today's Shanghai business day or `stale_until` has passed. Background polls do **not** full-page spin; on fetch failure they keep the last successful campuses and attach a soft warning (hard empty only with no prior snapshot).
+- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via `reloadSchedule.js`: near `expires_at` when fully fresh, after 5 seconds for ordinary stale data, after 30 seconds for partial-campus data, and with a 5s/10s/20s/30s client-failure backoff. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future. Background polls do **not** full-page spin.
 - `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.

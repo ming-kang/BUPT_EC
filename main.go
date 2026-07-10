@@ -33,6 +33,10 @@ func Init() *service.ClassroomService {
 // near the refresh budget are not cut off before JSON is written.
 const httpWriteTimeout = 45 * time.Second
 
+// gracefulShutdownTimeout covers HTTP draining plus any shared refresh worker
+// that was already running when shutdown began.
+const gracefulShutdownTimeout = httpWriteTimeout + 5*time.Second
+
 // listenAddr returns the HTTP listen address from APP_ADDR.
 // When env is empty, default to loopback so an unbound process is not
 // reachable on all interfaces.
@@ -45,11 +49,13 @@ func listenAddr(env string) string {
 
 func main() {
 	classroomService := Init()
+	appCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
 	r := gin.New()
 	r.Use(gin.Recovery())
 	httpServer := NewHTTPServer(classroomService, config.HasJWCredentials)
 	httpServer.RegisterRoutes(r)
-	classroomService.StartWarmup()
+	classroomService.StartWarmup(appCtx)
 	addr := listenAddr(os.Getenv("APP_ADDR"))
 
 	server := &http.Server{
@@ -77,21 +83,27 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(stop)
 
+	var serveErr error
 	select {
-	case err := <-serverErr:
-		if err != nil {
-			log.Fatalf("server failed: %v", err)
-		}
+	case serveErr = <-serverErr:
 	case sig := <-stop:
 		log.Printf("received %s, shutting down", sig)
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := server.Shutdown(ctx); err != nil {
-			log.Fatalf("server shutdown failed: %v", err)
-		}
-		if err := classroomService.WaitWarmup(ctx); err != nil {
-			log.Printf("background refresh did not finish before shutdown: %v", err)
-		}
+	}
+
+	// Stop the scheduler first so it cannot add refresh workers while the HTTP
+	// server and already-started background work are being drained.
+	stopBackground()
+	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("server shutdown did not finish cleanly: %v", err)
+	}
+	if err := classroomService.WaitBackground(ctx); err != nil {
+		log.Printf("background work did not finish before shutdown: %v", err)
+	}
+	if serveErr != nil {
+		log.Fatalf("server failed: %v", serveErr)
 	}
 }

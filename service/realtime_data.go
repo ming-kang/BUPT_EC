@@ -28,7 +28,6 @@ const (
 	ClassroomRefreshLimit = 30 * time.Second
 	staleRefreshWait      = 300 * time.Millisecond
 	staleRefreshBackoff   = 30 * time.Second
-	warmupDayJitter       = time.Second
 )
 
 var ErrNoTodayCache = errors.New("no today classroom cache")
@@ -46,34 +45,6 @@ func (s *ClassroomService) QueryOne(ctx context.Context, id string) ([]model.JWC
 
 func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
 	return classroomResponseFromRefresh(s.refreshTodayClassrooms(ctx))
-}
-
-// StartWarmup kicks an immediate background refresh, then re-warms after each
-// Asia/Shanghai midnight so long-lived processes do not stay cold across days.
-func (s *ClassroomService) StartWarmup() {
-	go s.warmupLoop()
-}
-
-func (s *ClassroomService) warmupLoop() {
-	s.runWarmupOnce()
-	for {
-		now := s.now()
-		nextMidnight := endOfDay(now)
-		wait := nextMidnight.Sub(now) + warmupDayJitter
-		if wait < time.Second {
-			wait = time.Second
-		}
-		time.Sleep(wait)
-		s.runWarmupOnce()
-	}
-}
-
-func (s *ClassroomService) runWarmupOnce() {
-	attempt, started := s.startClassroomRefresh(s.now())
-	if !started {
-		return
-	}
-	<-attempt.done
 }
 
 func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
@@ -310,6 +281,10 @@ func (g *errgroupNoCancel) Wait() {
 }
 
 func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
+	return s.getCachedTodayClassroomsAt(s.now())
+}
+
+func (s *ClassroomService) getCachedTodayClassroomsAt(now time.Time) (*model.TodayClassrooms, bool) {
 	raw, ok := s.cache.Get(TodayCacheKey)
 	if !ok || raw == nil {
 		return nil, false
@@ -318,7 +293,7 @@ func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, b
 	if !ok || cached == nil {
 		return nil, false
 	}
-	if cached.Date != s.now().Format("2006-01-02") {
+	if cached.Date != now.In(businessLocation).Format("2006-01-02") {
 		return nil, false
 	}
 	return cached, true

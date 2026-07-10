@@ -100,7 +100,15 @@ The backend keeps a single same-day in-memory cache of classroom data (business 
 - **Day stamping**: `date` / `expires_at` / `stale_until` on a cache entry are taken when the refresh **finishes** (not when it starts), so a JW round-trip that crosses Shanghai midnight is labeled for the completion day.
 - **Cross-day reuse**: never. Yesterday's cache is ignored.
 
-Refreshes are triggered on demand by `GET /api/get_data`, once at startup (warmup), and again after each Shanghai midnight. Concurrent requests share a single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
+Refreshes are triggered on demand by `GET /api/get_data` and by a process-local warmup scheduler. The scheduler attempts immediately at startup, then behaves according to cache state:
+
+- no usable cache: retry after 30 seconds, 1 minute, 2 minutes, then at most every 5 minutes (while still respecting the refresh coordinator's `nextRefreshAllowed` backoff);
+- partial cache: retry no faster than the 5-minute fresh TTL, unless the Shanghai day boundary arrives first;
+- complete cache: wait until the next Shanghai midnight plus a small 1–5 second jitter.
+
+This means a midnight refresh suppressed by a backoff is retried after the allowed time instead of being abandoned until the following day. Concurrent requests and warmup share the same single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
+
+During graceful shutdown, the application cancels the warmup scheduler before draining HTTP handlers, then waits for the scheduler and already-started refresh workers. Once background draining begins, no new refresh worker can be added.
 
 If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). When `partial_campuses` is present, the banner names the affected campus or shows its ID. If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning.
 

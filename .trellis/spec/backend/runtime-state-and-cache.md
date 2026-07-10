@@ -27,6 +27,7 @@ All mutable runtime state for classroom queries is on `ClassroomService`:
 - configured campuses from `config.Config`;
 - the injected `JWClient`;
 - refresh coordination fields guarded by `refreshMu`;
+- warmup/background lifecycle fields guarded by `backgroundMu`;
 - runtime status fields guarded by `statusMu`.
 
 This shape is deliberate. New state should be added to `ClassroomService` with
@@ -66,7 +67,8 @@ same public payload unless the API contract changes.
 - Failed refreshes set `nextRefreshAllowed` using `staleRefreshBackoff` (30s).
 - Stale callers wait briefly (`staleRefreshWait`, 300ms) for a refresh to finish
   and otherwise return stale data immediately.
-- `WaitWarmup` drains in-flight refresh workers during graceful shutdown.
+- `startClassroomRefresh` holds `backgroundMu` while calling
+  `refreshWorkers.Add`, so `WaitBackground` can stop new workers before waiting.
 
 Tests in `service/realtime_data_test.go` lock this behavior down with
 `TestGetTodayClassroomsReturnsStaleWhileRefreshContinues`,
@@ -75,6 +77,101 @@ Tests in `service/realtime_data_test.go` lock this behavior down with
 
 When changing refresh behavior, keep the shared-attempt model. Do not start one
 JW query per HTTP caller during cache misses.
+
+## Scenario: Warmup Scheduler and Background Shutdown
+
+### 1. Scope / Trigger
+
+Apply this contract whenever startup warmup, Shanghai day-boundary scheduling,
+refresh retry timing, process shutdown, or refresh-worker draining changes.
+Warmup must recover the cache without user traffic while still sharing the
+normal refresh coordinator.
+
+### 2. Signatures
+
+```go
+func (s *ClassroomService) StartWarmup(ctx context.Context)
+func (s *ClassroomService) WaitBackground(ctx context.Context) error
+
+func nextWarmupDelay(
+    now time.Time,
+    cacheState warmupCacheState,
+    nextAllowed time.Time,
+    failures int,
+    midnightJitter time.Duration,
+) time.Duration
+```
+
+### 3. Contracts
+
+- `StartWarmup` starts at most one scheduler per service and attempts refresh
+  immediately unless its context is already canceled.
+- Every scheduler wait uses `time.NewTimer` plus `select` on `ctx.Done()`; do not
+  use an uninterruptible `time.Sleep` loop.
+- No usable cache retries after 30s, 1m, 2m, then 5m maximum, with
+  `nextRefreshAllowed` taking precedence when later.
+- Partial cache is ready but retries no faster than `classroomFreshTTL`; a new
+  Shanghai day boundary may wake it earlier.
+- Complete cache waits until next Shanghai midnight plus a randomized 1–5s
+  jitter. A usable outcome resets the consecutive failure count.
+- `main.go` cancels the scheduler before HTTP shutdown, drains handlers, then
+  calls `WaitBackground`.
+- `WaitBackground` marks background state as stopping before `WaitGroup.Wait`.
+  `startClassroomRefresh` checks the same lock, so no later worker can call Add.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required scheduling/lifecycle result |
+| --- | --- |
+| startup with active context | refresh immediately |
+| startup with canceled context | no refresh worker |
+| no cache, first/second/third/fourth failure | 30s / 1m / 2m / 5m |
+| retry target before `nextRefreshAllowed` | wait until `nextRefreshAllowed` |
+| partial same-day cache | wait at least fresh TTL, unless day boundary is earlier |
+| full same-day cache | next midnight + injected jitter |
+| repeated `StartWarmup` | existing scheduler/channel unchanged |
+| shutdown begins | reject new refresh workers, exit scheduler, drain existing workers |
+
+### 5. Good/Base/Bad Cases
+
+- Good: a refresh fails just before midnight and sets backoff past midnight;
+  warmup retries after the allowed timestamp and populates the new day's cache.
+- Base: startup completes a full refresh, resets failures, and sleeps until the
+  next day boundary.
+- Bad: midnight refresh is suppressed once, then the process sleeps until the
+  following midnight.
+
+### 6. Tests Required
+
+- Pure delay tests cover cross-midnight `nextRefreshAllowed`, capped failure
+  delays, partial fresh-TTL policy, and full-cache midnight jitter.
+- Lifecycle tests cover immediate start, pre-canceled context, duplicate start,
+  scheduler cancellation, and rejection of workers after drain begins.
+- Run `go test -race ./...` to protect the `WaitGroup.Add` / `Wait` boundary.
+- Main tests assert the shutdown timeout exceeds `ClassroomRefreshLimit`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```go
+for {
+    time.Sleep(time.Until(endOfDay(time.Now())))
+    s.runWarmupOnce()
+}
+```
+
+#### Correct
+
+```go
+delay := nextWarmupDelay(now, state, nextAllowed, failures, jitter)
+timer := time.NewTimer(delay)
+select {
+case <-timer.C:
+case <-ctx.Done():
+    return
+}
+```
 
 ## Scenario: Full, Partial, and Failed Refresh Outcomes
 
@@ -190,8 +287,8 @@ do not add credentials, tokens, or raw upstream payloads.
 
 ## Anti-Patterns
 
-- Adding a background scheduler when on-demand refresh plus startup warmup is
-  enough for the existing API shape.
+- Adding an independent scheduler that bypasses refresh single-flight/backoff or
+  cannot be canceled and drained during shutdown.
 - Treating the process-local cache as shared across instances.
 - Returning stale data after midnight.
 - Clearing a newly refreshed token because an older request failed; use

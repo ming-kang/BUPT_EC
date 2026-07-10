@@ -2,6 +2,7 @@ package service
 
 import (
 	"BUPT_EC/config"
+	"context"
 	"sync"
 	"time"
 )
@@ -46,6 +47,13 @@ type ClassroomService struct {
 	lastRefreshErr     error
 	refreshWorkers     sync.WaitGroup
 
+	backgroundMu       sync.Mutex
+	backgroundStopping bool
+	warmupStarted      bool
+	warmupDone         chan struct{}
+	warmupCancel       context.CancelFunc
+	warmupJitter       func() time.Duration
+
 	statusMu sync.RWMutex
 	status   RuntimeStatus
 }
@@ -57,10 +65,11 @@ func NewClassroomService(cfg config.Config, store CacheStore) *ClassroomService 
 
 func newClassroomService(cfg config.Config, store CacheStore, client JWClient) *ClassroomService {
 	s := &ClassroomService{
-		cache:    store,
-		campuses: cfg.Campuses,
-		jwClient: client,
-		now:      businessNow,
+		cache:        store,
+		campuses:     cfg.Campuses,
+		jwClient:     client,
+		now:          businessNow,
+		warmupJitter: randomWarmupJitter,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,

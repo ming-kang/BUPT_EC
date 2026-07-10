@@ -34,8 +34,9 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
   function configures logs/config/cache and returns the single application
   `service.ClassroomService` built from `config.GetConfig()` and
   `cache.GlobalCache`. `main()` injects that service plus
-  `config.HasJWCredentials` into `NewHTTPServer`, starts background warmup, and
-  drains warmup work during graceful shutdown with `ClassroomService.WaitWarmup`.
+  `config.HasJWCredentials` into `NewHTTPServer`, starts background warmup with
+  an application context, cancels it before HTTP shutdown, and drains work with
+  `ClassroomService.WaitBackground` after handlers exit.
 - `router.go` owns `HTTPServer.RegisterRoutes`, gzip handling, static frontend
   serving, and SPA fallback. API routes live under `/api` and receive
   `logs.SetNewContextForGinContext`.
@@ -57,8 +58,10 @@ handlers.
   struct.
 - `realtime_data.go` exposes the public classroom query methods and owns the
   same-day cache read/write flow.
-- `refresh_coordinator.go` owns single-flight refresh state, backoff,
-  stale-while-revalidate behavior, and warmup draining.
+- `refresh_coordinator.go` owns single-flight refresh state, backoff, and
+  stale-while-revalidate behavior.
+- `warmup.go` owns the startup/midnight scheduler, retry-delay state machine,
+  scheduler cancellation, and background-worker draining.
 - `token_manager.go` owns token/API URL caching and `singleflight` login/API URL
   deduplication.
 - `jw_client.go`, `crypto.go`, and `urlutil.go` own the JW HTTP protocol,
