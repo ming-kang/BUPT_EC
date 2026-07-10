@@ -6,7 +6,8 @@ How versioning, the changelog, and the release pipeline work, and how to cut a r
 
 | Flavor | Trigger | Audience |
 |---|---|---|
-| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; first-install fallback when no release choice exists (edge) |
+| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; first-install fallback when no release choice exists (edge); notes may be GitHub-generated |
+
 | `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible production deployments (recommended) |
 
 Both flavors publish the same four assets, which the installer depends on by exact name:
@@ -35,7 +36,11 @@ Versioning follows [Semantic Versioning](https://semver.org/). While the project
 - Write bullets for operators and users, not for reviewers: what changed and why it matters, not how it was implemented.
 - Don't edit released sections; corrections go in a new release.
 
-The `[Unreleased]` section becomes the release notes verbatim, so keeping it clean is what makes releases cheap.
+The `[Unreleased]` section becomes the release notes verbatim, so keeping it clean is what makes releases cheap. Stable `v*` tag releases publish that extracted section only (`body_path`); they do not append GitHub auto-generated notes. Nightly prereleases may use GitHub-generated notes and are not the stable contract.
+
+PR CI and the release workflow both call the reusable quality gate in
+`.github/workflows/quality.yml` so the frontend, Go, audit, installer, and
+ShellCheck checks stay identical.
 
 ## Cutting a stable release
 

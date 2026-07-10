@@ -41,6 +41,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- PR and main quality gates share one reusable workflow
+  (`.github/workflows/quality.yml`); stable tag releases use changelog-only
+  notes (`body_path`) without GitHub-generated appendices. Nightly may still
+  use generated notes.
 - Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap); full
   success resets the ladder, partial success keeps the fixed 30s soft backoff.
 - Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
