@@ -3,12 +3,15 @@
   "private": true,
   "version": "0.1.4",
   "type": "module",
+  "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:prod": "pnpm audit --prod --audit-level moderate",
+    "audit:dev": "pnpm audit --audit-level high"
   },
   "dependencies": {
     "@ant-design/icons": "^5.2.6",
@@ -19,14 +22,24 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/react": "^18.2.43",
     "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
-    "eslint": "^8.55.0",
-    "eslint-plugin-react": "^7.33.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.5",
-    "vite": "^5.0.8",
+    "@vitejs/plugin-react": "^4.7.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "vite": "6.4.3",
     "vitest": "^3.2.7"
+  },
+  "pnpm": {
+    "overrides": {
+      "@babel/runtime": "7.29.7",
+      "brace-expansion@1.1.11": "1.1.13",
+      "flatted@3.2.9": "3.4.2",
+      "minimatch@3.1.2": "3.1.5"
+    }
   }
 }
