@@ -1,0 +1,32 @@
+{
+  "id": "frontend-reload-deadline-jitter",
+  "name": "frontend-reload-deadline-jitter",
+  "title": "前端重载截止时间与抖动修复",
+  "description": "修复前端 reload jitter 越过 stale_until 和重复随机采样，并补齐 visibility 截止时间回归。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-07-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "07-10-review-findings-remediation",
+  "relatedFiles": [
+    "frontend/src/reloadSchedule.js",
+    "frontend/src/reloadSchedule.test.js",
+    "frontend/src/useTodayClassrooms.js",
+    "frontend/src/useTodayClassrooms.lifecycle.test.jsx",
+    "frontend/src/classroomDataValidity.js"
+  ],
+  "notes": "",
+  "meta": {}
+}

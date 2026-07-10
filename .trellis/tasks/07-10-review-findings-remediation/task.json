@@ -1,0 +1,42 @@
+{
+  "id": "review-findings-remediation",
+  "name": "review-findings-remediation",
+  "title": "复查发现整改与验收闭环",
+  "description": "关闭全量复查确认的 metrics、退避、前端调度、安装器 URL、Unicode 清洗、依赖与规范证据缺口。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P1",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-07-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-10-metrics-endpoint-login-observability",
+    "07-10-adaptive-refresh-backoff-jitter",
+    "07-10-frontend-reload-deadline-jitter",
+    "07-10-installer-mirror-url-safety",
+    "07-10-upstream-message-unicode-safety",
+    "07-10-dependency-spec-evidence-hygiene"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "main.go",
+    "router.go",
+    "service/",
+    "frontend/src/",
+    "scripts/install.sh",
+    ".github/workflows/quality.yml",
+    "docs/",
+    ".trellis/spec/"
+  ],
+  "notes": "",
+  "meta": {}
+}
