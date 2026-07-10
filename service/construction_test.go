@@ -3,11 +3,9 @@ package service
 import (
 	"strings"
 	"testing"
-	"time"
 
+	"BUPT_EC/cache"
 	"BUPT_EC/config"
-
-	gocache "github.com/patrickmn/go-cache"
 )
 
 func TestNewClassroomServiceValidatesDependenciesWithoutLeakingOverride(t *testing.T) {
@@ -16,15 +14,15 @@ func TestNewClassroomServiceValidatesDependenciesWithoutLeakingOverride(t *testi
 		Campuses:      []config.CampusConfig{{ID: "01", Name: "西土城"}},
 		TokenOverride: secretOverride,
 	}
-	store := gocache.New(time.Minute, time.Minute)
+	store := cache.New()
 	client := &mockJWClient{}
-	var typedNilStore *gocache.Cache
+	var typedNilStore *cache.TodayClassroomsStore
 	var typedNilClient *mockJWClient
 
 	tests := []struct {
 		name    string
 		options ClassroomServiceOptions
-		store   CacheStore
+		store   TodayClassroomCache
 		client  JWClient
 	}{
 		{name: "missing cache", options: options, client: client},
@@ -54,7 +52,7 @@ func TestNewClassroomServiceCopiesCampusOptions(t *testing.T) {
 	}
 	svc, err := NewClassroomService(
 		ClassroomServiceOptions{Campuses: campuses},
-		gocache.New(time.Minute, time.Minute),
+		cache.New(),
 		&mockJWClient{},
 	)
 	if err != nil {

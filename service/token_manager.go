@@ -26,6 +26,7 @@ type tokenOperationResult struct {
 type TokenManager struct {
 	jwClient       JWClient
 	overrideToken  string
+	clock          Clock
 	onLoginSuccess func(time.Time)
 	onLoginFailure func(error)
 
@@ -36,6 +37,13 @@ type TokenManager struct {
 	overrideInvalidated bool
 	tokenGroup          singleflight.Group
 	apiURLGroup         singleflight.Group
+}
+
+func (m *TokenManager) now() time.Time {
+	if m != nil && m.clock != nil {
+		return m.clock.Now()
+	}
+	return time.Now()
 }
 
 func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error) {
@@ -136,18 +144,19 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 }
 
 func (m *TokenManager) loginAndStore(ctx context.Context) (tokenOperationResult, error) {
-	startedAt := time.Now()
+	startedAt := m.now()
 	loginCtx, cancel := sharedOperationContext(ctx)
 	defer cancel()
 	token, err := m.login(loginCtx)
 	if err != nil {
 		m.notifyLoginFailure(err)
-		slog.WarnContext(loginCtx, "jw login failed", "elapsed", time.Since(startedAt), "err", err)
+		slog.WarnContext(loginCtx, "jw login failed", "elapsed", m.now().Sub(startedAt), "err", err)
 		return tokenOperationResult{}, err
 	}
 	m.setToken(token, tokenSourceLogin)
-	m.notifyLoginSuccess(time.Now())
-	slog.InfoContext(loginCtx, "jw login succeeded", "elapsed", time.Since(startedAt))
+	completedAt := m.now()
+	m.notifyLoginSuccess(completedAt)
+	slog.InfoContext(loginCtx, "jw login succeeded", "elapsed", completedAt.Sub(startedAt))
 	return tokenOperationResult{
 		token:          token,
 		source:         tokenSourceLogin,

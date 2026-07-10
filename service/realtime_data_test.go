@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	gocache "github.com/patrickmn/go-cache"
+	"BUPT_EC/cache"
 )
 
 func init() {
@@ -67,7 +67,7 @@ func newTestServiceWithOverride(t *testing.T, client JWClient, tokenOverride str
 			{ID: "04", Name: "沙河"},
 		},
 		TokenOverride: tokenOverride,
-	}, gocache.New(5*time.Minute, time.Minute), client)
+	}, cache.New(), client)
 	if err != nil {
 		t.Fatalf("NewClassroomService() error = %v", err)
 	}
@@ -254,7 +254,7 @@ func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
 func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	svc := newTestService(t, &mockJWClient{})
 	yesterday := time.Now().Add(-24 * time.Hour)
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       yesterday.Format("2006-01-02"),
 		ExpiresAt:  yesterday.Add(time.Hour),
 		StaleUntil: yesterday.Add(time.Hour),
@@ -265,7 +265,7 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	}
 
 	now := time.Now()
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Hour),
 		StaleUntil: endOfDay(now),
@@ -374,7 +374,7 @@ func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 	classroomServiceUnderTest := newTestService(t, client)
 
 	now := time.Now()
-	classroomServiceUnderTest.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	classroomServiceUnderTest.cache.Store(&model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(time.Minute),
@@ -578,7 +578,7 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 	svc := newTestService(t, client)
 
 	now := time.Now()
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
@@ -738,7 +738,7 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 	svc := newTestService(t, client)
 
 	now := time.Now()
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
@@ -1069,7 +1069,7 @@ func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
 	}
 	svc := newTestServiceWithOverride(t, client, "token")
 	now := svc.now()
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Minute),
 		StaleUntil: endOfDay(now),
@@ -1125,7 +1125,7 @@ func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
 	svc := newTestServiceWithOverride(t, client, "token")
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:            fixed.Format("2006-01-02"),
 		UpdatedAt:       fixed.Add(-time.Hour),
 		ExpiresAt:       fixed.Add(-time.Minute),
@@ -1191,7 +1191,7 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
 
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		UpdatedAt:  fixed.Add(-time.Minute),
 		ExpiresAt:  fixed.Add(4 * time.Minute), // still inside full fresh TTL
@@ -1274,7 +1274,7 @@ func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
 
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		UpdatedAt:  fixed.Add(-time.Minute),
 		ExpiresAt:  fixed.Add(classroomFreshTTL),
@@ -1334,7 +1334,7 @@ func TestRuntimeStatusCacheStaleOnlyWhenPastFreshTTL(t *testing.T) {
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
 	svc.now = func() time.Time { return fixed }
 
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		ExpiresAt:  fixed.Add(time.Minute),
 		StaleUntil: endOfDay(fixed),
@@ -1345,7 +1345,7 @@ func TestRuntimeStatusCacheStaleOnlyWhenPastFreshTTL(t *testing.T) {
 		t.Fatalf("fresh cache status = %#v, want fresh and not stale", status)
 	}
 
-	svc.cache.Set(TodayCacheKey, &model.TodayClassrooms{
+	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		ExpiresAt:  fixed.Add(-time.Minute),
 		StaleUntil: endOfDay(fixed),

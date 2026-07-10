@@ -14,8 +14,6 @@ const (
 	ServerConfigURL = "https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json"
 	DefaultAPIURL   = "https://jwglweixin.bupt.edu.cn/bjyddx/"
 
-	TodayCacheKey = "TODAY_CLASSROOMS_CACHE"
-
 	jwRequestTimeout  = 12 * time.Second
 	classroomFreshTTL = 5 * time.Minute
 	// ClassroomRefreshLimit is the max duration for a shared JW classroom refresh.
@@ -113,22 +111,22 @@ func (s *ClassroomService) queryCampusWithToken(ctx context.Context, campusID st
 }
 
 func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) classroomRefreshResult {
-	startedAt := time.Now()
+	startedAt := s.now()
 	result := s.doRefreshTodayClassrooms(ctx)
-	completedAt := time.Now()
+	completedAt := s.now()
 	switch result.kind {
 	case refreshFailed:
 		s.recordRefreshFailure(result.err)
-		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", time.Since(startedAt), "err", result.err)
+		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", completedAt.Sub(startedAt), "err", result.err)
 	case refreshPartial:
 		s.recordRefreshPartial(completedAt)
 		slog.WarnContext(ctx, "classroom refresh partially succeeded",
-			"elapsed", time.Since(startedAt),
+			"elapsed", completedAt.Sub(startedAt),
 			"failed_campuses", failedCampusIDs(result.failures),
 			"errors", joinCampusRefreshFailures(result.failures))
 	default:
 		s.recordRefreshSuccess(completedAt)
-		slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", time.Since(startedAt))
+		slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", completedAt.Sub(startedAt))
 	}
 	return result
 }
@@ -229,7 +227,7 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 		Error:           apiErr,
 	}
 
-	s.cache.Set(TodayCacheKey, today, cacheExpiration(now, today.StaleUntil))
+	s.cache.Store(today, cacheExpiration(now, today.StaleUntil))
 	return classroomRefreshResult{
 		value:    today,
 		kind:     kind,
@@ -280,11 +278,7 @@ func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, b
 }
 
 func (s *ClassroomService) getCachedTodayClassroomsAt(now time.Time) (*model.TodayClassrooms, bool) {
-	raw, ok := s.cache.Get(TodayCacheKey)
-	if !ok || raw == nil {
-		return nil, false
-	}
-	cached, ok := raw.(*model.TodayClassrooms)
+	cached, ok := s.cache.Load()
 	if !ok || cached == nil {
 		return nil, false
 	}

@@ -4,27 +4,27 @@ import (
 	"testing"
 	"time"
 
-	gocache "github.com/patrickmn/go-cache"
+	"BUPT_EC/service/model"
 )
 
-func TestNewReturnsIndependentCachesWithDefaultExpiration(t *testing.T) {
-	first := New()
-	second := New()
-	if first == second {
-		t.Fatal("New() returned the same cache instance")
-	}
+func TestTodayClassroomsStoreIsInstanceLocal(t *testing.T) {
+	a := New()
+	b := New()
+	value := &model.TodayClassrooms{Date: "2026-07-10"}
+	a.Store(value, time.Minute)
 
-	startedAt := time.Now()
-	first.Set("key", "value", gocache.DefaultExpiration)
-	if _, ok := second.Get("key"); ok {
-		t.Fatal("cache value leaked into a separate instance")
+	if got, ok := a.Load(); !ok || got.Date != "2026-07-10" {
+		t.Fatalf("a.Load() = (%v, %v)", got, ok)
 	}
-	item, ok := first.Items()["key"]
-	if !ok {
-		t.Fatal("first cache is missing the inserted value")
+	if _, ok := b.Load(); ok {
+		t.Fatal("independent cache instances must not share data")
 	}
-	expiresAt := time.Unix(0, item.Expiration)
-	if expiresAt.Before(startedAt.Add(4*time.Minute+59*time.Second)) || expiresAt.After(startedAt.Add(5*time.Minute+time.Second)) {
-		t.Fatalf("default expiration = %v, want approximately five minutes", expiresAt.Sub(startedAt))
+}
+
+func TestTodayClassroomsStoreRejectsWrongTypes(t *testing.T) {
+	store := New()
+	store.inner.Set(todayKey, "not-a-model", time.Minute)
+	if got, ok := store.Load(); ok || got != nil {
+		t.Fatalf("Load() = (%v, %v), want miss on wrong type", got, ok)
 	}
 }
