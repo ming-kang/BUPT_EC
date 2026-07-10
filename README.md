@@ -44,6 +44,10 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/instal
 
 The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command (pin a stable tag in production).
 
+Supported production topology is **one** `bupt-ec` process behind Nginx on a
+single host. Cache and JW refresh state are process-local; multi-instance
+active/active is not recommended (see [operations.md](docs/operations.md#deployment-topology-supported-today)).
+
 - Full setup guide: [docs/deployment.md](docs/deployment.md)
 - Upgrading and rollback: [docs/upgrading.md](docs/upgrading.md)
 - Day-to-day operation and troubleshooting: [docs/operations.md](docs/operations.md)

@@ -140,6 +140,57 @@ Refreshes are triggered on demand by `GET /api/get_data` and by a process-local 
 
 This means a midnight refresh suppressed by a backoff is retried after the allowed time instead of being abandoned until the following day. Concurrent requests and warmup share the same single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
+## Deployment topology (supported today)
+
+### Recommended
+
+One host runs:
+
+- one `bupt-ec` process (systemd unit, loopback `APP_ADDR`)
+- one Nginx reverse proxy (TLS, rate limit, static SPA via the Go binary embed)
+
+This is the only topology the installer and docs treat as production-supported.
+
+### Process-local state (not shared)
+
+Each process privately owns:
+
+- same-day classroom cache
+- JW token / API URL cache
+- refresh singleflight and adaptive backoff
+- runtime readiness / metrics
+
+Restart clears that memory until warmup succeeds again. Running two or more
+`bupt-ec` instances behind round-robin is **not** recommended: each instance
+logs into JW and refreshes independently, multiplies upstream load, and can
+return briefly different readiness or stale flags. In-process singleflight is
+**not** cross-instance coordination.
+
+### Capacity and failure boundary (current)
+
+| Concern | Behavior |
+| --- | --- |
+| Concurrent clients | Share one refresh attempt per process |
+| Scale-out | Vertical (larger host / better JW headroom), not multi-app replicas |
+| Restart | Cache miss until warmup; brief `/readyz` 503 is expected |
+| JW outage | Adaptive backoff + stale/partial cache while still same Shanghai day |
+| Signals | `/readyz`, structured logs (`log_id`), loopback `/metrics` |
+
+No SLA or QPS figure is claimed without capacity testing.
+
+### Future expansion options (not implemented)
+
+These are design options only. None of Redis, leader election, or HA multi-writer
+exists in this repository today.
+
+| Option | Idea | Trade-offs |
+| --- | --- | --- |
+| A. Shared typed cache + distributed refresh lock | Multiple API processes read one cache; one refresh owner at a time | Needs external store + lock; token ownership and secret distribution become explicit |
+| B. Leader/fetcher + read replicas | One writer builds the snapshot; others serve read-only | Clear JW load control; leader failover and snapshot freshness protocol required |
+| C. Stay single-instance + cold spare | Keep process-local design; recover with systemd restart / standby host | Simplest; no online multi-AZ active/active |
+
+Until one of those is designed and implemented, operate a single primary instance.
+
 During graceful shutdown, the application cancels the warmup scheduler before draining HTTP handlers, then waits for the scheduler and already-started refresh workers. Once background draining begins, no new refresh worker can be added.
 
 If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). When `partial_campuses` is present, the banner names the affected campus or shows its ID. If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning.

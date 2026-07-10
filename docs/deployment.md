@@ -4,6 +4,12 @@ This guide covers configuring a server and installing BUPT_EC for the first time
 
 The recommended path is the one-command installer on a Debian/Ubuntu server. A manual systemd + Nginx setup is described at the end for other environments.
 
+**Supported topology:** one `bupt-ec` process behind one Nginx reverse proxy on a
+single host (`APP_ADDR` loopback). Do not run multiple active app instances for
+horizontal scale-out today — cache, token, refresh singleflight, and readiness
+are process-local. See [operations.md](operations.md#deployment-topology-supported-today)
+for limits and future options.
+
 ## Prerequisites
 
 - A Debian/Ubuntu server (or another apt-based system) with `amd64` or `arm64` CPU.
