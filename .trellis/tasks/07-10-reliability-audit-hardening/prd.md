@@ -37,16 +37,16 @@
 
 ## Acceptance Criteria
 
-- [ ] 六个子任务均完成各自 PRD 的验收标准并归档。
-- [ ] 昨日数据在午夜后刷新失败时不会继续驱动教室筛选 UI。
-- [ ] 部分成功后发生全量失败时，对外提示和运行状态反映最新全量失败，而不是旧的部分警告。
-- [ ] 没有真实 `/api/get_data` 流量时，午夜 warmup 仍可在临时失败恢复后建立当日缓存。
-- [ ] 两个校区并发使用同一失效 token 时，测试证明只执行一次必要登录。
-- [ ] README 中的 stable、nightly、固定标签命令分别下载预期 release。
-- [ ] checksum 或预检失败测试证明已有 env 和二进制保持不变。
-- [ ] `gofmt -l .` 无输出，`go vet ./...`、`go test -race ./...`、前端 lint/test/build 全部通过。
-- [ ] 脚本通过 `bash -n` 和 `shellcheck scripts/*.sh`；新增的脚本行为测试在 CI 中执行。
-- [ ] 完成一次父任务级跨层审查，确认 API、前端、运维文档和 release 资产保持一致。
+- [x] 六个子任务均完成各自 PRD 的验收标准并归档。
+- [x] 昨日数据在午夜后刷新失败时不会继续驱动教室筛选 UI。
+- [x] 部分成功后发生全量失败时，对外提示和运行状态反映最新全量失败，而不是旧的部分警告。
+- [x] 没有真实 `/api/get_data` 流量时，午夜 warmup 仍可在临时失败恢复后建立当日缓存。
+- [x] 两个校区并发使用同一失效 token 时，测试证明只执行一次必要登录。
+- [x] README 中的 stable、nightly、固定标签命令分别下载预期 release。
+- [x] checksum 或预检失败测试证明已有 env 和二进制保持不变。
+- [x] `gofmt -l .` 无输出，`go vet ./...`、`go test -race ./...`、前端 lint/test/build 全部通过。
+- [x] 脚本通过 `bash -n` 和 `shellcheck scripts/*.sh`；新增的脚本行为测试在 CI 中执行。
+- [x] 完成一次父任务级跨层审查，确认 API、前端、运维文档和 release 资产保持一致。
 
 ## Out of Scope
 

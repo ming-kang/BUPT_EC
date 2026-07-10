@@ -17,11 +17,11 @@
 
 ## Parent Review Gates
 
-- [ ] 每个子任务在 `task.py start` 前具有收敛后的 `prd.md`、`design.md`、`implement.md`。
-- [ ] 每个子任务完成 focused tests 后再运行其相关全量检查。
-- [ ] 后端公开模型变更同步检查 frontend consumer、handler tests、docs 和 changelog。
-- [ ] installer 变更同步检查 release workflow 的资产名称与归档布局。
-- [ ] 最后一次集成检查从 clean baseline 区分本任务改动与用户已有未提交文件。
+- [x] 每个子任务在 `task.py start` 前具有收敛后的 `prd.md`、`design.md`、`implement.md`。
+- [x] 每个子任务完成 focused tests 后再运行其相关全量检查。
+- [x] 后端公开模型变更同步检查 frontend consumer、handler tests、docs 和 changelog。
+- [x] installer 变更同步检查 release workflow 的资产名称与归档布局。
+- [x] 最后一次集成检查从 clean baseline 区分本任务改动与用户已有未提交文件。
 
 ## Final Validation
 
@@ -44,13 +44,13 @@ git diff --check
 
 ## Integration Review Checklist
 
-- [ ] 没有跨日旧数据进入教室表格或选择器。
-- [ ] partial/full/failed 的日志、runtime status、payload 和 backoff 相互一致。
-- [ ] shutdown 不遗留可继续启动 worker 的 warmup scheduler。
-- [ ] token 恢复不会因迟到的旧请求执行第二次强制登录。
-- [ ] stable/nightly/tag 三种安装路径与文档一致。
-- [ ] 安装 preflight 失败零持久化修改，commit 失败可恢复。
-- [ ] README、docs、CHANGELOG、AGENTS 和 `.trellis/spec/backend/` 描述最终真实行为。
+- [x] 没有跨日旧数据进入教室表格或选择器。
+- [x] partial/full/failed 的日志、runtime status、payload 和 backoff 相互一致。
+- [x] shutdown 不遗留可继续启动 worker 的 warmup scheduler。
+- [x] token 恢复不会因迟到的旧请求执行第二次强制登录。
+- [x] stable/nightly/tag 三种安装路径与文档一致。
+- [x] 安装 preflight 失败零持久化修改，commit 失败可恢复。
+- [x] README、docs、CHANGELOG、AGENTS 和 `.trellis/spec/backend/` 描述最终真实行为。
 
 ## Commit Boundaries
 
