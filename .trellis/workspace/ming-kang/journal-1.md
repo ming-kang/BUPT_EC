@@ -242,3 +242,42 @@ Staged and verified all release candidates before mutation, added atomic file co
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Complete reliability audit hardening
+
+**Date**: 2026-07-10
+**Task**: Complete reliability audit hardening
+**Branch**: `main`
+
+### Summary
+
+Closed the six-child reliability audit hardening program after a parent-level cross-layer review covering refresh outcomes, Shanghai-day frontend validity, cancellable warmup recovery, concurrent token auth recovery, installer release selection, and transactional installer rollback. Full Go, frontend, shell, documentation, and release-asset checks passed; govulncheck remains covered by CI because it is unavailable locally.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `363ac0f` | (see git log) |
+| `c9a2543` | (see git log) |
+| `9447524` | (see git log) |
+| `51b3019` | (see git log) |
+| `8dd6851` | (see git log) |
+| `17efab4` | (see git log) |
+| `ec3f2ff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
