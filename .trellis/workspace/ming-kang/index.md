@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-07-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~108 | Active |
+| `journal-1.md` | ~142 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-07-10 | Harden frontend cache validity and retries | `9447524`, `422f3d7` | `main` |
 | 3 | 2026-07-10 | Model refresh outcomes explicitly | `c9a2543`, `ebbaaf5` | `main` |
 | 2 | 2026-07-10 | Align installer release selection | `363ac0f`, `36bc41e` | `main` |
 | 1 | 2026-07-06 | Bootstrap Trellis specs | `20ecc33` | `main` |

@@ -106,3 +106,37 @@ Implemented full/partial/failed refresh outcomes, partial campus diagnostics, la
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Harden frontend cache validity and retries
+
+**Date**: 2026-07-10
+**Task**: Harden frontend cache validity and retries
+**Branch**: `main`
+
+### Summary
+
+Added shared Shanghai business-day snapshot validation, hard-empty cross-day handling, bounded client retry backoff, 30-second partial polling, campus-specific warnings, regression tests, docs, and executable specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9447524` | (see git log) |
+| `422f3d7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
