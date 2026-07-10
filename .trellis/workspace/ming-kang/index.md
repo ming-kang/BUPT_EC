@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-07-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~210 | Active |
+| `journal-1.md` | ~244 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-07-10 | Make installer updates transactional | `17efab4`, `75752f5` | `main` |
 | 6 | 2026-07-10 | Coordinate token auth recovery | `8dd6851`, `de1970b` | `main` |
 | 5 | 2026-07-10 | Make warmup lifecycle cancellable | `51b3019`, `109dd6a` | `main` |
 | 4 | 2026-07-10 | Harden frontend cache validity and retries | `9447524`, `422f3d7` | `main` |

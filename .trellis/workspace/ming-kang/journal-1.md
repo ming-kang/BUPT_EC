@@ -208,3 +208,37 @@ Added token-source tracking, failed-token-aware singleflight auth recovery, deta
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Make installer updates transactional
+
+**Date**: 2026-07-10
+**Task**: Make installer updates transactional
+**Branch**: `main`
+
+### Summary
+
+Staged and verified all release candidates before mutation, added atomic file commits with full installation snapshots and automatic rollback, covered first-install and upgrade failure paths with mocked system commands, and synchronized deployment docs plus executable installer specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17efab4` | (see git log) |
+| `75752f5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
