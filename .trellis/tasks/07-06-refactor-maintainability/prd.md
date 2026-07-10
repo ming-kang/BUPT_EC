@@ -313,11 +313,11 @@ child's final scope (user authorized sequential completion on 2026-07-10).
       from this parent task.
 - [x] P0 dependency/toolchain findings pass `govulncheck` and the agreed pnpm
       audit policy.
-- [ ] Each of the eleven planned remaining children is reviewed before activation,
+- [x] Each of the eleven planned remaining children is reviewed before activation,
       and implementation follows the dependency order above.
-- [ ] P1 installer, HTTP correlation/error-sanitization, and partial-campus UX
+- [x] P1 installer, HTTP correlation/error-sanitization, and partial-campus UX
       findings are completed through linked child tasks.
-- [ ] Remaining P2/P3 work is either completed or explicitly accepted/deferred
+- [x] Remaining P2/P3 work is either completed or explicitly accepted/deferred
       with rationale before the parent is archived.
 
 ## Notes
