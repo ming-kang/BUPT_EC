@@ -1,0 +1,33 @@
+{
+  "id": "reliability-audit-hardening",
+  "name": "reliability-audit-hardening",
+  "title": "可靠性审计修复总任务",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-layer",
+  "package": null,
+  "priority": "P1",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-07-10",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-10-refresh-outcome-contract",
+    "07-10-frontend-cache-validity",
+    "07-10-warmup-lifecycle",
+    "07-10-token-refresh-coordination",
+    "07-10-installer-version-policy",
+    "07-10-installer-transaction-safety"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
