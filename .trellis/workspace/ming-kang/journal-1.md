@@ -38,3 +38,37 @@ Bootstrapped project-local Trellis guidance for the BUPT_EC backend, replacing t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Align installer release selection
+
+**Date**: 2026-07-10
+**Task**: Align installer release selection
+**Branch**: `main`
+
+### Summary
+
+Implemented explicit stable/nightly/tag selection, persisted RELEASE_VERSION, added installer behavior tests and CI coverage, and created the reliability hardening task tree.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `363ac0f` | (see git log) |
+| `36bc41e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
