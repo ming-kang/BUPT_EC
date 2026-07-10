@@ -18,13 +18,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 完整成功、部分成功、全量失败均有独立单元测试。
-- [ ] “部分缓存过期 -> 最新全量失败”测试返回 stale failure 提示。
-- [ ] 部分结果测试验证 cache、backoff、`partial_campuses` 和失败校区数据合并。
-- [ ] `/readyz` 测试验证部分缓存 ready 且 runtime 标记 incomplete/partial。
-- [ ] 日志测试或可注入观测验证部分结果不会只记录为普通成功。
-- [ ] 并发请求仍共享一个 refresh attempt，`go test -race ./service` 通过。
-- [ ] API、operations/development 文档、CHANGELOG 和 backend specs 同步更新。
+- [x] 完整成功、部分成功、全量失败均有独立单元测试。
+- [x] “部分缓存过期 -> 最新全量失败”测试返回 stale failure 提示。
+- [x] 部分结果测试验证 cache、backoff、`partial_campuses` 和失败校区数据合并。
+- [x] `/readyz` 测试验证部分缓存 ready 且 runtime 标记 incomplete/partial。
+- [x] 日志测试或可注入观测验证部分结果不会只记录为普通成功。
+- [x] 并发请求仍共享一个 refresh attempt，`go test -race ./service` 通过。
+- [x] API、operations/development 文档、CHANGELOG 和 backend specs 同步更新。
 
 ## Out of Scope
 
