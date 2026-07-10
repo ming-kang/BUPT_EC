@@ -135,6 +135,17 @@ implemented, validated, and committed one by one.
   package-level `classroomService` dependency by introducing `HTTPServer`,
   preserving public route behavior, logging correlation, gzip, readiness, and
   SPA fallback.
+- `07-10-runtime-config-composition`: completed. Made `config.Load` the single
+  production environment boundary, built dependencies in `main.go`, removed
+  downstream environment reads, and injected the service/config snapshot into
+  the HTTP boundary.
+- `07-10-reliability-audit-hardening`: completed. Coordinated six archived
+  children covering refresh full/partial/failure outcomes, frontend business-day
+  cache validity, cancellable warmup, concurrent token recovery, installer
+  release selection, and transactional installer rollback.
+- `07-10-dependency-security-refresh`: completed. Raised the Go security floor,
+  patched the reachable quic-go advisory, refreshed the Vite/ESLint toolchain,
+  and added production/full dependency audit gates to PR and release workflows.
 
 ## Progress Notes
 
@@ -144,25 +155,156 @@ implemented, validated, and committed one by one.
 - `07-06-injected-http-boundary` completed validation with `gofmt -l .`,
   `go test ./...`, and `go vet ./...`. It also added deterministic `GetData`
   error-envelope coverage through the injected HTTP boundary.
-- The next recommended child task is configuration and dependency injection
-  cleanup.
+- `07-10-runtime-config-composition` and `07-10-reliability-audit-hardening`
+  completed and were archived on 2026-07-10.
+- `07-10-dependency-security-refresh` completed and was archived on 2026-07-10;
+  Go 1.25.12 `govulncheck` reports zero reachable vulnerabilities and both pnpm
+  audit policies pass with no known vulnerabilities.
+- A parent-level integration re-review on 2026-07-10 found additional security,
+  HTTP-boundary, installer, frontend, and observability work. The parent remains
+  open until those findings are handled through reviewable child tasks.
+
+## 2026-07-10 Integration Re-review
+
+### Original Architecture Findings
+
+| # | Original finding | Status | Re-review result |
+| --- | --- | --- | --- |
+| 1 | One campus failure discarded the whole refresh | Resolved | Refresh outcomes explicitly distinguish full, partial, and total failure; successful campuses are cached and failed campuses are identified. |
+| 2 | Runtime config and credentials leaked into service hot paths | Resolved | `config.Load` snapshots the environment once and `main.go` injects credentials, campuses, cache, HTTP client, JW client, and service. The two-campus list remains an intentional fixed product value. |
+| 3 | Business-day behavior depended on host timezone | Resolved | Cache date and expiry use the Asia/Shanghai business calendar with next-midnight expiry and cross-day rejection. |
+| 4 | Logs/readiness only; no trend metrics | Open | Runtime status is richer, but there are still no counters, latency histograms, cache-hit trends, or alertable upstream metrics. |
+| 5 | Fixed retry behavior and no JW circuit breaker | Partial | Warmup now has bounded 30s/1m/2m/5m retry and midnight jitter, but request-triggered refresh still uses a fixed 30-second backoff and has no adaptive breaker. |
+| 6 | Generic `CacheStore` leaks go-cache details | Open | `CacheStore` still exposes `Get/Set/Delete`, callers still type-assert the cached model, `Delete` is unused, and the cache default TTL remains misleading because service writes use explicit expiry. |
+| 7 | Inconsistent time source | Partial | Cache policy uses `s.now`, but refresh/login status and elapsed timestamps still call `time.Now`/`time.Since` directly; the clock is not a public constructor option. |
+| 8 | Hand-written frontend request/reload state machine | Partial | Cross-day validity, stale preservation, and bounded retry are tested, but the hook still owns raw `fetch`, `AbortController`, and timers with no explicit request timeout or visibility pause. |
+| 9 | Reducer performs `localStorage` side effects | Open | Storage errors are handled and tested, but the reducer is still impure; persistence should move to provider effects or a persisted-state adapter. |
+| 10 | Security/protocol and frontend test blind spots | Partial | URL validation and many cache/token/frontend pure behaviors are covered. A JW AES known vector, the actual hook/effect lifecycle, and a non-skipped upstream contract path remain uncovered. |
+| 11 | Process-local single-instance assumption | Partial | Operations/development docs now state that instances do not share cache, but do not yet declare the recommended topology or a Redis/leader/fetcher scaling route. |
+| 12 | Repository/tooling hygiene and embedded dist workflow | Accepted decision | Trellis and supported editor integration are intentionally versioned; generated Python caches are absent and `.template-hashes.json` is ignored. Local Go builds intentionally require a prior frontend build and CI supplies the artifact. |
+
+### New Confirmed Findings
+
+#### P0 — release/security blockers
+
+1. `govulncheck ./...` fails on reachable `GO-2026-5676` through
+   `github.com/quic-go/quic-go v0.59.0`; the fixed version is `v0.59.1`. The
+   current CI/release quality gate will fail until this dependency is updated.
+2. The local Go `1.26.4` toolchain is affected by standard-library TLS advisory
+   `GO-2026-5856`; fixed releases are Go `1.25.12` and `1.26.5`. CI currently
+   requests broad `1.25`, so the repository should set an explicit safe minimum
+   patch and local development must upgrade.
+3. `pnpm audit --prod` reports one moderate runtime dependency advisory in
+   `@babel/runtime 7.23.7`. Full audit reports 11 high, 20 moderate, and 4 low
+   findings, including multiple Vite 5.0.10/Rollup/esbuild development-server
+   and build-tool advisories. CI currently has no pnpm audit gate.
+
+#### P1 — correctness and security
+
+1. The installer automatically trusts `gh-v6.com` when GitHub is unreachable and
+   downloads both the archive and checksum from that same third-party origin.
+   A co-fetched checksum does not independently authenticate a root-installed
+   binary; fallback must become explicit or verify GitHub provenance/signatures.
+2. Late first-install rollback is incomplete. If service restart/Nginx reload has
+   succeeded and a later active/health check fails, rollback removes files but
+   does not stop the newly started service and does not reload Nginx when no old
+   service/site existed. Tests cover only first-install failure before restart.
+3. Generated Nginx uses `proxy_read_timeout 30s`, equal to
+   `ClassroomRefreshLimit`; a cold refresh near the backend limit can be cut off
+   with a proxy timeout before the 45-second Go write budget can return JSON.
+4. Unknown `/api/*` requests do not traverse the `/api` group middleware, so
+   their JSON 404 responses lack the promised `LogID` header/body correlation.
+   Cold refresh work also starts from `context.Background`, so its failure log
+   cannot be correlated with the request `log_id` returned to the client.
+5. `safeRemoteMessage` only trims upstream `Msg` values before they are included
+   in internal errors and warning logs. It needs bounded length and explicit
+   secret/account-detail sanitization to satisfy the logging contract.
+6. On a cold partial response where the preferred Shahe campus failed, the
+   frontend still auto-selects its empty placeholder instead of the campus that
+   has usable data, making a successful partial result appear empty by default.
+
+#### P2 — robustness and maintainability
+
+1. Gzip negotiation uses `strings.Contains`; it compresses
+   `Accept-Encoding: gzip;q=0`, misses case/weight semantics, and has no
+   regression test for refusal.
+2. Frontend fetches have no explicit timeout and polling is not paused while the
+   page is hidden. The 5-second stale poll can also conflict with the installed
+   Nginx limit of 30 API requests/minute for several users/tabs sharing one IP.
+3. The production CSP disallows inline scripts, so it blocks the inline dark-mode
+   bootstrap in `frontend/index.html`; the app recovers after React mounts but
+   the intended no-flash behavior does not work in production.
+4. `CampusSettingsModal` labels `updated_at` as the last refresh attempt even
+   though a total failed attempt does not update that value.
+5. `logs.Init` exits the process internally on directory creation failure and
+   `NewHTTPServer` accepts a nil service, weakening otherwise explicit
+   constructor/startup error handling.
+6. CI and release duplicate nearly the same quality-gate steps, while dependency
+   audit policy is absent from both.
+7. Stable release publishing supplies both `body_path` and
+   `generate_release_notes: true`; GitHub can append generated notes, which
+   conflicts with the documented contract that the matching changelog section
+   is used verbatim.
+
+### Re-review Validation
+
+- Passed: `gofmt -l .`, `go vet ./...`, `go test ./...`,
+  `go test -race ./...`, temporary-path `go build -v ./`, Staticcheck,
+  frontend lint, 44 Vitest tests, frontend build, `bash -n` for all four shell
+  scripts, `bash scripts/install_test.sh`, and `git diff --check`.
+- Blocked by findings: `govulncheck ./...` and both production/full pnpm audits.
+- Not rerun locally: ShellCheck is not installed in this Windows environment;
+  CI installs and runs it.
+
+## Remaining Child-task Roadmap
+
+1. **Dependency security refresh (P0, completed 2026-07-10)**: updated quic-go
+   and the safe Go patch floor, refreshed Vite/ESLint/Babel dependencies, and
+   added production/dev audit policy in separate Go and frontend commits.
+2. **Installer trust and rollback hardening (P1)**: remove implicit third-party
+   trust or verify independent provenance, fix late first-install rollback,
+   align proxy/backend timeouts, and add failure-path tests plus docs/changelog.
+3. **HTTP protocol and error-observability hardening (P1)**: correct gzip
+   negotiation, cover every `/api/*` response with log IDs, preserve or replace
+   request correlation for shared refreshes, sanitize remote messages, and make
+   startup constructors fail explicitly.
+4. **Frontend partial-data and request lifecycle (P1/P2)**: choose a usable
+   campus on partial cold start, add request timeout/visibility behavior, make
+   preference persistence pure, resolve CSP bootstrap behavior, and align
+   polling with deployment rate limits.
+5. **Runtime metrics and adaptive upstream protection (P2)**: expose cache/
+   refresh/login/error metrics and add jittered adaptive backoff or a small JW
+   circuit breaker.
+6. **Cache/time domain cleanup (P2)**: introduce a typed classroom cache,
+   remove unused generic operations/default TTL ambiguity, and inject one clock
+   through cache, refresh, login, and status paths.
+7. **Delivery reuse and scaling guidance (P3)**: deduplicate reusable quality
+   workflow steps, keep stable notes changelog-only, add the AES known vector and
+   real hook lifecycle coverage, and document the recommended single-instance
+   topology plus a future shared cache/leader route.
 
 ## Acceptance Criteria
 
-- [ ] The parent task has a reviewed child-task decomposition with clear order,
+- [x] The parent task has a reviewed child-task decomposition with clear order,
       dependencies, and scope boundaries.
-- [ ] Each implementation child task has its own PRD and, when complex, design
+- [x] Each completed implementation child task has its own PRD and, when complex, design
       and implementation plan before code changes begin.
-- [ ] Behavior-safety child work precedes structural package moves.
-- [ ] Each completed child task documents validation commands and any skipped
+- [x] Behavior-safety child work precedes structural package moves.
+- [x] Each completed child task documents validation commands and any skipped
       checks.
-- [ ] Public behavior remains compatible unless an approved child task documents
+- [x] Public behavior remains compatible unless an approved child task documents
       the behavior change and updates docs/changelog accordingly.
-- [ ] Trellis parent/child links are maintained so progress can be inspected
+- [x] Trellis parent/child links are maintained so completed progress can be inspected
       from this parent task.
+- [x] P0 dependency/toolchain findings pass `govulncheck` and the agreed pnpm
+      audit policy.
+- [ ] P1 installer, HTTP correlation/error-sanitization, and partial-campus UX
+      findings are completed through linked child tasks.
+- [ ] Remaining P2/P3 work is either completed or explicitly accepted/deferred
+      with rationale before the parent is archived.
 
 ## Notes
 
-- The current recommended order is behavior safety net first, then injected HTTP
-  boundary, then configuration/dependency cleanup, then deeper backend/frontend
-  responsibility splits, then delivery cleanup.
+- The original first three maintainability children and the six-child reliability
+  audit are complete. The P0 dependency security refresh is also complete; the
+  current recommended next task is installer trust and rollback hardening.
