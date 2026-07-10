@@ -72,3 +72,37 @@ Implemented explicit stable/nightly/tag selection, persisted RELEASE_VERSION, ad
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Model refresh outcomes explicitly
+
+**Date**: 2026-07-10
+**Task**: Model refresh outcomes explicitly
+**Branch**: `main`
+
+### Summary
+
+Implemented full/partial/failed refresh outcomes, partial campus diagnostics, latest-error precedence, tests, docs, and code specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c9a2543` | (see git log) |
+| `ebbaaf5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
