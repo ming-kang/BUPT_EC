@@ -70,6 +70,7 @@ func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
 
 	r.GET("/healthz", server.Healthz)
 	r.GET("/readyz", server.Readyz)
+	r.GET("/metrics", server.Metrics)
 
 	apiGroup := r.Group("/api")
 	{

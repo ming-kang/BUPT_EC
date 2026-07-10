@@ -497,6 +497,11 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
 
+    # Runtime metrics are loopback-only; do not proxy them to the public site.
+    location = /metrics {
+        return 404;
+    }
+
     location /api/ {
         limit_req zone=bupt_ec_api burst=20 nodelay;
         proxy_pass http://${app_addr};

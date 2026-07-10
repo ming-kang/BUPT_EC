@@ -23,6 +23,7 @@ type classroomDataService interface {
 type HTTPServer struct {
 	classroomService classroomDataService
 	hasJWCredentials func() bool
+	metricsHandler   http.Handler
 }
 
 func isNilClassroomService(classroomService classroomDataService) bool {
@@ -38,7 +39,7 @@ func isNilClassroomService(classroomService classroomDataService) bool {
 	}
 }
 
-func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool) (*HTTPServer, error) {
+func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool, metricsHandler http.Handler) (*HTTPServer, error) {
 	if isNilClassroomService(classroomService) {
 		return nil, errors.New("classroom service is required")
 	}
@@ -49,6 +50,7 @@ func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func(
 	return &HTTPServer{
 		classroomService: classroomService,
 		hasJWCredentials: hasJWCredentials,
+		metricsHandler:   metricsHandler,
 	}, nil
 }
 
@@ -91,4 +93,12 @@ func (server *HTTPServer) Readyz(c *gin.Context) {
 		"jw_credentials_configured": configured,
 		"runtime":                   status,
 	})
+}
+
+func (server *HTTPServer) Metrics(c *gin.Context) {
+	if server.metricsHandler == nil {
+		c.Status(http.StatusNotFound)
+		return
+	}
+	server.metricsHandler.ServeHTTP(c.Writer, c.Request)
 }

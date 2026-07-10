@@ -48,7 +48,7 @@ func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials 
 	if hasJWCredentials == nil {
 		hasJWCredentials = func() bool { return true }
 	}
-	httpServer, err := NewHTTPServer(classroomService, hasJWCredentials)
+	httpServer, err := NewHTTPServer(classroomService, hasJWCredentials, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -56,14 +56,14 @@ func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials 
 }
 
 func TestNewHTTPServerRejectsNilService(t *testing.T) {
-	if _, err := NewHTTPServer(nil, nil); err == nil {
+	if _, err := NewHTTPServer(nil, nil, nil); err == nil {
 		t.Fatal("NewHTTPServer(nil) expected error")
 	}
 	var typedNil *fakeClassroomService
-	if _, err := NewHTTPServer(typedNil, nil); err == nil {
+	if _, err := NewHTTPServer(typedNil, nil, nil); err == nil {
 		t.Fatal("NewHTTPServer(typed-nil) expected error")
 	}
-	if _, err := NewHTTPServer(&fakeClassroomService{}, nil); err != nil {
+	if _, err := NewHTTPServer(&fakeClassroomService{}, nil, nil); err != nil {
 		t.Fatalf("NewHTTPServer(valid) error = %v", err)
 	}
 }

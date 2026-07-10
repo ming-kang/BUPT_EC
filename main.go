@@ -18,6 +18,7 @@ import (
 	"BUPT_EC/utils"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type application struct {
@@ -43,14 +44,20 @@ func Init() (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create JW client: %w", err)
 	}
+	runtimeMetrics, err := service.NewPrometheusMetrics()
+	if err != nil {
+		return nil, fmt.Errorf("create runtime metrics: %w", err)
+	}
 	classroomService, err := service.NewClassroomService(service.ClassroomServiceOptions{
 		Campuses:      runtimeConfig.Campuses,
 		TokenOverride: runtimeConfig.JW.Token,
+		Metrics:       runtimeMetrics,
 	}, store, jwClient)
 	if err != nil {
 		return nil, fmt.Errorf("create classroom service: %w", err)
 	}
-	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials)
+	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{})
+	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials, metricsHandler)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP server: %w", err)
 	}

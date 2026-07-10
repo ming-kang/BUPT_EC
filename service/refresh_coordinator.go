@@ -33,6 +33,25 @@ type classroomRefreshResult struct {
 	err      error
 }
 
+// totalFailureBackoffSteps is the adaptive open-circuit ladder for consecutive
+// total JW refresh failures. Partial success keeps a fixed 30s soft backoff.
+var totalFailureBackoffSteps = []time.Duration{
+	30 * time.Second,
+	time.Minute,
+	2 * time.Minute,
+	5 * time.Minute,
+}
+
+func totalFailureBackoff(consecutive int) time.Duration {
+	if consecutive < 1 {
+		consecutive = 1
+	}
+	if consecutive > len(totalFailureBackoffSteps) {
+		consecutive = len(totalFailureBackoffSteps)
+	}
+	return totalFailureBackoffSteps[consecutive-1]
+}
+
 func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.Time) (*classroomRefreshAttempt, bool) {
 	s.backgroundMu.Lock()
 	if s.backgroundStopping {
@@ -51,6 +70,9 @@ func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.T
 	if !s.nextRefreshAllowed.IsZero() && now.Before(s.nextRefreshAllowed) {
 		s.refreshMu.Unlock()
 		s.backgroundMu.Unlock()
+		if s.metrics != nil {
+			s.metrics.ObserveRefreshSuppressed()
+		}
 		return nil, false
 	}
 
@@ -58,6 +80,9 @@ func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.T
 	attempt := &classroomRefreshAttempt{done: make(chan struct{})}
 	s.refreshAttempt = attempt
 	s.refreshWorkers.Add(1)
+	if s.metrics != nil {
+		s.metrics.SetRefreshInFlight(true)
+	}
 	s.refreshMu.Unlock()
 	s.backgroundMu.Unlock()
 
@@ -83,17 +108,22 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 	if s.refreshAttempt == attempt {
 		s.refreshInFlight = false
 		s.refreshAttempt = nil
+		if s.metrics != nil {
+			s.metrics.SetRefreshInFlight(false)
+		}
 	}
-	if result.kind == refreshFailed || result.err != nil {
+	switch {
+	case result.kind == refreshFailed || result.err != nil:
 		s.lastRefreshErr = result.err
-		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
-	} else if result.kind == refreshPartial {
+		s.consecutiveTotalFailures++
+		s.nextRefreshAllowed = s.now().Add(totalFailureBackoff(s.consecutiveTotalFailures))
+	case result.kind == refreshPartial:
 		s.lastRefreshErr = nil
-		// Partial campus success is usable, but still backs off so soft-stale
-		// requests do not hammer JW while a campus is unavailable.
+		// Partial campus success is usable and does not escalate the open ladder.
 		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
-	} else {
+	default:
 		s.lastRefreshErr = nil
+		s.consecutiveTotalFailures = 0
 		s.nextRefreshAllowed = time.Time{}
 	}
 	close(attempt.done)

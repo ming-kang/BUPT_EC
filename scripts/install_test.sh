@@ -886,6 +886,8 @@ test_api_proxy_read_timeout_budget() {
   if [[ "${spa_timeout}" != *"proxy_read_timeout 30s;"* ]]; then
     fail "spa location keeps 30s read timeout: got '${spa_timeout}'"
   fi
+  assert_contains "${conf_file}" "location = /metrics" "nginx denies public metrics path"
+  assert_contains "${conf_file}" "return 404;" "metrics path returns 404"
 }
 
 test_successful_upgrade_commits_and_cleans_backup() {

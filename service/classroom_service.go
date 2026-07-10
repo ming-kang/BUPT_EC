@@ -49,12 +49,14 @@ type ClassroomService struct {
 	clock        Clock
 	now          func() time.Time
 
-	refreshMu          sync.Mutex
-	refreshInFlight    bool
-	refreshAttempt     *classroomRefreshAttempt
-	nextRefreshAllowed time.Time
-	lastRefreshErr     error
-	refreshWorkers     sync.WaitGroup
+	refreshMu                sync.Mutex
+	refreshInFlight          bool
+	refreshAttempt           *classroomRefreshAttempt
+	nextRefreshAllowed       time.Time
+	lastRefreshErr           error
+	consecutiveTotalFailures int
+	refreshWorkers           sync.WaitGroup
+	metrics                  RuntimeMetrics
 
 	backgroundMu       sync.Mutex
 	backgroundStopping bool
@@ -73,6 +75,8 @@ type ClassroomServiceOptions struct {
 	// Clock is optional; nil uses the real wall clock. Instants are converted to
 	// Asia/Shanghai for business-day logic by ClassroomService.now.
 	Clock Clock
+	// Metrics is optional; nil disables runtime metric emission.
+	Metrics RuntimeMetrics
 }
 
 func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCache, client JWClient) (*ClassroomService, error) {
@@ -97,6 +101,7 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 		clock:        clock,
 		now:          func() time.Time { return clock.Now().In(businessLocation) },
 		warmupJitter: randomWarmupJitter,
+		metrics:      options.Metrics,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,

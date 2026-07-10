@@ -14,6 +14,24 @@ sudo journalctl -u bupt-ec -n 200      # last 200 lines
 
 On shutdown the server drains gracefully: it stops accepting connections, finishes in-flight requests, and waits (within a 10-second budget) for any background classroom refresh to complete.
 
+## Metrics (loopback)
+
+The process exposes Prometheus metrics at `GET /metrics` on `APP_ADDR` (default
+`127.0.0.1:8080`). The installer Nginx site returns 404 for public `/metrics`
+and does not proxy it. Scrape from the host only, for example:
+
+```bash
+curl -s http://127.0.0.1:8080/metrics | head
+```
+
+Useful series include `bupt_ec_refresh_total`, `bupt_ec_refresh_duration_seconds`,
+`bupt_ec_cache_serves_total`, `bupt_ec_login_total`, and
+`bupt_ec_refresh_suppressed_total` (adaptive backoff). Labels are low-cardinality
+enums only (outcome, campus id, error kind).
+
+Suggested alerts: sustained `refresh` outcome `failed`, rising
+`refresh_suppressed_total`, login failures, and refresh durations near 30s.
+
 ## Timeout budget (API cold path)
 
 Cold `/api/get_data` may wait for a shared JW classroom refresh. The three layers

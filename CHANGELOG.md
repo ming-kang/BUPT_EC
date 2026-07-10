@@ -33,8 +33,16 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - JW outbound HTTP no longer follows redirects, so custom `token` headers and
   login form bodies cannot be sent to unvalidated hosts.
 
+### Added
+
+- Process-local Prometheus metrics on loopback `GET /metrics` (refresh, cache
+  serve, login, campus failure counters/histograms). Public Nginx returns 404
+  for `/metrics`.
+
 ### Changed
 
+- Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap); full
+  success resets the ladder, partial success keeps the fixed 30s soft backoff.
 - Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
   10/20/30/60s) with light jitter, pauses while the tab is hidden, and aborts
   hung `/api/get_data` fetches after 40s.
