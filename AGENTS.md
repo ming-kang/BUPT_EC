@@ -48,7 +48,8 @@ User-facing documentation lives in `README.md` (overview) and `docs/` (`deployme
 - Go tests use the standard `testing` package and follow `TestXxx` naming in `*_test.go` files placed next to the package they verify.
 - Service unit tests create an isolated `ClassroomService` per test via `newTestService(t, client)` (or `newTestServiceWithOverride`), injecting a `mockJWClient`, explicit `ClassroomServiceOptions`, and a fresh `gocache` instance — no shared config/cache globals. Handler tests inject a deterministic fake through `NewHTTPServer` instead of mutating package-level service state.
 - Integration tests require valid `JW_USERNAME`/`JW_PASSWORD` (or `JW_TOKEN`) and otherwise `t.Skip` cleanly with a clear message.
-- Frontend behavior tests use Vitest for API envelope normalization and selection-state behavior. Keep additions focused on meaningful regression risk rather than runner-only smoke tests.
+- Frontend behavior tests use Vitest for API envelope normalization, selection-state behavior, and a jsdom lifecycle harness for `useTodayClassrooms` (`*.lifecycle.test.jsx`). Keep additions focused on meaningful regression risk rather than runner-only smoke tests.
+- JW protocol unit tests must stay offline: use an injected `HTTPDoer` with canned fixtures (never real credentials). AES known vectors in `service/crypto_test.go` must use independently generated expected ciphertexts, not values derived by calling `encryptJWPassword` in the test itself.
 - Installer behavior tests source `scripts/install.sh`, opt into an explicit temporary root, and mock network/system commands. Production execution must never accept an environment-controlled install root. Cover both existing-install upgrades and first installs whenever transaction targets or validation order change.
 
 ## Commit, Changelog & Pull Request Guidelines

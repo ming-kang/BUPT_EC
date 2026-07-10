@@ -19,6 +19,11 @@ export default defineConfig({
       },
     },
   },
+  test: {
+    // Default stays node for pure helper tests; lifecycle files opt into jsdom
+    // via their file-level @vitest-environment directive.
+    environment: 'node',
+  },
   server: {
     proxy: {
       '/api': {

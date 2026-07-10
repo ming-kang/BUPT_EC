@@ -63,7 +63,9 @@ Integration tests in `service/realtime_data_test.go` hit the real JW system. `Te
 
 Unit tests never touch the network: they inject a `mockJWClient` (implementing the `JWClient` interface) into a fresh `ClassroomService` with an isolated cache per test — see `newTestService` in `service/realtime_data_test.go`.
 
-Frontend behavior tests use Vitest and focus on API envelope normalization plus selection-state transitions and preference persistence. Run them with `pnpm test` from `frontend/`. `pnpm audit:prod` rejects moderate-or-higher production dependency advisories; `pnpm audit:dev` rejects high-or-critical findings across the full frontend toolchain.
+Frontend behavior tests use Vitest and focus on API envelope normalization, selection-state transitions, preference persistence, and a jsdom lifecycle harness for `useTodayClassrooms` (`src/*.lifecycle.test.jsx`, via `@testing-library/react`). Pure helper tests stay on the default `node` environment. Run them with `pnpm test` from `frontend/`. `pnpm audit:prod` rejects moderate-or-higher production dependency advisories; `pnpm audit:dev` rejects high-or-critical findings across the full frontend toolchain.
+
+Backend protocol tests cover AES password encryption known vectors (`service/crypto_test.go`) and offline JWClient request/response fixtures (`service/jw_protocol_test.go`). Real JW integration tests still skip cleanly without credentials.
 
 ## Project structure
 

@@ -49,12 +49,20 @@ Local test patterns:
 
 - `service/realtime_data_test.go` defines `mockJWClient` and `newTestService`.
   Follow this pattern for service tests so unit tests do not touch the network.
+- `service/jw_protocol_test.go` uses an injected `HTTPDoer` for offline JW
+  Login/FetchAPIURL/QueryCampus protocol fixtures (method, path, token header,
+  auth/parse classification). Never require network or credentials there.
+- `service/crypto_test.go` pins AES known vectors with independently generated
+  expected ciphertexts; do not derive expected values by calling
+  `encryptJWPassword` in the test.
 - `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; query integration tests may
   use that pair or `JW_TOKEN`. All must skip cleanly when their required
   credentials are missing.
 - Handler tests should inject deterministic fakes through `NewHTTPServer` and
   use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
   middleware such as `/api` `log_id` correlation matters.
+- Frontend `*.lifecycle.test.jsx` files mount real hooks under jsdom via
+  `@testing-library/react`; pure helper tests remain on the default node env.
 
 Avoid tests that only restate the implementation. Prefer tests that protect
 contract edges, race-prone behavior, security checks, or user-visible output.

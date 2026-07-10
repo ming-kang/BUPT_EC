@@ -8,6 +8,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Dependencies
+
+- Frontend test toolchain adds `@testing-library/react`, `@testing-library/dom`,
+  and `jsdom` for hook lifecycle tests (dev-only; production bundle unchanged).
+
 ### Security
 
 - Go builds and releases now require patched Go 1.25.12 (or Go 1.26.5+), and
