@@ -6,7 +6,10 @@
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import useTodayClassrooms from "./useTodayClassrooms";
+import useTodayClassrooms, {
+  CLIENT_FETCH_TIMEOUT_MESSAGE,
+  CLIENT_FETCH_TIMEOUT_MS,
+} from "./useTodayClassrooms";
 
 function shanghaiToday() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -212,6 +215,60 @@ describe("useTodayClassrooms lifecycle", () => {
     cleanup();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+  });
+
+  it("times out hanging fetches with a safe message", async () => {
+    fetch.mockImplementation(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            return;
+          }
+          if (signal.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        })
+    );
+    render(<HookProbe />);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(CLIENT_FETCH_TIMEOUT_MS + 10);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("msg").textContent).toBe(
+      CLIENT_FETCH_TIMEOUT_MESSAGE
+    );
+  });
+
+  it("does not schedule background reloads while the page is hidden", async () => {
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => "hidden",
+    });
+    fetch.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        usablePayload({
+          data: { expires_at: new Date(Date.now() + 1_000).toISOString() },
+        }),
+    }));
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetch.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
     });
     expect(fetch.mock.calls.length).toBe(callsAfterLoad);
   });

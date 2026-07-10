@@ -10,22 +10,8 @@
   </head>
   <body>
     <div id="root"></div>
-    <script>
-      // Single source of truth: prefers-color-scheme (no localStorage toggle).
-      // Keep in sync with frontend/src/darkMode.js resolveDarkMode().
-      (function () {
-        try {
-          if (
-            window.matchMedia &&
-            window.matchMedia("(prefers-color-scheme: dark)").matches
-          ) {
-            document.body.classList.add("dark");
-          } else {
-            document.body.classList.remove("dark");
-          }
-        } catch (err) {}
-      })();
-    </script>
+    <!-- CSP script-src 'self': external module bootstrap, no inline JS. -->
+    <script type="module" src="/src/darkModeBootstrap.js"></script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

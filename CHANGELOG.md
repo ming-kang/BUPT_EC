@@ -33,6 +33,15 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - JW outbound HTTP no longer follows redirects, so custom `token` headers and
   login form bodies cannot be sent to unvalidated hosts.
 
+### Changed
+
+- Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
+  10/20/30/60s) with light jitter, pauses while the tab is hidden, and aborts
+  hung `/api/get_data` fetches after 40s.
+- Dark-mode pre-hydration bootstrap is a CSP-safe module script (no inline JS).
+- Selection preference persistence moved out of the reducer into
+  `SelectionProvider` effects so the reducer stays pure.
+
 ### Fixed
 
 - Partial campus success no longer auto-selects an empty failed campus

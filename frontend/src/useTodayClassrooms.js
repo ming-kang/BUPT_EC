@@ -9,6 +9,13 @@ import {
   readJson,
 } from "./todayClassroomsResponse";
 
+/**
+ * Client fetch budget: above ClassroomRefreshLimit (30s), below Go WriteTimeout
+ * (45s) and Nginx /api proxy_read_timeout (60s).
+ */
+export const CLIENT_FETCH_TIMEOUT_MS = 40_000;
+export const CLIENT_FETCH_TIMEOUT_MESSAGE = "请求超时，请稍后重试";
+
 /** True when the response can still drive the classroom UI. */
 export function hasUsableClassroomData(resp, nowMs = Date.now()) {
   return (
@@ -79,6 +86,13 @@ function errorEnvelope(message, code = 500) {
   };
 }
 
+function isPageVisible() {
+  if (typeof document === "undefined") {
+    return true;
+  }
+  return document.visibilityState !== "hidden";
+}
+
 export default function useTodayClassrooms() {
   const [reloadRequest, setReloadRequest] = useState({
     key: 0,
@@ -88,12 +102,29 @@ export default function useTodayClassrooms() {
   const [reloading, setReloading] = useState(false);
   const [failureCount, setFailureCount] = useState(0);
   const [resp, setResp] = useState(loadingResponse);
+  const [pageVisible, setPageVisible] = useState(isPageVisible);
   const respRef = useRef(resp);
   respRef.current = resp;
 
   useEffect(() => {
+    if (typeof document === "undefined") {
+      return undefined;
+    }
+    const onVisibility = () => {
+      setPageVisible(document.visibilityState !== "hidden");
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
+  useEffect(() => {
     const controller = new AbortController();
+    let timedOut = false;
     const isBackground = reloadRequest.background;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, CLIENT_FETCH_TIMEOUT_MS);
 
     async function loadData() {
       const usable = hasUsableClassroomData(respRef.current);
@@ -131,11 +162,15 @@ export default function useTodayClassrooms() {
           return merged;
         });
       } catch (error) {
-        if (controller.signal.aborted) {
+        if (controller.signal.aborted && !timedOut) {
           return;
         }
         const failed = errorEnvelope(
-          error instanceof Error ? error.message : fallbackErrorMessage
+          timedOut
+            ? CLIENT_FETCH_TIMEOUT_MESSAGE
+            : error instanceof Error
+              ? error.message
+              : fallbackErrorMessage
         );
         const nowMs = Date.now();
         setFailureCount((current) => nextFailureCount(current, false));
@@ -145,7 +180,8 @@ export default function useTodayClassrooms() {
           return merged;
         });
       } finally {
-        if (!controller.signal.aborted) {
+        clearTimeout(timeoutId);
+        if (!controller.signal.aborted || timedOut) {
           setSpinning(false);
           setReloading(false);
         }
@@ -153,7 +189,10 @@ export default function useTodayClassrooms() {
     }
 
     loadData();
-    return () => controller.abort();
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, [reloadRequest]);
 
   const retry = useCallback(() => {
@@ -164,12 +203,12 @@ export default function useTodayClassrooms() {
   }, []);
 
   useEffect(() => {
-    if (spinning || reloading) {
-      return;
+    if (!pageVisible || spinning || reloading) {
+      return undefined;
     }
     const delay = nextReloadDelay(resp.data, { failureCount });
     if (delay == null) {
-      return;
+      return undefined;
     }
     const timer = setTimeout(() => {
       if (resp.code === 0 && !hasUsableClassroomData(resp)) {
@@ -183,7 +222,7 @@ export default function useTodayClassrooms() {
       }));
     }, delay);
     return () => clearTimeout(timer);
-  }, [failureCount, reloading, resp, spinning]);
+  }, [failureCount, pageVisible, reloading, resp, spinning]);
 
   return {
     resp,

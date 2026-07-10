@@ -6,17 +6,21 @@ import {
   STALE_POLL_MS,
   failureRetryDelay,
   nextReloadDelay,
+  withJitter,
 } from "./reloadSchedule";
+
+// Mid-range sample keeps withJitter() net-zero so delay assertions stay exact.
+const stable = { random: () => 0.5 };
 
 describe("nextReloadDelay", () => {
   const now = Date.parse("2026-07-09T12:00:00+08:00");
 
   it("does not schedule before the first result, but retries malformed data", () => {
-    expect(nextReloadDelay(null, { nowMs: now })).toBeNull();
-    expect(nextReloadDelay({}, { nowMs: now })).toBe(MIN_FRESH_DELAY_MS);
+    expect(nextReloadDelay(null, { nowMs: now, ...stable })).toBeNull();
+    expect(nextReloadDelay({}, { nowMs: now, ...stable })).toBe(MIN_FRESH_DELAY_MS);
   });
 
-  it("polls quickly when stale", () => {
+  it("polls on a rate-aware stale interval", () => {
     expect(
       nextReloadDelay(
         {
@@ -26,9 +30,10 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: true,
         },
-        { nowMs: now }
+        { nowMs: now, ...stable }
       )
     ).toBe(STALE_POLL_MS);
+    expect(STALE_POLL_MS).toBe(15_000);
   });
 
   it("aligns partial payload polling with the backend backoff", () => {
@@ -43,7 +48,7 @@ describe("nextReloadDelay", () => {
           partial_campuses: ["04"],
           error: { type: "jw_query_failed", message: "partial" },
         },
-        { nowMs: now }
+        { nowMs: now, ...stable }
       )
     ).toBe(PARTIAL_POLL_MS);
 
@@ -59,7 +64,7 @@ describe("nextReloadDelay", () => {
           stale: false,
           error: { type: "jw_query_failed", message: "partial" },
         },
-        { nowMs: now }
+        { nowMs: now, ...stable }
       )
     ).toBe(PARTIAL_POLL_MS);
   });
@@ -74,7 +79,7 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: false,
         },
-        { nowMs: now }
+        { nowMs: now, ...stable }
       )
     ).toBe(4 * 60 * 1000);
 
@@ -87,7 +92,7 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: false,
         },
-        { nowMs: now }
+        { nowMs: now, ...stable }
       )
     ).toBe(MIN_FRESH_DELAY_MS);
   });
@@ -105,7 +110,7 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: false,
         },
-        { nowMs: afterMidnight }
+        { nowMs: afterMidnight, ...stable }
       )
     ).toBe(MIN_FRESH_DELAY_MS);
   });
@@ -122,7 +127,7 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: false,
         },
-        { nowMs: pastStale }
+        { nowMs: pastStale, ...stable }
       )
     ).toBe(MIN_FRESH_DELAY_MS);
 
@@ -136,7 +141,7 @@ describe("nextReloadDelay", () => {
           campuses: [],
           stale: false,
         },
-        { nowMs: pastStale + 1 }
+        { nowMs: pastStale + 1, ...stable }
       )
     ).toBe(MIN_FRESH_DELAY_MS);
   });
@@ -151,23 +156,28 @@ describe("nextReloadDelay", () => {
       stale: false,
     };
 
-    expect(nextReloadDelay(data, { nowMs: beforeMidnight })).toBe(1_999);
+    expect(nextReloadDelay(data, { nowMs: beforeMidnight, ...stable })).toBe(1_999);
     expect(
-      nextReloadDelay(data, { failureCount: 4, nowMs: beforeMidnight })
+      nextReloadDelay(data, { failureCount: 4, nowMs: beforeMidnight, ...stable })
     ).toBe(1_999);
+  });
+
+  it("applies bounded jitter when a random source is provided", () => {
+    expect(withJitter(10_000, () => 0)).toBe(9_000);
+    expect(withJitter(10_000, () => 1)).toBe(11_000);
   });
 });
 
 describe("failureRetryDelay", () => {
-  it("backs off at 5s, 10s, 20s, then caps at 30s", () => {
+  it("backs off at 10s, 20s, 30s, then caps at 60s", () => {
     expect([1, 2, 3, 4, 5].map(failureRetryDelay)).toEqual([
       ...FAILURE_RETRY_DELAYS_MS,
-      30_000,
+      60_000,
     ]);
   });
 
   it("schedules hard-empty and client refresh failures", () => {
-    expect(nextReloadDelay(null, { failureCount: 1 })).toBe(5_000);
+    expect(nextReloadDelay(null, { failureCount: 1, ...stable })).toBe(10_000);
     expect(
       nextReloadDelay(
         {
@@ -176,8 +186,12 @@ describe("failureRetryDelay", () => {
           campuses: [],
           error: { type: "client_refresh_failed", message: "offline" },
         },
-        { failureCount: 3, nowMs: Date.parse("2026-07-09T12:00:00+08:00") }
+        {
+          failureCount: 3,
+          nowMs: Date.parse("2026-07-09T12:00:00+08:00"),
+          ...stable,
+        }
       )
-    ).toBe(20_000);
+    ).toBe(30_000);
   });
 });

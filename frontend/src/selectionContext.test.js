@@ -78,7 +78,7 @@ describe("selection state", () => {
     });
   });
 
-  it("persists display preference actions to localStorage", () => {
+  it("updates display preferences without writing localStorage (pure reducer)", () => {
     const initialState = initSelectionState();
 
     const hiddenTimeState = selectionReducer(initialState, {
@@ -92,11 +92,11 @@ describe("selection state", () => {
 
     expect(hiddenTimeState.showClassTime).toBe(false);
     expect(allDayState.canSelectAllDay).toBe(true);
-    expect(localStorage.getItem("showClassTime")).toBe("false");
-    expect(localStorage.getItem("canSelectAllDay")).toBe("true");
+    expect(localStorage.getItem("showClassTime")).toBeNull();
+    expect(localStorage.getItem("canSelectAllDay")).toBeNull();
   });
 
-  it("survives localStorage get/set failures", () => {
+  it("survives localStorage get failures during init", () => {
     vi.stubGlobal("localStorage", {
       getItem() {
         throw new Error("blocked");
