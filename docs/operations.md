@@ -14,6 +14,20 @@ sudo journalctl -u bupt-ec -n 200      # last 200 lines
 
 On shutdown the server drains gracefully: it stops accepting connections, finishes in-flight requests, and waits (within a 10-second budget) for any background classroom refresh to complete.
 
+## Timeout budget (API cold path)
+
+Cold `/api/get_data` may wait for a shared JW classroom refresh. The three layers
+are intentionally ordered:
+
+| Layer | Budget | Role |
+| --- | --- | --- |
+| JW / classroom refresh context | 30s | shared upstream work bound |
+| Go HTTP `WriteTimeout` | 45s | allows the handler to finish after refresh |
+| Nginx `/api/` `proxy_read_timeout` | 60s | leaves transfer margin for the JSON response |
+
+SPA/`/` proxy read timeout stays at 30s. If clients see proxy 504s only on cold
+API loads, verify the installed site still has the 60s `/api/` value.
+
 ## Health endpoints
 
 Both endpoints bypass gzip and are safe for load-balancer probes.

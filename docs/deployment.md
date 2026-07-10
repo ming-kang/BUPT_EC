@@ -94,8 +94,8 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install
 - Installs the binary to `/opt/bupt-ec/bupt-ec`, owned by root so the running service cannot rewrite its own executable. Only `/opt/bupt-ec/run_log` is writable by the service user.
 - Writes the configuration to `/etc/bupt-ec/bupt-ec.env` (mode `0600`, owned by root).
 - Installs a hardened systemd unit (`NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, empty capability bounding set, and more) and enables it.
-- Writes an Nginx site with HTTP→HTTPS redirect, TLS 1.2/1.3, security headers, and rate limiting on `/api/` (30 requests/minute per IP with a burst of 20).
-- Validates Nginx, restarts and checks the service, reloads Nginx, and checks `/healthz` when `APP_ADDR` is loopback. A failure restores the snapshot (or removes newly created first-install files) and attempts to restart the previous service before the installer exits non-zero.
+- Writes an Nginx site with HTTP→HTTPS redirect, TLS 1.2/1.3, security headers, and rate limiting on `/api/` (30 requests/minute per IP with a burst of 20). `/api/` uses `proxy_read_timeout 60s` so cold classroom refreshes stay inside the backend budget stack (30s JW refresh, 45s Go `WriteTimeout`, 60s proxy).
+- Validates Nginx, restarts and checks the service, reloads Nginx, and checks `/healthz` when `APP_ADDR` is loopback. A failure restores the snapshot (or removes newly created first-install files), stops any newly started unit, reloads Nginx after site removal, and restores the previous service active/enabled state before the installer exits non-zero.
 
 The installer prints its success message only after all commit validations pass. After installation the site is served at `https://<your-domain>/`.
 

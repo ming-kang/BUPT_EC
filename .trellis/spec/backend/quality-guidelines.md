@@ -315,16 +315,22 @@ The seven stages are ordered and must not be interleaved:
 3. Extract the archive and render every candidate under a mode-`0700` staging
    directory; candidate env is root-owned mode `0600`.
 4. Snapshot binary, env, systemd unit + enabled link, and Nginx site + enabled
-   link. The manifest records both existing and absent targets under a
-   mode-`0700` backup directory; env and manifest are mode `0600`.
+   link, plus a runtime state file recording prior service present/enabled/active
+   and Nginx site/enablement. The manifest records both existing and absent
+   targets under a mode-`0700` backup directory; env, manifest, and runtime
+   state are mode `0600`.
 5. Copy each candidate to `<target>.new.$$` in the target directory, set
    owner/mode, then use `mv -T` for same-filesystem atomic replacement.
 6. Run daemon reload, unit enablement, `nginx -t`, service restart,
    `is-active`, Nginx reload, and loopback `/healthz` retry validation.
-7. On success remove the backup and only then print success. On failure restore
-   originally present targets, remove originally absent targets, reload the old
-   configuration, and attempt to restart the old service. Preserve root-only
-   recovery files when rollback itself is incomplete.
+7. On success remove the backup and only then print success. On failure: stop any
+   currently active unit, restore originally present targets / remove originally
+   absent targets, `daemon-reload`, reconcile prior enabled/disabled and
+   active/inactive service state (do not start a previously inactive unit), run
+   `nginx -t` and reload Nginx even for first-install site removal. Preserve
+   root-only recovery files when rollback itself is incomplete.
+8. Generated Nginx `/api/` `proxy_read_timeout` must be 60s (SPA `/` may stay
+   30s) so it exceeds the 30s classroom refresh and 45s Go write budgets.
 
 Production paths are fixed constants. Environment variables must not redirect
 them. Tests opt into a temporary root only by sourcing the script and calling
@@ -339,8 +345,9 @@ assets remain self-contained; no runtime helper beside `install.sh` is allowed.
 | archive missing `bupt-ec` or candidate render failure | non-zero; snapshot/commit not entered |
 | snapshot copy/manifest failure | non-zero; transaction inactive; installed targets unchanged |
 | atomic write, daemon reload, enable, or `nginx -t` failure | restore every recorded target/existence state |
-| restart, `is-active`, reload, or loopback health failure | restore files and attempt old-service restart |
-| first-install commit failure | remove newly created transaction targets |
+| restart, `is-active`, reload, or loopback health failure | restore files; stop current unit; restore prior active/enabled state |
+| first-install commit failure | remove newly created transaction targets; stop new unit; reload Nginx |
+| previously inactive/disabled upgrade failure | restore files; leave service inactive/disabled |
 | rollback command failure | non-zero; preserve and print root-only recovery directory |
 | all validations pass | remove backup; clear transaction state; print success |
 | non-loopback `APP_ADDR` | explicitly log that direct health probing is skipped |

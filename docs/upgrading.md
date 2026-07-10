@@ -44,7 +44,7 @@ identity. See [deployment.md](deployment.md#offline-or-restricted-networks-expli
 
 After committing the candidates, the installer runs `systemctl daemon-reload`, enables the unit, validates Nginx, restarts and checks `bupt-ec`, reloads Nginx, and probes loopback `/healthz`. It prints success only after these checks pass.
 
-If any commit or validation step fails, the installer exits non-zero and restores the previous binary, env, systemd unit/enablement, and Nginx site/enablement. It then attempts to restart the previous service and reload the previous Nginx configuration. A failed first install removes the new target files instead of leaving a half-installed service.
+If any commit or validation step fails, the installer exits non-zero and restores the previous binary, env, systemd unit/enablement, and Nginx site/enablement. It snapshots prior service active/enabled state, stops any unit that may have been started during the failed commit, reloads Nginx after restoring or removing sites, and only starts the service again when it was active before the upgrade. A failed first install removes the new target files, stops a newly started unit, and reloads Nginx so no half-installed service or site remains.
 
 Candidate and backup directories are mode `0700`; env candidates, backups, and installed env files are mode `0600`. If automatic rollback itself is incomplete, the error output names a root-only recovery directory containing the snapshot. Preserve that directory until the service is repaired, and do not copy or expose its env file to non-root users.
 

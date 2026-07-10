@@ -30,6 +30,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Startup now resolves configuration once, honors `.env` values for `GIN_MODE`
   and `LOG_CALLER`, and fails safely on malformed/unreadable dotenv files or
   invalid listen addresses; process environment values still take precedence.
+- Installer late first-install failures after service start or Nginx reload now
+  stop the new unit and reload Nginx after removing targets, and upgrade
+  rollback restores prior active/enabled state instead of always restarting.
+- Generated Nginx `/api/` `proxy_read_timeout` is 60s so cold classroom refreshes
+  within the 30s refresh / 45s Go write budgets are not cut off by the proxy.
 - Installer installs and upgrades are now transactional: downloads, checksums,
   extraction, and config rendering finish before existing files change; failed
   Nginx/service/health validation restores the previous installation (or

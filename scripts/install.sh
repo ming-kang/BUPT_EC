@@ -503,7 +503,9 @@ server {
         proxy_http_version 1.1;
         proxy_connect_timeout 5s;
         proxy_send_timeout 15s;
-        proxy_read_timeout 30s;
+        # Exceeds ClassroomRefreshLimit (30s) and Go WriteTimeout (45s) so a cold
+        # refresh near the backend budget can still return JSON through the proxy.
+        proxy_read_timeout 60s;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -562,9 +564,59 @@ transaction_targets() {
     nginx_enabled "${NGINX_ENABLED}"
 }
 
+write_runtime_snapshot() {
+  local destination="$1"
+  local service_present=0
+  local service_enabled=0
+  local service_active=0
+  local nginx_site_present=0
+  local nginx_enabled=0
+
+  if [[ -e "${SERVICE_FILE}" || -L "${SERVICE_FILE}" ]]; then
+    service_present=1
+  fi
+  if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    service_enabled=1
+  fi
+  if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    service_active=1
+  fi
+  if [[ -e "${NGINX_SITE}" || -L "${NGINX_SITE}" ]]; then
+    nginx_site_present=1
+  fi
+  if [[ -e "${NGINX_ENABLED}" || -L "${NGINX_ENABLED}" ]]; then
+    nginx_enabled=1
+  fi
+
+  (umask 077; cat > "${destination}" <<EOF
+service_present=${service_present}
+service_enabled=${service_enabled}
+service_active=${service_active}
+nginx_site_present=${nginx_site_present}
+nginx_enabled=${nginx_enabled}
+EOF
+  ) || return
+  chmod 0600 "${destination}" || return
+}
+
+read_runtime_snapshot_value() {
+  local snapshot="$1"
+  local key="$2"
+  local line value
+
+  line="$(grep -E "^${key}=" "${snapshot}" 2>/dev/null || true)"
+  value="${line#*=}"
+  if [[ "${value}" == "1" ]]; then
+    printf '1'
+  else
+    printf '0'
+  fi
+}
+
 snapshot_installation() {
   local backup_dir="$1"
   local manifest="${backup_dir}/manifest"
+  local runtime_state="${backup_dir}/runtime_state"
   local role target
 
   rm -rf "${backup_dir}" || return
@@ -587,6 +639,7 @@ snapshot_installation() {
   if [[ -f "${backup_dir}/env" ]]; then
     chmod 0600 "${backup_dir}/env" || return
   fi
+  write_runtime_snapshot "${runtime_state}" || return
 }
 
 atomic_install_file() {
@@ -635,22 +688,34 @@ rollback_installation() {
   local backup_dir="$1"
   local role existed target
   local failed=0
-  local had_service=false
-  local had_nginx=false
+  local runtime_state="${backup_dir}/runtime_state"
+  local service_present=0
+  local service_enabled=0
+  local service_active=0
 
   if [[ ! -r "${backup_dir}/manifest" ]]; then
     echo "Rollback manifest is missing or unreadable." >&2
     return 1
   fi
 
+  if [[ -r "${runtime_state}" ]]; then
+    service_present="$(read_runtime_snapshot_value "${runtime_state}" service_present)"
+    service_enabled="$(read_runtime_snapshot_value "${runtime_state}" service_enabled)"
+    service_active="$(read_runtime_snapshot_value "${runtime_state}" service_active)"
+  fi
+
   echo "Installation failed; rolling back previous files..." >&2
+
+  # Stop any running unit before replacing/removing files so first-install late
+  # failures cannot leave a process without a unit file.
+  if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    if ! systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1; then
+      echo "Rollback failed while stopping ${SERVICE_NAME}." >&2
+      failed=1
+    fi
+  fi
+
   while IFS=$'\t' read -r role existed target; do
-    if [[ "${existed}" == "1" && "${role}" == "service" ]]; then
-      had_service=true
-    fi
-    if [[ "${existed}" == "1" && ( "${role}" == "nginx_site" || "${role}" == "nginx_enabled" ) ]]; then
-      had_nginx=true
-    fi
     if ! rm -f -- "${target}.new.$$" "${target}.rollback.$$"; then
       echo "Rollback failed while cleaning temporary ${role} files." >&2
       failed=1
@@ -666,13 +731,49 @@ rollback_installation() {
     fi
   done < "${backup_dir}/manifest"
 
-  systemctl daemon-reload >/dev/null 2>&1 || failed=1
-  nginx -t >/dev/null 2>&1 || failed=1
-  if [[ "${had_service}" == "true" ]]; then
-    systemctl restart "${SERVICE_NAME}" >/dev/null 2>&1 || failed=1
+  if ! systemctl daemon-reload >/dev/null 2>&1; then
+    echo "Rollback failed during systemctl daemon-reload." >&2
+    failed=1
   fi
-  if [[ "${had_nginx}" == "true" ]]; then
-    systemctl reload nginx >/dev/null 2>&1 || failed=1
+
+  if [[ "${service_present}" == "1" ]]; then
+    if [[ "${service_enabled}" == "1" ]]; then
+      if ! systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "Rollback failed while re-enabling ${SERVICE_NAME}." >&2
+        failed=1
+      fi
+    else
+      if ! systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "Rollback failed while disabling ${SERVICE_NAME}." >&2
+        failed=1
+      fi
+    fi
+    if [[ "${service_active}" == "1" ]]; then
+      if ! systemctl start "${SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "Rollback failed while starting previous ${SERVICE_NAME}." >&2
+        failed=1
+      fi
+    fi
+  else
+    # First install: ensure enablement is gone and the unit is not left active.
+    rm -f -- "${SYSTEMD_ENABLED_LINK}" >/dev/null 2>&1 || failed=1
+    if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+      if ! systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1; then
+        echo "Rollback failed while stopping new ${SERVICE_NAME}." >&2
+        failed=1
+      fi
+    fi
+  fi
+
+  # Always revalidate and reload Nginx so a newly loaded site is dropped even
+  # when no previous site existed (first-install late failure after reload).
+  if ! nginx -t >/dev/null 2>&1; then
+    echo "Rollback failed during nginx configuration test." >&2
+    failed=1
+  fi
+  if ! systemctl reload nginx >/dev/null 2>&1; then
+    echo "Rollback failed while reloading nginx." >&2
+    failed=1
   fi
 
   if (( failed == 0 )); then
