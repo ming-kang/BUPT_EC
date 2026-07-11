@@ -56,7 +56,11 @@ func Init() (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create classroom service: %w", err)
 	}
-	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{})
+	// DisableCompression: router gzipMiddleware is the sole Accept-Encoding owner.
+	// Leaving promhttp compression on double-gzips responses and breaks scrapers.
+	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{
+		DisableCompression: true,
+	})
 	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials, metricsHandler)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP server: %w", err)

@@ -297,6 +297,15 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 - `TokenManager` never re-reads the process environment. Changing credentials
   requires constructing a new application/process.
 - Never log token values, credentials, request headers, or upstream bodies.
+- `TokenManager` receives the same optional `RuntimeMetrics` as
+  `ClassroomService`. Shared network logins call `ObserveLogin` exactly once
+  inside `loginAndStore` (success or failed). Override install, cache hits,
+  singleflight waiters, and delayed replacement reuse must not emit samples.
+- Login metric `source` is `override` when recovery clears a rejected
+  `tokenSourceOverride` token; otherwise `login`. Capture provenance before
+  clearing the rejected token. Labels stay low-cardinality enums only.
+- Login duration uses the injected `Clock`; clamp negative durations to zero.
+  Nil metrics remain safe and must not change login outcome.
 
 ### 4. Validation & Error Matrix
 
@@ -304,8 +313,10 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 | --- | --- |
 | simultaneous failures for same token | one login, all waiters receive replacement |
 | old failure arrives after replacement installed | reuse replacement, no login |
-| rejected source is override | set `overrideInvalidated=true` |
-| rejected source is login | preserve existing override-invalidated state |
+| rejected source is override | set `overrideInvalidated=true`; login metric `source=override` |
+| rejected source is login | preserve existing override-invalidated state; metric `source=login` |
+| concurrent waiters share one login | one `ObserveLogin` sample for the shared operation |
+| override install / cache hit / replacement reuse | no login metric sample |
 | one waiter cancels | that waiter gets context error; shared operation continues |
 | shared login/API URL exceeds timeout | bounded operation returns timeout error |
 | retry query fails | return joined original-auth and retry errors; do not loop |
@@ -326,6 +337,9 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 - Override-source and login-source tests assert `overrideInvalidated` behavior.
 - Token and API URL cancellation tests assert canceled waiter + surviving waiter
   outcomes and one underlying operation.
+- Login metric tests cover first login, override/login recovery sources,
+  concurrent singleflight observation count, delayed reuse without observation,
+  API URL failure as failed outcome, and nil-metrics safety.
 - Run `go test -race ./service`; integration tests must still skip without
   credentials.
 

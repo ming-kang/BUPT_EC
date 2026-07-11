@@ -9,11 +9,17 @@
 | `GET /api/get_data` | `handler.go::GetData` | Returns today's classroom data or a safe service error. |
 | `GET /healthz` | `handler.go::Healthz` | Liveness probe: `200 {"status":"ok"}`. |
 | `GET /readyz` | `handler.go::Readyz` | Readiness probe with credential/cache/runtime status; 503 when not ready. |
+| `GET /metrics` | `handler.go::Metrics` | Loopback Prometheus exposition from an isolated registry; nil handler → 404. |
 | non-API paths | `router.go::NoRoute` | Serve embedded `frontend/dist/index.html` for SPA routing. |
 | unknown `/api/*` paths | `router.go::NoRoute` | JSON 404: `{"code":404,"msg":"not found"}`. |
 
 `router.go` also applies gzip to normal responses when the client accepts gzip,
-but intentionally skips `/healthz` and `/readyz` for simple probes.
+but intentionally skips `/healthz` and `/readyz` for simple probes. `/metrics`
+uses the same outer gzip middleware; production constructs
+`promhttp.HandlerFor` with `DisableCompression: true` so the body is compressed
+at most once. Scrapers with `Accept-Encoding: gzip` must get valid Prometheus
+text after a single decompress. Public Nginx keeps `location = /metrics`
+`return 404` and does not proxy the path.
 
 ## `/api/get_data` Response Shape
 

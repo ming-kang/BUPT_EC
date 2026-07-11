@@ -107,6 +107,7 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 		jwClient:       client,
 		overrideToken:  options.TokenOverride,
 		clock:          clock,
+		metrics:        options.Metrics,
 		onLoginSuccess: s.recordLoginSuccess,
 		onLoginFailure: s.recordLoginFailure,
 	}

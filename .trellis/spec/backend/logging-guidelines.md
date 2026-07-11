@@ -91,6 +91,15 @@ private data:
 For new long-running or external operations, log start/end or failure at the
 layer that owns the operation. Include the request context when one exists.
 
+## Metrics Labels (Observability Seam)
+
+Process metrics (`service.RuntimeMetrics` / Prometheus) are separate from
+`slog` but share the same secrecy rules. `ObserveLogin` and related methods must
+use low-cardinality enums only (`outcome`, `source`, campus id, error kind).
+Never attach tokens, usernames, URLs, raw upstream text, or `log_id` as metric
+labels. Metric emission failures must not change business outcomes; nil/Noop
+metrics stay safe.
+
 ## What Not to Log
 
 Never log:

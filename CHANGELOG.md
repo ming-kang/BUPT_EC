@@ -56,6 +56,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Loopback `GET /metrics` no longer double-gzips when scrapers send
+  `Accept-Encoding: gzip` (Prometheus handler compression disabled; router gzip
+  remains the sole encoder).
+- JW login metrics (`bupt_ec_login_total` / `bupt_ec_login_duration_seconds`) are
+  now emitted at the shared `TokenManager` login boundary with low-cardinality
+  `outcome`/`source` labels (override recovery vs normal login; one sample per
+  singleflight operation).
 - Partial campus success no longer auto-selects an empty failed campus
   placeholder (for example cold 沙河 failure with usable 西土城 data).
 - Settings copy labels `updated_at` as the current data update time, not the

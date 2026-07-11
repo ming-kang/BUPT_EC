@@ -25,12 +25,26 @@ curl -s http://127.0.0.1:8080/metrics | head
 ```
 
 Useful series include `bupt_ec_refresh_total`, `bupt_ec_refresh_duration_seconds`,
-`bupt_ec_cache_serves_total`, `bupt_ec_login_total`, and
-`bupt_ec_refresh_suppressed_total` (adaptive backoff). Labels are low-cardinality
-enums only (outcome, campus id, error kind).
+`bupt_ec_cache_serves_total`, `bupt_ec_login_total`,
+`bupt_ec_login_duration_seconds`, and `bupt_ec_refresh_suppressed_total`
+(adaptive backoff). Labels are low-cardinality enums only (`outcome`, `source`,
+campus id, error kind). Never expect tokens, usernames, URLs, or raw errors as
+labels.
+
+Login series (`bupt_ec_login_total` / `bupt_ec_login_duration_seconds`) count
+shared JW network login operations only (not override install, cache hits, or
+singleflight waiters). `source` is `override` when recovery was caused by a
+rejected startup `JW_TOKEN`, otherwise `login`. `outcome` is `success` or
+`failed`.
+
+Response encoding: the Gin gzip middleware is the only compressor for
+`/metrics`. Prometheus client compression is disabled so scrapers with
+`Accept-Encoding: gzip` decompress once into Prometheus text format. Health and
+readiness stay uncompressed.
 
 Suggested alerts: sustained `refresh` outcome `failed`, rising
-`refresh_suppressed_total`, login failures, and refresh durations near 30s.
+`refresh_suppressed_total`, login failures (`bupt_ec_login_total{outcome="failed"}`),
+and refresh durations near 30s.
 
 ## Timeout budget (API cold path)
 

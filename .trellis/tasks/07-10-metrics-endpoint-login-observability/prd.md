@@ -63,14 +63,14 @@
 
 ## Acceptance Criteria
 
-- [ ] Accept-Encoding: gzip 的 /metrics 响应解压一次即可解析，且不存在二次 gzip magic。
-- [ ] identity 与 gzip;q=0 返回未压缩且可解析的 Prometheus text。
-- [ ] bupt_ec_login_total 和 bupt_ec_login_duration_seconds 在真实登录边界产生 series。
-- [ ] override 触发的 auth recovery 使用 source=override，其他网络登录使用 source=login。
-- [ ] 并发 waiter 只对应一次 login counter/duration observation。
-- [ ] login failure 不泄露错误、token、用户名、URL 或 log_id label。
-- [ ] /metrics 后端可读、public Nginx 仍为 404。
-- [ ] metrics 定向测试、go test -race ./...、go vet ./...、Go build 和 git diff --check 通过。
+- [x] Accept-Encoding: gzip 的 /metrics 响应解压一次即可解析，且不存在二次 gzip magic。
+- [x] identity 与 gzip;q=0 返回未压缩且可解析的 Prometheus text。
+- [x] bupt_ec_login_total 和 bupt_ec_login_duration_seconds 在真实登录边界产生 series。
+- [x] override 触发的 auth recovery 使用 source=override，其他网络登录使用 source=login。
+- [x] 并发 waiter 只对应一次 login counter/duration observation。
+- [x] login failure 不泄露错误、token、用户名、URL 或 log_id label。
+- [x] /metrics 后端可读、public Nginx 仍为 404。
+- [x] metrics 定向测试、go test -race ./...、go vet ./...、Go build 和 git diff --check 通过。
 
 ## Out of Scope
 

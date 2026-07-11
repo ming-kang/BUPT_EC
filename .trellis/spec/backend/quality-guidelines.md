@@ -43,7 +43,9 @@ Add or update focused tests when changing behavior, especially for:
 - cache freshness, stale data, and cross-day rejection;
 - refresh coordination and concurrency sharing;
 - room parsing/building normalization;
-- HTTP envelopes, health/readiness behavior, gzip, and SPA fallback.
+- HTTP envelopes, health/readiness behavior, gzip, and SPA fallback;
+- Prometheus `/metrics` encoding and low-cardinality collector labels;
+- TokenManager login observations (`ObserveLogin` source/outcome/singleflight).
 
 Local test patterns:
 
@@ -61,6 +63,13 @@ Local test patterns:
 - Handler tests should inject deterministic fakes through `NewHTTPServer` and
   use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
   middleware such as `/api` `log_id` correlation matters.
+- Metrics endpoint tests must use a real `promhttp.HandlerFor` over
+  `NewPrometheusMetrics()`'s isolated registry (not a fixed fake body), with
+  `DisableCompression: true` matching production, and assert identity/gzip
+  bodies parse as Prometheus text after at most one decompress.
+- Login metric tests use a recording `RuntimeMetrics` (or Gather on an isolated
+  registry) and assert one observation per shared network login, correct
+  `source` provenance, non-negative duration, and no secret labels.
 - Frontend `*.lifecycle.test.jsx` files mount real hooks under jsdom via
   `@testing-library/react`; pure helper tests remain on the default node env.
 
