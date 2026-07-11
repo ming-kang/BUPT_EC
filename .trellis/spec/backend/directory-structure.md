@@ -66,12 +66,12 @@ type LookupEnv func(string) (string, bool)
 func config.Load(dotenvPath string, lookup config.LookupEnv) (config.RuntimeConfig, error)
 func (c config.RuntimeConfig) HasJWCredentials() bool
 
-func cache.New() *gocache.Cache
+func cache.New() *cache.TodayClassroomsStore
 func utils.NewHTTPClient() *http.Client
 func service.NewJWClient(username, password string, client utils.HTTPDoer) (service.JWClient, error)
 func service.NewClassroomService(
     options service.ClassroomServiceOptions,
-    store service.CacheStore,
+    store service.TodayClassroomCache,
     client service.JWClient,
 ) (*service.ClassroomService, error)
 ```
@@ -164,9 +164,9 @@ classroomService, err := service.NewClassroomService(service.ClassroomServiceOpt
 
 `service/` is split by runtime responsibility:
 
-- `classroom_service.go` defines `ClassroomService`, `CacheStore`, constructor
-  options, and service construction. All mutable classroom-query runtime state
-  belongs on this struct.
+- `classroom_service.go` defines `ClassroomService`, `TodayClassroomCache`,
+  optional `Clock` / `BackoffRandom`, constructor options, and service
+  construction. All mutable classroom-query runtime state belongs on this struct.
 - `realtime_data.go` exposes the public classroom query methods and owns the
   same-day cache read/write flow.
 - `refresh_coordinator.go` owns single-flight refresh state, backoff, and

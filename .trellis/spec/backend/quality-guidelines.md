@@ -20,10 +20,10 @@ Primary references:
 
 - Format all Go code with `gofmt`. CI expects `gofmt -l .` to print nothing.
 - Keep service dependencies injectable. `NewClassroomService` accepts explicit
-  `ClassroomServiceOptions`, a `CacheStore`, and a `JWClient`; tests create
-  isolated services with `newTestService` / `newTestServiceWithOptions`,
+  `ClassroomServiceOptions`, a `TodayClassroomCache`, and a `JWClient`; tests
+  create isolated services with `newTestService` / `newTestServiceWithOptions`,
   injecting a thread-safe fake `Clock` and fixed `BackoffRandom` when asserting
-  time or backoff deadlines, plus a fresh cache instance.
+  time or backoff deadlines, plus a fresh `cache.TodayClassroomsStore`.
 - Keep runtime environment access in `config.Load` plus the `main.go`
   composition root. Tests pass map-backed lookups and constructor values rather
   than mutating config/cache globals.
@@ -102,9 +102,11 @@ pnpm --dir "frontend" audit:prod
 pnpm --dir "frontend" audit:dev
 ```
 
-CI and release quality gates also run:
+CI and release quality gates also run (via `.github/workflows/quality.yml`):
 
 ```bash
+go mod tidy -diff
+go mod verify
 go test -race ./...
 go build -o bupt-ec -v ./
 govulncheck ./...

@@ -8,10 +8,10 @@ and stores one process-local cache entry for the current day.
 
 Reference files:
 
-- `service/classroom_service.go`: `ClassroomService` and `CacheStore`.
+- `service/classroom_service.go`: `ClassroomService` and `TodayClassroomCache`.
 - `service/realtime_data.go`: `GetTodayClassrooms`, `QueryAll`, cache TTLs, and
   `TodayCacheKey`.
-- `cache/cache.go`: explicit `cache.New()` constructor backed by
+- `cache/cache.go`: typed `TodayClassroomsStore` via `cache.New()`, backed by
   `github.com/patrickmn/go-cache`.
 - `service/runtime_status.go`: readiness and runtime diagnostics.
 
@@ -24,7 +24,7 @@ data, stop and ask for a design decision instead of quietly adding persistence.
 All mutable runtime state for classroom queries is on `ClassroomService`:
 
 - token and API URL state through `TokenManager`;
-- the `CacheStore` implementation;
+- the `TodayClassroomCache` implementation (production: `*cache.TodayClassroomsStore`);
 - configured campuses copied from `service.ClassroomServiceOptions`;
 - the injected `JWClient`;
 - refresh coordination fields guarded by `refreshMu`;

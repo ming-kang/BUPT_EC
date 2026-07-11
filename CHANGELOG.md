@@ -8,11 +8,6 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
-### Dependencies
-
-- Frontend test toolchain adds `@testing-library/react`, `@testing-library/dom`,
-  and `jsdom` for hook lifecycle tests (dev-only; production bundle unchanged).
-
 ### Security
 
 - Upstream JW error text is sanitized before internal logs/errors: Unicode
@@ -45,9 +40,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 ### Changed
 
 - PR and main quality gates share one reusable workflow
-  (`.github/workflows/quality.yml`); stable tag releases use changelog-only
-  notes (`body_path`) without GitHub-generated appendices. Nightly may still
-  use generated notes.
+  (`.github/workflows/quality.yml`) that also enforces `go mod tidy -diff` and
+  `go mod verify`; stable tag releases use changelog-only notes (`body_path`)
+  without GitHub-generated appendices. Nightly may still use generated notes.
 - Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap) with
   bounded symmetric jitter (±10% of the base step, absolute cap ±5s); full
   success resets the ladder, partial success keeps the fixed 30s soft backoff
@@ -59,6 +54,20 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Dark-mode pre-hydration bootstrap is a CSP-safe module script (no inline JS).
 - Selection preference persistence moved out of the reducer into
   `SelectionProvider` effects so the reducer stays pure.
+- Docs (README, deployment/upgrading/operations/development, AGENTS) now describe
+  partial-campus soft-stale retry, day-stamped cache metadata, frontend
+  keep-last-good reload, and recommend stable tags for production installs
+  (the installer keeps `nightly` only as its first-install fallback).
+- Tidied repository structure by folding backend startup initialization into
+  `main.go` and refreshing ignore rules for local-only project artifacts.
+- `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
+  “still within the same calendar day”).
+- `/readyz` now separates cache age from completeness with `cache_partial`,
+  `partial_campuses`, and a sanitized `last_refresh_warning`.
+- Settings label for ended periods: “允许选择已结束节次”.
+- Background warmup runs immediately, retries partial cache at a low frequency,
+  and schedules complete-cache refreshes after each Shanghai midnight with a
+  small jitter. Graceful shutdown stops the scheduler before draining workers.
 
 ### Fixed
 
@@ -113,11 +122,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   of retaining yesterday's classroom filters and table.
 - Background auto-refresh no longer full-page spins or replaces a successful
   same-day classroom snapshot with an empty error envelope. Hard-empty and
-  repeated client failures retry after 5s/10s/20s/30s, while a successful fetch
-  resets the backoff.
+  repeated client failures retry after 10s/20s/30s/60s (cap), while a successful
+  fetch resets the backoff.
 - Partial-campus cache hits no longer skip JW retries for the full 5-minute
-  fresh TTL; soft-stale revalidation runs immediately (still single-flight,
-  with the same 30s backoff after total or partial refresh outcomes).
+  fresh TTL; soft-stale revalidation runs immediately (still single-flight;
+  partial outcomes keep the fixed 30s soft backoff, total failures use the
+  adaptive ladder with bounded jitter).
 - Classroom cache `Date`/`ExpiresAt`/`StaleUntil` are stamped at refresh
   completion (not start), so a JW refresh that straddles Asia/Shanghai midnight
   is labeled for the completion day and never stored with a non-positive
@@ -136,8 +146,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - A total refresh failure after a partial cached result now replaces the older
   partial warning, so users and operators see the latest upstream outage state.
 - Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
-- Stale classroom payloads can poll after 5 seconds for an in-flight refresh;
-  partial-campus payloads follow the backend's 30-second refresh backoff.
+- Stale classroom payloads poll no faster than 15 seconds for an in-flight
+  refresh; partial-campus payloads follow the backend's 30-second soft backoff.
 - Startup/midnight warmup is now cancellable and retries a missing cache with a
   bounded 30s/1m/2m/5m schedule instead of waiting until the following day
   after a transient failure or midnight backoff.
@@ -146,26 +156,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Settings modal secondary text follows the theme (readable in dark mode).
 - Settings gear remains available when campus list is empty (error/loading).
 - `localStorage` failures no longer crash preference init/updates.
-
-### Changed
-
-- Docs (README, deployment/upgrading/operations/development, AGENTS) now describe
-  partial-campus soft-stale retry, day-stamped cache metadata, frontend
-  keep-last-good reload, and recommend stable tags for production installs
-  (the installer keeps `nightly` only as its first-install fallback).
-- Tidied repository structure by folding backend startup initialization into
-  `main.go` and refreshing ignore rules for local-only project artifacts.
-- `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
-  “still within the same calendar day”).
-- `/readyz` now separates cache age from completeness with `cache_partial`,
-  `partial_campuses`, and a sanitized `last_refresh_warning`.
-- Settings label for ended periods: “允许选择已结束节次”.
-- Background warmup runs immediately, retries partial cache at a low frequency,
-  and schedules complete-cache refreshes after each Shanghai midnight with a
-  small jitter. Graceful shutdown stops the scheduler before draining workers.
+- Go module metadata marks `prometheus/client_golang` (and directly imported
+  prometheus packages) as direct dependencies; `go.sum` matches `go mod tidy`.
 
 ### Dependencies
 
+- Frontend test toolchain adds `@testing-library/react`, `@testing-library/dom`,
+  and `jsdom` for hook lifecycle tests (dev-only; production bundle unchanged).
 - Frontend tooling now uses Vite 6.4.3 and ESLint 9.39.4 flat config; patched
   Babel runtime and ESLint transitive dependency versions clear the previous
   production and high-severity development audit findings.

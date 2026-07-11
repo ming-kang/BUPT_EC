@@ -68,7 +68,7 @@ Two workflows, no overlap:
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build`, `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 

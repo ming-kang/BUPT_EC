@@ -72,18 +72,18 @@
 
 ## Acceptance Criteria
 
-- [ ] 六个子任务全部拥有完整 prd.md、design.md 和 implement.md。
-- [ ] /metrics 对 identity/gzip 请求均能被标准客户端正确解析，且 public Nginx 不暴露。
-- [ ] login success/failure 与 auth recovery 指标按共享操作准确计数。
-- [ ] total refresh backoff 使用有界、可注入 jitter，partial/full 语义不变。
-- [ ] 前端任何自动 reload delay 均不超过 stale_until，随机源每次调度只调用一次。
-- [ ] 镜像 URL 凭据或敏感参数不会进入安装器输出，非 HTTP(S) scheme 始终拒绝。
-- [ ] 上游 Unicode 控制、分隔和空白字符不能形成多行或绕过敏感字段脱敏。
-- [ ] go mod tidy -diff 通过，CI 能阻止再次漂移。
-- [ ] AGENTS、docs、spec 和 changelog 不再保留 CacheStore、固定 total 30s 或旧前端
+- [x] 六个子任务全部拥有完整 prd.md、design.md 和 implement.md。
+- [x] /metrics 对 identity/gzip 请求均能被标准客户端正确解析，且 public Nginx 不暴露。
+- [x] login success/failure 与 auth recovery 指标按共享操作准确计数。
+- [x] total refresh backoff 使用有界、可注入 jitter，partial/full 语义不变。
+- [x] 前端任何自动 reload delay 均不超过 stale_until，随机源每次调度只调用一次。
+- [x] 镜像 URL 凭据或敏感参数不会进入安装器输出，非 HTTP(S) scheme 始终拒绝。
+- [x] 上游 Unicode 控制、分隔和空白字符不能形成多行或绕过敏感字段脱敏。
+- [x] go mod tidy -diff 通过，CI 能阻止再次漂移。
+- [x] AGENTS、docs、spec 和 changelog 不再保留 CacheStore、固定 total 30s 或旧前端
       轮询间隔等冲突描述。
-- [ ] 每个新子任务均有真实验证记录和 commit 关联，历史归档未被伪造性改写。
-- [ ] Go race/build/vet/govulncheck、frontend lint/test/build/audits、installer tests、
+- [x] 每个新子任务均有真实验证记录和 commit 关联，历史归档未被伪造性改写。
+- [x] Go race/build/vet/govulncheck、frontend lint/test/build/audits、installer tests、
       ShellCheck、actionlint 和 git diff --check 全部通过。
 
 ## Out of Scope

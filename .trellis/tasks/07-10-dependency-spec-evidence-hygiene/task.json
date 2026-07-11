@@ -3,7 +3,7 @@
   "name": "dependency-spec-evidence-hygiene",
   "title": "依赖、规范与验收证据同步",
   "description": "收口 Go module、CI tidy gate、AGENTS/docs/spec/changelog 和新任务真实验收证据。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

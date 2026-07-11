@@ -55,9 +55,14 @@ go test ./...              # unit tests always run; integration tests skip
 go test -race ./...        # what CI runs
 go vet ./...
 gofmt -l .                 # must print nothing
+GOTOOLCHAIN=go1.25.12 go mod tidy -diff   # go.mod/go.sum match the import graph
+go mod verify
 cd frontend && pnpm lint && pnpm test && pnpm build
 cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
+
+The reusable quality gate (`.github/workflows/quality.yml`) also runs `go mod tidy -diff`
+and `go mod verify` after Go setup so PR/main/tag pipelines reject untidy module metadata.
 
 Integration tests in `service/realtime_data_test.go` hit the real JW system. `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; `TestQueryOne` and `TestQueryAll` accept that pair or `JW_TOKEN`. Without the required credentials they skip with a clear message.
 
@@ -72,7 +77,7 @@ Backend protocol tests cover AES password encryption known vectors (`service/cry
 ```text
 main.go, router.go, handler.go            Gin entry points; main.go wires ClassroomService into HTTPServer
 service/
-  classroom_service.go   ClassroomService struct, CacheStore interface, constructor
+  classroom_service.go   ClassroomService struct, TodayClassroomCache, Clock, constructor
   realtime_data.go       public API: GetTodayClassrooms, QueryOne/All, refresh data flow
   jw_client.go           JWClient interface + defaultJWClient (HTTP protocol layer)
   token_manager.go       TokenManager: token/API-URL caching with singleflight

@@ -37,6 +37,6 @@
     "docs/",
     ".trellis/spec/"
   ],
-  "notes": "",
+  "notes": "6/6 children done 2026-07-11. Behavior commits: efd0d31 metrics; ea76336 backoff jitter; c584b97 frontend reload; 30cbbad installer URL; 66987d4 unicode; 97e9862 hygiene. Old 07-10 archives outside this parent not retroactively forged.",
   "meta": {}
 }

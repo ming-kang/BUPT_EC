@@ -52,6 +52,17 @@ jobs:
         with:
           go-version: "1.25.12"
 
+      - name: Check Go module tidiness
+        run: |
+          if ! go mod tidy -diff; then
+            echo "::error::go.mod/go.sum are out of sync with the import graph."
+            echo "Run: GOTOOLCHAIN=go1.25.12 go mod tidy"
+            exit 1
+          fi
+
+      - name: Verify Go modules
+        run: go mod verify
+
       - name: Check Go formatting
         run: |
           unformatted="$(gofmt -l .)"

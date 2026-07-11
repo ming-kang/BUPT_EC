@@ -84,16 +84,16 @@
 
 ## Acceptance Criteria
 
-- [ ] Go 1.25.12 的 go mod tidy -diff 无输出且 go mod verify 通过。
-- [ ] prometheus/client_golang 在 direct require block，go.sum 与 tidy 完全一致。
-- [ ] PR/main/tag 共用的 quality workflow 会阻止 untidy module metadata。
-- [ ] actionlint 证明 reusable workflow caller/callee、permissions 和 needs 有效。
-- [ ] 搜索 CacheStore、旧 total fixed 30s 和旧前端轮询值不再命中当前合同描述。
-- [ ] metrics、frontend、installer、Unicode 和 Clock 行为在 AGENTS/docs/spec 中一致。
-- [ ] CHANGELOG Unreleased 无重复冲突，extract-changelog 对其成功。
-- [ ] 旧归档未被伪造修改，新任务有增量 checklist、验证摘要和 commit 证据。
-- [ ] .agents/、.codex/、模板哈希、dist、日志和临时产物未被跟踪。
-- [ ] 完整 Go/frontend/installer/workflow/security 门禁通过。
+- [x] Go 1.25.12 的 go mod tidy -diff 无输出且 go mod verify 通过。
+- [x] prometheus/client_golang 在 direct require block，go.sum 与 tidy 完全一致。
+- [x] PR/main/tag 共用的 quality workflow 会阻止 untidy module metadata。
+- [x] actionlint 证明 reusable workflow caller/callee、permissions 和 needs 有效。
+- [x] 搜索 CacheStore、旧 total fixed 30s 和旧前端轮询值不再命中当前合同描述。
+- [x] metrics、frontend、installer、Unicode 和 Clock 行为在 AGENTS/docs/spec 中一致。
+- [x] CHANGELOG Unreleased 无重复冲突，extract-changelog 对其成功。
+- [x] 旧归档未被伪造修改，新任务有增量 checklist、验证摘要和 commit 证据。
+- [x] .agents/、.codex/、模板哈希、dist、日志和临时产物未被跟踪。
+- [x] 完整 Go/frontend/installer/workflow/security 门禁通过。
 
 ## Out of Scope
 
