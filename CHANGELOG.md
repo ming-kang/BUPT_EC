@@ -59,6 +59,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Installer `DOWNLOAD_BASE_URL` validation rejects userinfo, query, fragment,
+  empty hosts, and non-HTTP(S) schemes (even with the insecure opt-in); logs a
+  safe host label only; and restricts curl initial/redirect protocols to HTTPS
+  (or HTTP+HTTPS for explicit HTTP break-glass mirrors).
 - Frontend auto-reload jitter is positive-only (does not shorten rate-limit
   floors), samples the random source once per schedule, and clamps the final
   delay to remaining `stale_until` after jitter so multi-tab desync cannot

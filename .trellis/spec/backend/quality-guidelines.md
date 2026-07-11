@@ -263,7 +263,13 @@ resolve_download_base_url <repo> <version> <override-url>
 - A validated `DOWNLOAD_BASE_URL` is the only non-GitHub source path and means
   the operator already trusts that mirror. Same-origin `checksums.txt` proves
   integrity, not independent publisher identity. Saved `DOWNLOAD_BASE_URL`
-  values come from prior explicit configuration only.
+  values come from prior explicit configuration only and are re-validated
+  before download (normalized absolute HTTPS, or HTTP only with
+  `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true`). Reject userinfo, query, fragment,
+  empty host, whitespace/semicolons, and non-HTTP(S) schemes even when the
+  insecure opt-in is set. Logs must never echo raw URLs containing credentials
+  or tokens; curl uses explicit `--proto` / `--proto-redir` allow-lists shared
+  by package and checksum downloads.
 
 ### 4. Validation & Error Matrix
 
@@ -274,6 +280,8 @@ resolve_download_base_url <repo> <version> <override-url>
 | empty final value, path separators, whitespace, shell punctuation | non-zero validation failure |
 | GitHub unreachable and no `DOWNLOAD_BASE_URL` | non-zero failure before download/snapshot |
 | HTTP mirror without explicit insecure opt-in | non-zero validation failure |
+| `file://` / `ftp://` / other non-HTTP(S) with insecure opt-in | non-zero validation failure before download |
+| userinfo, query, fragment, or empty host | non-zero validation failure; error omits raw secret |
 
 ### 5. Good/Base/Bad Cases
 

@@ -63,14 +63,14 @@
 
 ## Acceptance Criteria
 
-- [ ] 合法 HTTPS mirror 和显式 HTTP break-glass mirror 可完成下载及 checksum。
-- [ ] 非 HTTP(S) scheme 即使设置 insecure opt-in 也在下载前失败。
-- [ ] userinfo、query、fragment 和空 host 在下载前失败。
-- [ ] stdout/stderr 不包含测试 URL 的 password、token 或完整敏感 path/query。
-- [ ] curl 初始和 redirect protocol 均被显式限制。
-- [ ] 官方 GitHub-only 默认、无自动第三方 fallback 和 same-origin checksum 合同不变。
-- [ ] upgrade/first-install transaction、rollback、asset layout 和 env mode 测试继续通过。
-- [ ] bash -n、installer tests、ShellCheck 和 git diff --check 通过。
+- [x] 合法 HTTPS mirror 和显式 HTTP break-glass mirror 可完成下载及 checksum。
+- [x] 非 HTTP(S) scheme 即使设置 insecure opt-in 也在下载前失败。
+- [x] userinfo、query、fragment 和空 host 在下载前失败。
+- [x] stdout/stderr 不包含测试 URL 的 password、token 或完整敏感 path/query。
+- [x] curl 初始和 redirect protocol 均被显式限制。
+- [x] 官方 GitHub-only 默认、无自动第三方 fallback 和 same-origin checksum 合同不变。
+- [x] upgrade/first-install transaction、rollback、asset layout 和 env mode 测试继续通过。
+- [x] bash -n、installer tests、ShellCheck 和 git diff --check 通过。
 
 ## Out of Scope
 

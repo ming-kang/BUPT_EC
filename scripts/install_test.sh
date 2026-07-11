@@ -208,7 +208,7 @@ while (( $# > 0 )); do
       output="$2"
       shift 2
       ;;
-    --connect-timeout | --max-time | --noproxy)
+    --connect-timeout | --max-time | --noproxy | --proto | --proto-redir)
       shift 2
       ;;
     -*)
@@ -491,12 +491,12 @@ test_version_policy() {
   if (( status != 0 )); then
     fail "explicit HTTPS mirror failed unexpectedly"
   fi
-  assert_contains "${output_file}" "explicit DOWNLOAD_BASE_URL mirror" \
-    "explicit mirror announces operator trust choice"
+  assert_contains "${output_file}" "operator-configured HTTPS mirror host mirror.example" \
+    "explicit mirror announces safe host label"
   assert_contains "${output_file}" "not independent GitHub publisher identity" \
     "explicit mirror explains checksum integrity boundary"
-  assert_contains "${output_file}" "https://mirror.example/releases/v0.1.4" \
-    "explicit mirror still returns the override base URL"
+  assert_not_contains "${output_file}" "user:password@" \
+    "explicit mirror log must not contain userinfo"
 
   output_file="${TEST_TMP}/insecure-mirror-rejected.log"
   unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
@@ -523,6 +523,131 @@ test_version_policy() {
   fi
   assert_contains "${output_file}" "ALLOW_INSECURE_DOWNLOAD_BASE_URL=true" \
     "HTTP insecure opt-in prints warning"
+
+  test_download_base_url_matrix
+  test_download_base_url_secret_redaction
+  test_curl_proto_args
+}
+
+test_download_base_url_matrix() {
+  local url normalized status output_file
+
+  # Accepted shapes (normalization strips trailing slash).
+  for url in \
+    "https://mirror.example" \
+    "https://mirror.example/releases/v0.1.4" \
+    "https://mirror.example/releases/v0.1.4/" \
+    "https://127.0.0.1:8443/releases" \
+    "https://[::1]:8443/releases"
+  do
+    unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
+    if ! normalized="$(normalize_download_base_url "${url}")"; then
+      fail "expected accept: ${url}"
+    fi
+    if [[ "${normalized}" == */ ]]; then
+      fail "normalized URL still has trailing slash: ${normalized}"
+    fi
+  done
+
+  # HTTP requires opt-in.
+  unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
+  if normalized="$(normalize_download_base_url "http://mirror.local/releases" 2>/dev/null)"; then
+    fail "HTTP without opt-in was accepted"
+  fi
+  ALLOW_INSECURE_DOWNLOAD_BASE_URL=true
+  if ! normalized="$(normalize_download_base_url "http://mirror.local/releases")"; then
+    fail "HTTP with opt-in was rejected"
+  fi
+  assert_eq "http://mirror.local/releases" "${normalized}" "HTTP opt-in normalizes"
+  unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
+
+  # Rejected shapes: never accept non-HTTP(S) even with insecure opt-in.
+  for url in \
+    "file:///srv/releases" \
+    "ftp://mirror.example/releases" \
+    "data:text/plain,hi" \
+    "gopher://mirror.example/releases" \
+    "https://user:secret@mirror.example/releases" \
+    "https://mirror.example/releases?token=secret" \
+    "https://mirror.example/releases#fragment" \
+    "https:///missing-host" \
+    "https://mirror.example/releases;rm" \
+    "https://mirror.example/re leases"
+  do
+    ALLOW_INSECURE_DOWNLOAD_BASE_URL=true
+    output_file="${TEST_TMP}/reject-$(printf '%s' "${url}" | wc -c).log"
+    set +e
+    (normalize_download_base_url "${url}") >"${output_file}" 2>&1
+    status=$?
+    set -e
+    if (( status == 0 )); then
+      fail "expected reject: ${url}"
+    fi
+  done
+}
+
+test_download_base_url_secret_redaction() {
+  local output_file status
+  output_file="${TEST_TMP}/secret-userinfo.log"
+  set +e
+  (validate_download_base_url "https://user:s3cret-pass@mirror.example/releases") \
+    >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "userinfo URL was accepted"
+  fi
+  assert_not_contains "${output_file}" "s3cret-pass" "userinfo password never printed"
+  assert_not_contains "${output_file}" "user:s3cret" "userinfo never printed"
+  assert_contains "${output_file}" "userinfo" "userinfo rejection names the rule"
+
+  output_file="${TEST_TMP}/secret-query.log"
+  set +e
+  (validate_download_base_url "https://mirror.example/releases?token=tok_LIVE_secret") \
+    >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "query URL was accepted"
+  fi
+  assert_not_contains "${output_file}" "tok_LIVE_secret" "query token never printed"
+  assert_contains "${output_file}" "query" "query rejection names the rule"
+
+  output_file="${TEST_TMP}/secret-resolve.log"
+  set +e
+  (
+    resolve_download_base_url "ignored/repo" "nightly" \
+      "https://user:s3cret-pass@mirror.example/releases?token=tok_LIVE_secret"
+  ) >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "resolve accepted secret URL"
+  fi
+  assert_not_contains "${output_file}" "s3cret-pass" "resolve log has no password"
+  assert_not_contains "${output_file}" "tok_LIVE_secret" "resolve log has no token"
+}
+
+test_curl_proto_args() {
+  local -a https_args=()
+  local -a http_args=()
+  local arg
+
+  while IFS= read -r -d '' arg; do
+    https_args+=("${arg}")
+  done < <(curl_download_proto_args "https")
+  assert_eq 4 "${#https_args[@]}" "https proto arg count"
+  assert_eq "--proto" "${https_args[0]}" "https --proto flag"
+  assert_eq "=https" "${https_args[1]}" "https allows only https"
+  assert_eq "--proto-redir" "${https_args[2]}" "https --proto-redir flag"
+  assert_eq "=https" "${https_args[3]}" "https redirects only https"
+
+  while IFS= read -r -d '' arg; do
+    http_args+=("${arg}")
+  done < <(curl_download_proto_args "http")
+  assert_eq 4 "${#http_args[@]}" "http proto arg count"
+  assert_eq "=http,https" "${http_args[1]}" "http break-glass allows http+https"
+  assert_eq "=http,https" "${http_args[3]}" "http redirects allow http+https"
 }
 
 test_checksum_failures_preserve_targets() {

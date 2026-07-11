@@ -128,10 +128,16 @@ The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or
 download integrity only; they are not independent proof of GitHub publisher
 identity if the mirror itself is compromised.
 
-`DOWNLOAD_BASE_URL` must use HTTPS. For a trusted local mirror only, set
-`ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain HTTP. A saved
-`DOWNLOAD_BASE_URL` from a previous explicit choice is reused on upgrades; the
-installer never writes a mirror URL discovered by network probing.
+`DOWNLOAD_BASE_URL` must be an absolute **HTTPS** URL with a non-empty host
+(path optional). Userinfo (`user:pass@`), query strings, fragments, and empty
+hosts are rejected before any download. For a trusted local mirror only, set
+`ALLOW_INSECURE_DOWNLOAD_BASE_URL=true` to allow plain **HTTP** (not `file://`,
+`ftp://`, or other schemes). curl is restricted to HTTPS-only redirects for
+HTTPS sources, or HTTP+HTTPS for the HTTP break-glass path. Logs print a safe
+host label only (never credentials or query tokens). A saved
+`DOWNLOAD_BASE_URL` from a previous explicit choice is reused on upgrades after
+the same validation; the installer never writes a mirror URL discovered by
+network probing.
 
 Do not pipe installers from unknown third-party hosts into `sudo bash`.
 

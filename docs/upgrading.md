@@ -35,10 +35,13 @@ See [CHANGELOG.md](../CHANGELOG.md) for what changed between versions.
 ## Upgrading without GitHub access
 
 If the server cannot reach GitHub, set an explicit HTTPS `DOWNLOAD_BASE_URL` to
-a mirror you control (and already trust). Package and `checksums.txt` are both
-fetched from that base. This is operator-chosen trust, not an automatic proxy
-fallback; same-origin checksums verify integrity, not independent publisher
-identity. See [deployment.md](deployment.md#offline-or-restricted-networks-explicit-mirrors).
+a mirror you control (and already trust). The URL must not include credentials,
+query parameters, or fragments; invalid saved mirrors fail validation before
+download or snapshot. Package and `checksums.txt` are both fetched from that
+base under the same curl protocol policy. This is operator-chosen trust, not an
+automatic proxy fallback; same-origin checksums verify integrity, not
+independent publisher identity. See
+[deployment.md](deployment.md#offline-or-restricted-networks-explicit-mirrors).
 
 ## Automatic transaction rollback
 

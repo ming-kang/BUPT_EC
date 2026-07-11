@@ -2,42 +2,42 @@
 
 ## 0. Characterization
 
-- [ ] 新增包含 userinfo password 和 query token 的输出泄漏失败测试。
-- [ ] 新增 insecure opt-in 接受 file/ftp 的失败测试。
-- [ ] 记录合法 official/HTTPS/HTTP mirror 和 checksum 基线。
+- [x] 新增包含 userinfo password 和 query token 的输出泄漏失败测试。
+- [x] 新增 insecure opt-in 接受 file/ftp 的失败测试。
+- [x] 记录合法 official/HTTPS/HTTP mirror 和 checksum 基线。
 
 ## 1. Central URL validation
 
-- [ ] 提取一个单一 parse/validate/normalize helper。
-- [ ] 只允许 HTTPS，或显式 opt-in 的 HTTP。
-- [ ] 校验非空 authority、host、port、IPv6 bracket 和普通 path。
-- [ ] 拒绝 userinfo、query、fragment、空白和分号。
-- [ ] invalid error 只输出规则，不回显 raw URL。
+- [x] 提取一个单一 parse/validate/normalize helper。
+- [x] 只允许 HTTPS，或显式 opt-in 的 HTTP。
+- [x] 校验非空 authority、host、port、IPv6 bracket 和普通 path。
+- [x] 拒绝 userinfo、query、fragment、空白和分号。
+- [x] invalid error 只输出规则，不回显 raw URL。
 
 ## 2. Safe source logging
 
-- [ ] 生成不含 path/query/userinfo 的 safe display label。
-- [ ] 修改 explicit mirror、download 和 checksum 输出。
-- [ ] 搜索所有 echo/printf 中的 base_url、override_url 和 DOWNLOAD_BASE_URL。
-- [ ] 测试 stdout/stderr 不包含测试 password/token。
+- [x] 生成不含 path/query/userinfo 的 safe display label。
+- [x] 修改 explicit mirror、download 和 checksum 输出。
+- [x] 搜索所有 echo/printf 中的 base_url、override_url 和 DOWNLOAD_BASE_URL。
+- [x] 测试 stdout/stderr 不包含测试 password/token。
 
 ## 3. Curl protocol enforcement
 
-- [ ] 为 HTTPS 和 HTTP break-glass 生成明确 proto/proto-redir 参数。
-- [ ] package 和 checksums curl 复用相同参数。
-- [ ] 保持 GitHub redirect 到 HTTPS release asset 正常。
-- [ ] 保持 connect/download/checksum failure 发生在 snapshot 前。
+- [x] 为 HTTPS 和 HTTP break-glass 生成明确 proto/proto-redir 参数。
+- [x] package 和 checksums curl 复用相同参数。
+- [x] 保持 GitHub redirect 到 HTTPS release asset 正常。
+- [x] 保持 connect/download/checksum failure 发生在 snapshot 前。
 
 ## 4. Regression matrix
 
-- [ ] official latest/nightly/stable URL。
-- [ ] explicit/saved HTTPS mirror。
-- [ ] HTTP reject/opt-in accept。
-- [ ] IPv4/IPv6/port/path/trailing slash。
-- [ ] empty host/userinfo/query/fragment。
-- [ ] file/ftp/data 等 scheme。
-- [ ] checksum missing/mismatch/SKIP_CHECKSUM。
-- [ ] first install/upgrade success 与 rollback。
+- [x] official latest/nightly/stable URL。
+- [x] explicit/saved HTTPS mirror。
+- [x] HTTP reject/opt-in accept。
+- [x] IPv4/IPv6/port/path/trailing slash。
+- [x] empty host/userinfo/query/fragment。
+- [x] file/ftp/data 等 scheme。
+- [x] checksum missing/mismatch/SKIP_CHECKSUM。
+- [x] first install/upgrade success 与 rollback。
 
 ## 5. Validation
 
@@ -49,11 +49,20 @@ rg -n "DOWNLOAD_BASE_URL|base_url|override_url" scripts docs .trellis/spec AGENT
 git diff --check
 ~~~
 
+### Validation results (2026-07-11)
+
+| Check | Result |
+| --- | --- |
+| `bash -n` | pass |
+| `bash scripts/install_test.sh` | pass |
+| `shellcheck` | not on PATH (Windows host); CI runs shellcheck |
+| `git diff --check` | pass |
+
 ## 6. Contract sync and evidence
 
-- [ ] 更新 deployment、upgrading、quality spec、AGENTS 的镜像 URL 安全合同。
-- [ ] 在同一安全修复 commit 更新 CHANGELOG [Unreleased]。
-- [ ] 记录 secret-negative、protocol、transaction 测试结果和实现 commit 后再归档。
+- [x] 更新 deployment、upgrading、quality spec、AGENTS 的镜像 URL 安全合同。
+- [x] 在同一安全修复 commit 更新 CHANGELOG [Unreleased]。
+- [x] 记录 secret-negative、protocol、transaction 测试结果和实现 commit 后再归档。
 
 ## Review Gates
 

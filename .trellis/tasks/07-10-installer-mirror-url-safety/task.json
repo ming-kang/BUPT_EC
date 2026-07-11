@@ -3,7 +3,7 @@
   "name": "installer-mirror-url-safety",
   "title": "安装器镜像 URL 安全加固",
   "description": "限制镜像 URL 为安全 HTTP(S) 形状，移除凭据/敏感参数回显并限制 curl 重定向协议。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

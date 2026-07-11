@@ -236,21 +236,218 @@ validate_app_addr() {
   fi
 }
 
+# normalize_download_base_url validates and normalizes DOWNLOAD_BASE_URL.
+# Empty input prints an empty string (official GitHub path). Invalid input exits
+# non-zero with a rule-only error that never echoes the raw URL (no secrets).
+# On success prints scheme://host[:port][/path] with trailing slashes stripped.
+normalize_download_base_url() {
+  local url="$1"
+  local scheme rest authority path host port host_display normalized
+
+  if [[ -z "${url}" ]]; then
+    printf ""
+    return 0
+  fi
+
+  if [[ "${url}" == *";"* || "${url}" =~ [[:space:]] ]]; then
+    echo "DOWNLOAD_BASE_URL must not contain whitespace or semicolons." >&2
+    return 1
+  fi
+  if [[ "${url}" == *"?"* ]]; then
+    echo "DOWNLOAD_BASE_URL must not contain a query string." >&2
+    return 1
+  fi
+  if [[ "${url}" == *"#"* ]]; then
+    echo "DOWNLOAD_BASE_URL must not contain a URL fragment." >&2
+    return 1
+  fi
+  if [[ "${url}" == *"@"* ]]; then
+    echo "DOWNLOAD_BASE_URL must not contain userinfo credentials." >&2
+    return 1
+  fi
+
+  if [[ ! "${url}" =~ ^([A-Za-z][A-Za-z0-9+.-]*)://(.*)$ ]]; then
+    echo "DOWNLOAD_BASE_URL must be an absolute http(s) URL." >&2
+    return 1
+  fi
+  scheme="$(printf '%s' "${BASH_REMATCH[1]}" | tr '[:upper:]' '[:lower:]')"
+  rest="${BASH_REMATCH[2]}"
+
+  case "${scheme}" in
+    https) ;;
+    http)
+      if [[ "${ALLOW_INSECURE_DOWNLOAD_BASE_URL:-false}" != "true" ]]; then
+        echo "DOWNLOAD_BASE_URL must use https://. Set ALLOW_INSECURE_DOWNLOAD_BASE_URL=true only for a trusted local mirror." >&2
+        return 1
+      fi
+      ;;
+    *)
+      # Insecure opt-in only widens HTTPS→HTTP; never file/ftp/data/etc.
+      echo "DOWNLOAD_BASE_URL scheme must be https (or http only with ALLOW_INSECURE_DOWNLOAD_BASE_URL=true)." >&2
+      return 1
+      ;;
+  esac
+
+  if [[ -z "${rest}" ]]; then
+    echo "DOWNLOAD_BASE_URL must include a non-empty host." >&2
+    return 1
+  fi
+
+  if [[ "${rest}" == *"/"* ]]; then
+    authority="${rest%%/*}"
+    path="/${rest#*/}"
+  else
+    authority="${rest}"
+    path=""
+  fi
+
+  if [[ -z "${authority}" ]]; then
+    echo "DOWNLOAD_BASE_URL must include a non-empty host." >&2
+    return 1
+  fi
+
+  host=""
+  port=""
+  host_display=""
+  if [[ "${authority}" == \[* ]]; then
+    if [[ ! "${authority}" =~ ^\[([0-9A-Fa-f:]+)\](:([0-9]{1,5}))?$ ]]; then
+      echo "DOWNLOAD_BASE_URL IPv6 host must be bracketed and may include a valid port." >&2
+      return 1
+    fi
+    host="${BASH_REMATCH[1]}"
+    port="${BASH_REMATCH[3]:-}"
+    if [[ -z "${host}" ]]; then
+      echo "DOWNLOAD_BASE_URL must include a non-empty host." >&2
+      return 1
+    fi
+    host_display="[${host}]"
+  else
+    if [[ "${authority}" == *:* ]]; then
+      host="${authority%:*}"
+      port="${authority##*:}"
+      if [[ -z "${host}" || "${host}" == *:* ]]; then
+        echo "DOWNLOAD_BASE_URL host is invalid; use brackets for IPv6 addresses." >&2
+        return 1
+      fi
+    else
+      host="${authority}"
+      port=""
+    fi
+    if [[ -z "${host}" ]]; then
+      echo "DOWNLOAD_BASE_URL must include a non-empty host." >&2
+      return 1
+    fi
+    # Hostname / IPv4: labels, dots, hyphens only (no credentials or odd markup).
+    if [[ ! "${host}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?$ && ! "${host}" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
+      echo "DOWNLOAD_BASE_URL host is invalid." >&2
+      return 1
+    fi
+    host_display="${host}"
+  fi
+
+  if [[ -n "${port}" ]]; then
+    if [[ ! "${port}" =~ ^[0-9]+$ ]] || ((10#${port} < 1 || 10#${port} > 65535)); then
+      echo "DOWNLOAD_BASE_URL port is out of range." >&2
+      return 1
+    fi
+  fi
+
+  if [[ -n "${path}" ]]; then
+    # Strip trailing slashes; empty path after strip means authority only.
+    while [[ "${path}" == */ ]]; do
+      path="${path%/}"
+    done
+    if [[ -n "${path}" && ! "${path}" =~ ^/[A-Za-z0-9._~/-]+$ ]]; then
+      echo "DOWNLOAD_BASE_URL path contains unsupported characters." >&2
+      return 1
+    fi
+  fi
+
+  normalized="${scheme}://${host_display}"
+  if [[ -n "${port}" ]]; then
+    normalized+=":${port}"
+  fi
+  if [[ -n "${path}" ]]; then
+    normalized+="${path}"
+  fi
+
+  printf "%s" "${normalized}"
+  return 0
+}
+
+# Scheme of a normalized download base (http or https). Empty → https default.
+download_base_scheme() {
+  local url="${1:-}"
+  case "${url}" in
+    http://*)
+      printf 'http'
+      ;;
+    *)
+      printf 'https'
+      ;;
+  esac
+}
+
+# Safe host label from a normalized base: hostname, IPv4, or bracketed IPv6.
+download_base_safe_host() {
+  local url="${1:-}"
+  local rest authority
+  if [[ -z "${url}" ]]; then
+    printf ''
+    return 0
+  fi
+  rest="${url#*://}"
+  authority="${rest%%/*}"
+  if [[ "${authority}" == \[* ]]; then
+    if [[ "${authority}" =~ ^(\[[0-9A-Fa-f:]+\]) ]]; then
+      printf '%s' "${BASH_REMATCH[1]}"
+      return 0
+    fi
+    printf ''
+    return 0
+  fi
+  printf '%s' "${authority%%:*}"
+}
+
 validate_download_base_url() {
   local url="$1"
-  if [[ "${url}" == *";"* || "${url}" =~ [[:space:]] ]]; then
-    echo "DOWNLOAD_BASE_URL must not contain whitespace or semicolons: ${url}" >&2
+  local normalized
+
+  if ! normalized="$(normalize_download_base_url "${url}")"; then
     exit 1
   fi
-  if [[ -z "${url}" || "${url}" =~ ^https:// ]]; then
-    return
+  if [[ -z "${normalized}" ]]; then
+    VALIDATED_DOWNLOAD_BASE_URL=""
+    return 0
   fi
-  if [[ "${ALLOW_INSECURE_DOWNLOAD_BASE_URL:-false}" == "true" ]]; then
+  if [[ "$(download_base_scheme "${normalized}")" == "http" ]]; then
     echo "Warning: using non-HTTPS DOWNLOAD_BASE_URL because ALLOW_INSECURE_DOWNLOAD_BASE_URL=true." >&2
-    return
   fi
-  echo "DOWNLOAD_BASE_URL must use https://. Set ALLOW_INSECURE_DOWNLOAD_BASE_URL=true only for a trusted local mirror." >&2
-  exit 1
+  # Expose normalized base for main to persist and download without re-parsing.
+  VALIDATED_DOWNLOAD_BASE_URL="${normalized}"
+}
+
+# curl_download_proto_args prints --proto / --proto-redir tokens for the
+# validated scheme (or defaults to HTTPS-only for official GitHub downloads).
+curl_download_proto_args() {
+  local scheme="${1:-https}"
+  if [[ "${scheme}" == "http" ]]; then
+    printf '%s\0' --proto '=http,https' --proto-redir '=http,https'
+  else
+    printf '%s\0' --proto '=https' --proto-redir '=https'
+  fi
+}
+
+safe_download_base_label() {
+  local base_url="${1:-}"
+  local scheme host
+  scheme="$(download_base_scheme "${base_url}")"
+  host="$(download_base_safe_host "${base_url}")"
+  if [[ -n "${host}" ]]; then
+    printf 'operator-configured %s mirror host %s' "$(printf '%s' "${scheme}" | tr '[:lower:]' '[:upper:]')" "${host}"
+  else
+    printf 'configured mirror'
+  fi
 }
 
 detect_arch() {
@@ -299,15 +496,22 @@ host_reachable() {
 # Official GitHub releases are the only automatic trust boundary. Operators may
 # point DOWNLOAD_BASE_URL at an explicit mirror they already trust; same-origin
 # checksums then prove download integrity only, not independent publisher identity.
+# override_url must already be normalized (validate_download_base_url) when set.
 resolve_download_base_url() {
   local repo="$1"
   local version="$2"
   local override_url="$3"
+  local normalized label
 
   if [[ -n "${override_url}" ]]; then
-    echo "Using explicit DOWNLOAD_BASE_URL mirror: ${override_url%/}" >&2
+    # Always re-validate so callers cannot bypass shape checks; never log raw input.
+    if ! normalized="$(normalize_download_base_url "${override_url}")"; then
+      exit 1
+    fi
+    label="$(safe_download_base_label "${normalized}")"
+    echo "Using ${label}." >&2
     echo "Warning: package and checksums.txt come from this operator-trusted source. Same-origin checksums verify integrity, not independent GitHub publisher identity." >&2
-    printf "%s" "${override_url%/}"
+    printf "%s" "${normalized}"
     return
   fi
 
@@ -335,11 +539,22 @@ download_release() {
   local download_base_url="$5"
   local package_name="bupt-ec-linux-${arch}.tar.gz"
   local base_url
+  local -a proto_args=()
+  local scheme="https"
+  local arg
 
   base_url="$(resolve_download_base_url "${repo}" "${version}" "${download_base_url}")"
+  scheme="$(download_base_scheme "${base_url}")"
+  while IFS= read -r -d '' arg; do
+    proto_args+=("${arg}")
+  done < <(curl_download_proto_args "${scheme}")
 
-  echo "Downloading ${repo} ${version} (${arch}) from ${base_url}..."
-  curl -fL "${base_url}/${package_name}" -o "${work_dir}/${package_name}"
+  if [[ -n "${download_base_url}" ]]; then
+    echo "Downloading ${repo} ${version} (${arch}) from configured mirror..."
+  else
+    echo "Downloading ${repo} ${version} (${arch}) from official GitHub releases..."
+  fi
+  curl -fL "${proto_args[@]}" "${base_url}/${package_name}" -o "${work_dir}/${package_name}"
 
   # Checksum verification is required by default (fail-closed).
   # Break-glass only: SKIP_CHECKSUM=1 skips verification with a loud warning.
@@ -348,8 +563,8 @@ download_release() {
     return
   fi
 
-  if ! curl -fsL "${base_url}/checksums.txt" -o "${work_dir}/checksums.txt"; then
-    echo "Failed to download checksums.txt from ${base_url}/checksums.txt; refusing to install without verification." >&2
+  if ! curl -fsL "${proto_args[@]}" "${base_url}/checksums.txt" -o "${work_dir}/checksums.txt"; then
+    echo "Failed to download checksums.txt from configured source; refusing to install without verification." >&2
     echo "Set SKIP_CHECKSUM=1 only as an explicit break-glass to skip verification." >&2
     exit 1
   fi
@@ -963,7 +1178,10 @@ main() {
   validate_absolute_path "SSL private key path" "${ssl_key}"
   validate_app_addr "${app_addr}"
   validate_gin_mode "${gin_mode}"
+  VALIDATED_DOWNLOAD_BASE_URL=""
   validate_download_base_url "${download_base_url}"
+  # Persist and download only the normalized form (no userinfo/query/fragment).
+  download_base_url="${VALIDATED_DOWNLOAD_BASE_URL:-}"
 
   if [[ ! -f "${ssl_cert}" ]]; then
     echo "SSL certificate not found: ${ssl_cert}" >&2
