@@ -8,6 +8,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-07-11
+
 ### Security
 
 - Upstream JW error text is sanitized before internal logs/errors: Unicode
@@ -36,38 +38,52 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Process-local Prometheus metrics on loopback `GET /metrics` (refresh, cache
   serve, login, campus failure counters/histograms). Public Nginx returns 404
   for `/metrics`.
+- `/readyz` now separates cache age from completeness with `cache_partial`,
+  `partial_campuses`, and a sanitized `last_refresh_warning`.
+- Shared quality gate workflow (`.github/workflows/quality.yml`) for PRs and
+  main, including `go mod tidy -diff`, `go mod verify`, frontend audits, and
+  frontend tests.
+- JW protocol offline unit fixtures and React hook lifecycle tests
+  (`useTodayClassrooms` harness).
 
 ### Changed
 
-- PR and main quality gates share one reusable workflow
-  (`.github/workflows/quality.yml`) that also enforces `go mod tidy -diff` and
-  `go mod verify`; stable tag releases use changelog-only notes (`body_path`)
-  without GitHub-generated appendices. Nightly may still use generated notes.
+- Stable tag releases publish changelog-only notes (`body_path`) without
+  GitHub-generated appendices. Nightly may still use generated notes.
 - Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap) with
   bounded symmetric jitter (±10% of the base step, absolute cap ±5s); full
-  success resets the ladder, partial success keeps the fixed 30s soft backoff
+  success resets the ladder; partial success keeps the fixed 30s soft backoff
   without total-failure jitter.
 - Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
   10/20/30/60s) with positive-only bounded jitter (≤10% of base, cap 5s), clamps
   the final delay to `stale_until` after jitter, pauses while the tab is hidden,
   and aborts hung `/api/get_data` fetches after 40s.
-- Dark-mode pre-hydration bootstrap is a CSP-safe module script (no inline JS).
-- Selection preference persistence moved out of the reducer into
-  `SelectionProvider` effects so the reducer stays pure.
-- Docs (README, deployment/upgrading/operations/development, AGENTS) now describe
-  partial-campus soft-stale retry, day-stamped cache metadata, frontend
-  keep-last-good reload, and recommend stable tags for production installs
-  (the installer keeps `nightly` only as its first-install fallback).
-- Tidied repository structure by folding backend startup initialization into
-  `main.go` and refreshing ignore rules for local-only project artifacts.
-- `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
-  “still within the same calendar day”).
-- `/readyz` now separates cache age from completeness with `cache_partial`,
-  `partial_campuses`, and a sanitized `last_refresh_warning`.
-- Settings label for ended periods: “允许选择已结束节次”.
 - Background warmup runs immediately, retries partial cache at a low frequency,
   and schedules complete-cache refreshes after each Shanghai midnight with a
   small jitter. Graceful shutdown stops the scheduler before draining workers.
+- Multi-campus refresh keeps partial results when one campus fails, merging prior
+  same-day data when available; responses and readiness identify affected campus
+  IDs, and the frontend prefers usable campuses instead of empty placeholders.
+- Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
+  Cache `Date`/`ExpiresAt`/`StaleUntil` are stamped at refresh completion.
+- Runtime configuration is snapshotted once at startup (`config.Load`); process
+  env overrides `.env`; malformed dotenv or invalid listen address fails closed.
+- Classroom cache is a typed `TodayClassroomCache` with an injectable shared
+  `Clock` for refresh/backoff scheduling.
+- Dark-mode pre-hydration bootstrap is a CSP-safe module script; theme follows
+  system `prefers-color-scheme` only (no conflicting `localStorage.darkMode`).
+- Selection preference persistence lives in `SelectionProvider` effects so the
+  reducer stays pure.
+- Settings label for ended periods: “允许选择已结束节次”; `updated_at` is labeled
+  as the current data update time (not last refresh attempt).
+- `/readyz` `cache_stale` means usable cache past the fresh TTL (not merely
+  “still within the same calendar day”).
+- Docs (README, deployment/upgrading/operations/development, AGENTS) cover
+  partial-campus soft-stale retry, day-stamped cache metadata, frontend
+  keep-last-good reload, single-instance topology, and recommend stable tags for
+  production installs (`nightly` remains first-install fallback only).
+- Backend startup composition folded into `main.go`; repository ignore rules
+  refreshed for local-only artifacts.
 
 ### Fixed
 
@@ -75,89 +91,49 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   empty hosts, and non-HTTP(S) schemes (even with the insecure opt-in); logs a
   safe host label only; and restricts curl initial/redirect protocols to HTTPS
   (or HTTP+HTTPS for explicit HTTP break-glass mirrors).
-- Frontend auto-reload jitter is positive-only (does not shorten rate-limit
-  floors), samples the random source once per schedule, and clamps the final
-  delay to remaining `stale_until` after jitter so multi-tab desync cannot
+- Installer installs and upgrades are transactional: download/checksum/extract/
+  render finish before existing files change; late failures after service start
+  or Nginx reload restore prior active/enabled state (or remove first-install
+  targets) instead of mixed binary/config; generated `/api/` `proxy_read_timeout`
+  is 60s for cold refresh budgets.
+- Stable, nightly, and pinned installer commands select the matching release
+  explicitly; the installer remembers the selected channel or tag for upgrades
+  instead of silently falling back to `nightly`.
+- Frontend auto-reload jitter is positive-only, samples randomness once per
+  schedule, and clamps to remaining `stale_until` so multi-tab clients cannot
   schedule past the hard display deadline.
 - Loopback `GET /metrics` no longer double-gzips when scrapers send
   `Accept-Encoding: gzip` (Prometheus handler compression disabled; router gzip
   remains the sole encoder).
-- JW login metrics (`bupt_ec_login_total` / `bupt_ec_login_duration_seconds`) are
-  now emitted at the shared `TokenManager` login boundary with low-cardinality
-  `outcome`/`source` labels (override recovery vs normal login; one sample per
-  singleflight operation).
-- Partial campus success no longer auto-selects an empty failed campus
-  placeholder (for example cold 沙河 failure with usable 西土城 data).
-- Settings copy labels `updated_at` as the current data update time, not the
-  last refresh attempt.
-- Gzip negotiation now honors Accept-Encoding q-values (including `gzip;q=0`)
-  instead of substring matching.
-- Unknown `/api` routes return a correlated `LogID` header and body `log_id`.
-- Shared classroom refresh workers preserve the initiator request log_id without
-  inheriting client cancellation.
-- Logging initialization returns an error instead of calling `log.Fatal`, and
-  `NewHTTPServer` rejects nil classroom services before route registration.
-- Startup now resolves configuration once, honors `.env` values for `GIN_MODE`
-  and `LOG_CALLER`, and fails safely on malformed/unreadable dotenv files or
-  invalid listen addresses; process environment values still take precedence.
-- Installer late first-install failures after service start or Nginx reload now
-  stop the new unit and reload Nginx after removing targets, and upgrade
-  rollback restores prior active/enabled state instead of always restarting.
-- Generated Nginx `/api/` `proxy_read_timeout` is 60s so cold classroom refreshes
-  within the 30s refresh / 45s Go write budgets are not cut off by the proxy.
-- Installer installs and upgrades are now transactional: downloads, checksums,
-  extraction, and config rendering finish before existing files change; failed
-  Nginx/service/health validation restores the previous installation (or
-  removes new first-install files) instead of leaving mixed binary/config state.
-- Stable, nightly, and pinned installer commands now select the matching release
-  explicitly; the installer remembers the selected channel or tag for later
-  upgrades instead of silently falling back to `nightly`.
-- Dark mode follows system `prefers-color-scheme` only (no conflicting
-  `localStorage.darkMode` bootstrap), so React no longer thrash-overwrites the
-  pre-hydration theme.
-- Exact path `/api` now returns JSON 404 like other unknown API routes, instead
-  of the SPA `index.html`.
-- Day-boundary auto-reload considers Asia/Shanghai business date and
-  `stale_until`; failed reloads now clear cross-day or expired snapshots instead
-  of retaining yesterday's classroom filters and table.
+- JW login metrics (`bupt_ec_login_total` / `bupt_ec_login_duration_seconds`)
+  emit at the shared `TokenManager` login boundary with low-cardinality
+  `outcome`/`source` labels (one sample per singleflight operation).
+- Partial-campus cache hits soft-revalidate inside the fresh TTL instead of
+  skipping JW retries for the full 5 minutes; total failure after partial cache
+  replaces the older partial warning.
+- Day-boundary auto-reload uses Asia/Shanghai business date and `stale_until`;
+  failed reloads clear cross-day or expired snapshots instead of retaining
+  yesterday’s filters and table.
 - Background auto-refresh no longer full-page spins or replaces a successful
-  same-day classroom snapshot with an empty error envelope. Hard-empty and
-  repeated client failures retry after 10s/20s/30s/60s (cap), while a successful
-  fetch resets the backoff.
-- Partial-campus cache hits no longer skip JW retries for the full 5-minute
-  fresh TTL; soft-stale revalidation runs immediately (still single-flight;
-  partial outcomes keep the fixed 30s soft backoff, total failures use the
-  adaptive ladder with bounded jitter).
-- Classroom cache `Date`/`ExpiresAt`/`StaleUntil` are stamped at refresh
-  completion (not start), so a JW refresh that straddles Asia/Shanghai midnight
-  is labeled for the completion day and never stored with a non-positive
-  go-cache TTL.
-- HTTP `WriteTimeout` is now longer than the cold classroom refresh budget so
-  clients are not cut off when a shared refresh succeeds near the previous 30s
-  limit.
-- Concurrent auth failures for the same old token now share one login, and
-  delayed failures reuse the replacement token instead of triggering another
-  login that could invalidate the first. `JW_TOKEN` is invalidated until
-  restart only when the rejected token actually came from that override.
-- Multi-campus refresh keeps partial results when one campus fails, merging prior
-  same-day data when available instead of failing the whole payload; responses
-  and readiness diagnostics identify the affected campus IDs, and the frontend
-  warning names the affected campus when possible.
-- A total refresh failure after a partial cached result now replaces the older
-  partial warning, so users and operators see the latest upstream outage state.
-- Business “today” and cache day boundaries use Asia/Shanghai (not the host TZ).
-- Stale classroom payloads poll no faster than 15 seconds for an in-flight
-  refresh; partial-campus payloads follow the backend's 30-second soft backoff.
-- Startup/midnight warmup is now cancellable and retries a missing cache with a
-  bounded 30s/1m/2m/5m schedule instead of waiting until the following day
-  after a transient failure or midnight backoff.
-- Ended class periods are dropped from the selection so they cannot block room
+  same-day snapshot with an empty error envelope.
+- Ended class periods are dropped from selection so they cannot block room
   filters; empty/malformed period times are not treated as ended.
-- Settings modal secondary text follows the theme (readable in dark mode).
-- Settings gear remains available when campus list is empty (error/loading).
-- `localStorage` failures no longer crash preference init/updates.
-- Go module metadata marks `prometheus/client_golang` (and directly imported
-  prometheus packages) as direct dependencies; `go.sum` matches `go mod tidy`.
+- Gzip negotiation honors Accept-Encoding q-values (including `gzip;q=0`).
+- Exact path `/api` and unknown `/api/*` routes return correlated JSON 404 with
+  `LogID` header and body `log_id`.
+- Shared classroom refresh workers preserve the initiator `log_id` without
+  inheriting client cancellation.
+- Concurrent auth failures for the same rejected token share one login; delayed
+  failures reuse the replacement token; `JW_TOKEN` is invalidated until restart
+  only when that override token was actually rejected.
+- HTTP `WriteTimeout` is longer than the cold classroom refresh budget.
+- Logging initialization returns an error instead of `log.Fatal`; `NewHTTPServer`
+  rejects a nil classroom service before route registration.
+- Settings modal secondary text follows the theme; settings gear remains
+  available when the campus list is empty; `localStorage` failures no longer
+  crash preference init/updates.
+- Go module metadata marks directly imported Prometheus packages as direct
+  dependencies; `go.sum` matches `go mod tidy`.
 
 ### Dependencies
 
@@ -237,7 +213,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
 - Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
 
-[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.1...v0.1.2

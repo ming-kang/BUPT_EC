@@ -47,20 +47,20 @@ ShellCheck checks stay identical.
 One command from a clean, up-to-date `main`:
 
 ```bash
-scripts/release.sh v0.1.4
+scripts/release.sh v0.1.5
 ```
 
 The script:
 
 1. Validates the version format, that you are on `main`, the working tree is clean, local `main` matches `origin/main`, and the tag doesn't exist.
 2. Shows the `[Unreleased]` changelog content that will become the notes.
-3. Rolls `CHANGELOG.md`: renames `[Unreleased]` to `[0.1.4] - <today>`, starts a fresh empty `[Unreleased]`, and updates the compare links.
+3. Rolls `CHANGELOG.md`: renames `[Unreleased]` to `[0.1.5] - <today>`, starts a fresh empty `[Unreleased]`, and updates the compare links.
 4. Bumps `version` in `frontend/package.json`.
-5. Commits `chore: release v0.1.4`, tags `v0.1.4`, and (after confirmation) pushes `main` and the tag.
+5. Commits `chore: release v0.1.5`, tags `v0.1.5`, and (after confirmation) pushes `main` and the tag.
 
 The tag push triggers the Release workflow, which publishes the GitHub release with the changelog section as its body (plus an auto-generated compare link).
 
-If something fails after the commit/tag but before the push, undo locally with `git tag -d v0.1.4 && git reset --hard HEAD~1`.
+If something fails after the commit/tag but before the push, undo locally with `git tag -d v0.1.5 && git reset --hard HEAD~1`.
 
 ## CI/CD pipeline
 

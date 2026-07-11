@@ -60,7 +60,7 @@ Stable release (recommended for production):
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 # or a fixed version:
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo VERSION=v0.1.4 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.5/install.sh | sudo VERSION=v0.1.5 bash
 ```
 
 Rolling nightly (edge):
@@ -87,7 +87,7 @@ The script asks interactively for:
 Environment variables can pre-seed or override choices, for example:
 
 ```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4/install.sh | sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.4 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.5/install.sh | sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.5 bash
 ```
 
 ## What the installer does
@@ -119,7 +119,7 @@ installer at that base URL:
 ```bash
 # Obtain install.sh from a machine that can reach GitHub (or your mirror),
 # inspect it, then run on the target host:
-sudo VERSION=v0.1.4 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.4 bash install.sh
+sudo VERSION=v0.1.5 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.5 bash install.sh
 ```
 
 The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or
