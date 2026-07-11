@@ -45,8 +45,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   (`.github/workflows/quality.yml`); stable tag releases use changelog-only
   notes (`body_path`) without GitHub-generated appendices. Nightly may still
   use generated notes.
-- Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap); full
-  success resets the ladder, partial success keeps the fixed 30s soft backoff.
+- Total JW refresh failures escalate backoff 30s → 1m → 2m → 5m (cap) with
+  bounded symmetric jitter (±10% of the base step, absolute cap ±5s); full
+  success resets the ladder, partial success keeps the fixed 30s soft backoff
+  without total-failure jitter.
 - Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
   10/20/30/60s) with light jitter, pauses while the tab is hidden, and aborts
   hung `/api/get_data` fetches after 40s.

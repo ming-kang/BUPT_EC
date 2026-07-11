@@ -61,13 +61,13 @@ ClassroomServiceOptions.Clock 边界。
 
 ## Acceptance Criteria
 
-- [ ] total failure base ladder 保持 30s/1m/2m/5m，effective delay 始终在文档化边界内。
-- [ ] 每次 total failure 只读取一次 random sample，非法样本不会产生非法时间。
-- [ ] full success 清零阶梯，partial 保持 30s soft backoff 且不使用 total jitter。
-- [ ] request/warmup/concurrent callers 不能绕过 coordinator backoff。
-- [ ] 跨午夜 nextAllowed 到达后能够刷新新业务日，昨天 cache 永不复用。
-- [ ] 所有业务时间测试通过 ClassroomServiceOptions.Clock，不再直接覆写生产 now seam。
-- [ ] race tests、定向 backoff tests、完整 Go tests、vet/build 和 git diff --check 通过。
+- [x] total failure base ladder 保持 30s/1m/2m/5m，effective delay 始终在文档化边界内。
+- [x] 每次 total failure 只读取一次 random sample，非法样本不会产生非法时间。
+- [x] full success 清零阶梯，partial 保持 30s soft backoff 且不使用 total jitter。
+- [x] request/warmup/concurrent callers 不能绕过 coordinator backoff。
+- [x] 跨午夜 nextAllowed 到达后能够刷新新业务日，昨天 cache 永不复用。
+- [x] 所有业务时间测试通过 ClassroomServiceOptions.Clock，不再直接覆写生产 now seam。
+- [x] race tests、定向 backoff tests、完整 Go tests、vet/build 和 git diff --check 通过。
 
 ## Out of Scope
 

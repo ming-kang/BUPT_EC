@@ -21,8 +21,9 @@ Primary references:
 - Format all Go code with `gofmt`. CI expects `gofmt -l .` to print nothing.
 - Keep service dependencies injectable. `NewClassroomService` accepts explicit
   `ClassroomServiceOptions`, a `CacheStore`, and a `JWClient`; tests create
-  isolated services with `newTestService(t, client)` / direct override
-  injection and a fresh `gocache` instance.
+  isolated services with `newTestService` / `newTestServiceWithOptions`,
+  injecting a thread-safe fake `Clock` and fixed `BackoffRandom` when asserting
+  time or backoff deadlines, plus a fresh cache instance.
 - Keep runtime environment access in `config.Load` plus the `main.go`
   composition root. Tests pass map-backed lookups and constructor values rather
   than mutating config/cache globals.
@@ -41,7 +42,7 @@ Add or update focused tests when changing behavior, especially for:
 
 - JW response parsing and error classification;
 - cache freshness, stale data, and cross-day rejection;
-- refresh coordination and concurrency sharing;
+- refresh coordination, adaptive total-failure backoff/jitter, and concurrency;
 - room parsing/building normalization;
 - HTTP envelopes, health/readiness behavior, gzip, and SPA fallback;
 - Prometheus `/metrics` encoding and low-cardinality collector labels;
@@ -51,6 +52,9 @@ Local test patterns:
 
 - `service/realtime_data_test.go` defines `mockJWClient` and `newTestService`.
   Follow this pattern for service tests so unit tests do not touch the network.
+- Backoff/jitter tests live in `service/refresh_backoff_test.go` and must use
+  `options.Clock` + fixed unit samples (no `sleep` for core deadline state, no
+  assigning a production `now` field).
 - `service/jw_protocol_test.go` uses an injected `HTTPDoer` for offline JW
   Login/FetchAPIURL/QueryCampus protocol fixtures (method, path, token header,
   auth/parse classification). Never require network or credentials there.

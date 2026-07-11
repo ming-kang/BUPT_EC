@@ -142,7 +142,15 @@ The backend keeps a single same-day in-memory cache of classroom data (business 
 - **Fresh TTL**: about 5 minutes. Fully successful fresh cache (`error` null) is served directly with no JW call.
 - **Stale window**: after the fresh TTL, the cached payload may still be served with `stale: true` until the next Shanghai midnight, while a refresh runs in the background (stale-while-revalidate).
 - **Partial campus success**: if one campus query fails but another succeeds, the payload is still cached; failed campuses keep prior same-day data when available, `partial_campuses` lists their IDs, and a top-level `error` describes the partial failure. While that partial payload is still inside the fresh TTL, the API **soft-stale revalidates**: it returns the data immediately and kicks a single-flight background refresh so the failed campus is retried without waiting the full 5 minutes.
-- **Failure backoff**: after a **total** refresh failure **or** a **partial** refresh outcome (cached payload with top-level `error`), new refresh attempts are suppressed for 30 seconds so JW is not hammered. Stale/partial responses still carry the last user-facing error message where applicable.
+- **Failure backoff**: after a **partial** refresh outcome (cached payload with
+  top-level `error`), new refresh attempts are suppressed for a fixed **30
+  seconds**. After a **total** refresh failure, consecutive failures escalate a
+  base ladder of **30s → 1m → 2m → 5m (cap)** with a small bounded jitter of
+  about ±10% of the base step (absolute cap ±5s) so retries do not stampede JW.
+  Full success resets the ladder. Stale/partial responses still carry the last
+  user-facing error message where applicable. Backoff may span Shanghai
+  midnight; yesterday's cache is never reused, and the next allowed attempt can
+  refresh the new business day once `nextRefreshAllowed` is reached.
 - **Day stamping**: `date` / `expires_at` / `stale_until` on a cache entry are taken when the refresh **finishes** (not when it starts), so a JW round-trip that crosses Shanghai midnight is labeled for the completion day.
 - **Cross-day reuse**: never. Yesterday's cache is ignored.
 

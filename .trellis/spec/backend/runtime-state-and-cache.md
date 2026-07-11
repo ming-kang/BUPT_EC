@@ -65,16 +65,27 @@ same public payload unless the API contract changes.
 
 - `startClassroomRefresh` shares one `classroomRefreshAttempt` with concurrent
   callers.
-- Failed refreshes set `nextRefreshAllowed` using `staleRefreshBackoff` (30s).
+- Partial outcomes set `nextRefreshAllowed` to `now + staleRefreshBackoff` (30s)
+  without escalating `consecutiveTotalFailures` or applying total-failure jitter.
+- Total failures increment `consecutiveTotalFailures`, take **one** unit sample
+  from optional `BackoffRandom` (nil → production random), and set
+  `nextRefreshAllowed` to `now + jitteredBackoff(totalFailureBackoffBase(n), sample)`.
+  Base ladder is 30s → 1m → 2m → 5m (cap). Jitter is symmetric
+  ±min(10% of base, 5s); NaN/Inf/out-of-range samples clamp or fall back to 0.5.
+- Full success clears the failure count and `nextRefreshAllowed`.
+- Suppressed starts (before `nextRefreshAllowed`) do not create a worker and
+  emit `ObserveRefreshSuppressed` once per suppressed call.
 - Stale callers wait briefly (`staleRefreshWait`, 300ms) for a refresh to finish
   and otherwise return stale data immediately.
 - `startClassroomRefresh` holds `backgroundMu` while calling
   `refreshWorkers.Add`, so `WaitBackground` can stop new workers before waiting.
+- Business time uses `ClassroomService.now()` from the injected `Clock` (shared
+  with `TokenManager`); tests inject a thread-safe fake `Clock` via
+  `ClassroomServiceOptions.Clock` and must not replace an internal `now` field.
 
-Tests in `service/realtime_data_test.go` lock this behavior down with
-`TestGetTodayClassroomsReturnsStaleWhileRefreshContinues`,
-`TestGetTodayClassroomsBroadcastsRefreshResultToConcurrentWaiters`, and
-`TestGetTodayClassroomsSharesWarmupRefreshResult`.
+Tests in `service/realtime_data_test.go` and `service/refresh_backoff_test.go`
+lock this behavior down (single-flight waiters, ladder/jitter bounds, midnight
+crossing, suppression metrics).
 
 When changing refresh behavior, keep the shared-attempt model. Do not start one
 JW query per HTTP caller during cache misses.
@@ -208,9 +219,9 @@ GetTodayClassrooms(context.Context) (*model.TodayClassrooms, error)
 
 | Outcome | Cache | Backoff | Runtime/log |
 | --- | --- | --- | --- |
-| full | replace with complete payload | clear | success, no warning/error |
-| partial | cache usable payload and `partial_campuses` | 30 seconds | warning with failed campus IDs |
-| failed | preserve existing cache | 30 seconds | total error |
+| full | replace with complete payload | clear ladder + `nextRefreshAllowed` | success, no warning/error |
+| partial | cache usable payload and `partial_campuses` | fixed 30s soft backoff (no total jitter) | warning with failed campus IDs |
+| failed | preserve existing cache | base ladder 30s→1m→2m→5m + bounded jitter | total error |
 
 `cache_fresh` describes cache age. `cache_partial` independently describes
 completeness. A fresh partial cache can be ready.

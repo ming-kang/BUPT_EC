@@ -3,7 +3,7 @@
   "name": "adaptive-refresh-backoff-jitter",
   "title": "自适应刷新退避抖动与确定性测试",
   "description": "为 total refresh backoff 增加有界可注入 jitter，并用统一 Clock 建立无 sleep 的确定性状态测试。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

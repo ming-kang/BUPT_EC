@@ -61,13 +61,26 @@ func newTestService(t *testing.T, client JWClient) *ClassroomService {
 
 func newTestServiceWithOverride(t *testing.T, client JWClient, tokenOverride string) *ClassroomService {
 	t.Helper()
-	svc, err := NewClassroomService(ClassroomServiceOptions{
-		Campuses: []config.CampusConfig{
+	return newTestServiceWithOptions(t, client, ClassroomServiceOptions{
+		TokenOverride: tokenOverride,
+	})
+}
+
+// newTestServiceWithOptions builds an isolated ClassroomService for unit tests.
+// Nil Clock keeps the real wall clock; nil BackoffRandom defaults to sample 0.5
+// so total-failure deadlines stay deterministic unless a test injects its own.
+func newTestServiceWithOptions(t *testing.T, client JWClient, options ClassroomServiceOptions) *ClassroomService {
+	t.Helper()
+	if len(options.Campuses) == 0 {
+		options.Campuses = []config.CampusConfig{
 			{ID: "01", Name: "西土城"},
 			{ID: "04", Name: "沙河"},
-		},
-		TokenOverride: tokenOverride,
-	}, cache.New(), client)
+		}
+	}
+	if options.BackoffRandom == nil {
+		options.BackoffRandom = func() float64 { return 0.5 }
+	}
+	svc, err := NewClassroomService(options, cache.New(), client)
 	if err != nil {
 		t.Fatalf("NewClassroomService() error = %v", err)
 	}
@@ -303,13 +316,10 @@ func TestDoRefreshStampsCacheAtCompletionAcrossMidnight(t *testing.T) {
 	beforeMidnight := time.Date(2026, 7, 9, 23, 59, 50, 0, businessLocation)
 	afterMidnight := time.Date(2026, 7, 10, 0, 0, 5, 0, businessLocation)
 
-	var mu sync.Mutex
-	current := beforeMidnight
+	clock := newFakeClock(beforeMidnight)
 	client := &mockJWClient{
 		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
-			mu.Lock()
-			current = afterMidnight
-			mu.Unlock()
+			clock.Set(afterMidnight)
 			return []model.JWClassInfo{{
 				NodeName:   "1",
 				NodeTime:   "08:00-08:45",
@@ -317,12 +327,7 @@ func TestDoRefreshStampsCacheAtCompletionAcrossMidnight(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
-	svc.now = func() time.Time {
-		mu.Lock()
-		defer mu.Unlock()
-		return current
-	}
+	svc := newTestServiceWithOptions(t, client, ClassroomServiceOptions{Clock: clock})
 
 	result := svc.doRefreshTodayClassrooms(context.Background())
 	if result.err != nil {
@@ -1009,9 +1014,12 @@ func TestFullRefreshClearsPartialRuntimeWarning(t *testing.T) {
 }
 
 func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
-	svc := newTestService(t, &mockJWClient{})
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	svc.now = func() time.Time { return fixed }
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{
+		Clock:         clock,
+		BackoffRandom: func() float64 { return 0.5 },
+	})
 
 	partialAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
 	svc.refreshInFlight = true
@@ -1025,6 +1033,9 @@ func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
 	}
 	if svc.lastRefreshErr != nil {
 		t.Fatalf("partial lastRefreshErr = %v, want nil", svc.lastRefreshErr)
+	}
+	if svc.consecutiveTotalFailures != 0 {
+		t.Fatalf("partial consecutiveTotalFailures = %d, want 0", svc.consecutiveTotalFailures)
 	}
 
 	fullAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
@@ -1046,11 +1057,15 @@ func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
 		kind: refreshFailed,
 		err:  failure,
 	})
-	if want := fixed.Add(staleRefreshBackoff); !svc.nextRefreshAllowed.Equal(want) {
+	// sample=0.5 → base ladder step only (first total failure = 30s).
+	if want := fixed.Add(totalFailureBackoffBase(1)); !svc.nextRefreshAllowed.Equal(want) {
 		t.Fatalf("failed nextRefreshAllowed = %v, want %v", svc.nextRefreshAllowed, want)
 	}
 	if !errors.Is(svc.lastRefreshErr, failure) {
 		t.Fatalf("failed lastRefreshErr = %v, want %v", svc.lastRefreshErr, failure)
+	}
+	if svc.consecutiveTotalFailures != 1 {
+		t.Fatalf("failed consecutiveTotalFailures = %d, want 1", svc.consecutiveTotalFailures)
 	}
 }
 
@@ -1122,9 +1137,12 @@ func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
 			return nil, newJWError(jwErrorQuery, "jw query", nil, "all campuses down")
 		},
 	}
-	svc := newTestServiceWithOverride(t, client, "token")
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	svc.now = func() time.Time { return fixed }
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, client, ClassroomServiceOptions{
+		TokenOverride: "token",
+		Clock:         clock,
+	})
 	svc.cache.Store(&model.TodayClassrooms{
 		Date:            fixed.Format("2006-01-02"),
 		UpdatedAt:       fixed.Add(-time.Hour),
@@ -1186,10 +1204,12 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestServiceWithOverride(t, client, "token")
-
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	svc.now = func() time.Time { return fixed }
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, client, ClassroomServiceOptions{
+		TokenOverride: "token",
+		Clock:         clock,
+	})
 
 	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
@@ -1269,10 +1289,12 @@ func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.
 			}}, nil
 		},
 	}
-	svc := newTestServiceWithOverride(t, client, "token")
-
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	svc.now = func() time.Time { return fixed }
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, client, ClassroomServiceOptions{
+		TokenOverride: "token",
+		Clock:         clock,
+	})
 
 	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
@@ -1330,9 +1352,9 @@ func TestEndOfDayIsNextMidnightShanghai(t *testing.T) {
 }
 
 func TestRuntimeStatusCacheStaleOnlyWhenPastFreshTTL(t *testing.T) {
-	svc := newTestService(t, &mockJWClient{})
 	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	svc.now = func() time.Time { return fixed }
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
 
 	svc.cache.Store(&model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),

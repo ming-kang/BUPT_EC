@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand/v2"
 	"time"
 )
 
@@ -33,8 +35,9 @@ type classroomRefreshResult struct {
 	err      error
 }
 
-// totalFailureBackoffSteps is the adaptive open-circuit ladder for consecutive
-// total JW refresh failures. Partial success keeps a fixed 30s soft backoff.
+// totalFailureBackoffSteps is the adaptive open-circuit base ladder for
+// consecutive total JW refresh failures. Partial success keeps a fixed 30s soft
+// backoff without total-failure jitter.
 var totalFailureBackoffSteps = []time.Duration{
 	30 * time.Second,
 	time.Minute,
@@ -42,7 +45,14 @@ var totalFailureBackoffSteps = []time.Duration{
 	5 * time.Minute,
 }
 
-func totalFailureBackoff(consecutive int) time.Duration {
+// totalFailureJitterFraction bounds the symmetric relative offset applied to the
+// base ladder step. Absolute offset is also capped at totalFailureJitterCap.
+const (
+	totalFailureJitterFraction = 0.10
+	totalFailureJitterCap      = 5 * time.Second
+)
+
+func totalFailureBackoffBase(consecutive int) time.Duration {
 	if consecutive < 1 {
 		consecutive = 1
 	}
@@ -50,6 +60,46 @@ func totalFailureBackoff(consecutive int) time.Duration {
 		consecutive = len(totalFailureBackoffSteps)
 	}
 	return totalFailureBackoffSteps[consecutive-1]
+}
+
+// productionBackoffRandom is the default concurrent-safe unit sample source.
+func productionBackoffRandom() float64 {
+	return rand.Float64()
+}
+
+// normalizeBackoffSample clamps samples into [0,1]. NaN/Inf fall back to 0.5 so
+// a faulty injected source cannot produce negative or overflowing delays.
+func normalizeBackoffSample(sample float64) float64 {
+	if math.IsNaN(sample) || math.IsInf(sample, 0) {
+		return 0.5
+	}
+	if sample < 0 {
+		return 0
+	}
+	if sample > 1 {
+		return 1
+	}
+	return sample
+}
+
+// jitteredBackoff maps a unit sample onto a symmetric offset of
+// ±min(base*10%, 5s) around base. The result is always positive.
+func jitteredBackoff(base time.Duration, sample float64) time.Duration {
+	if base <= 0 {
+		return time.Nanosecond
+	}
+	sample = normalizeBackoffSample(sample)
+	maxOffset := time.Duration(float64(base) * totalFailureJitterFraction)
+	if maxOffset > totalFailureJitterCap {
+		maxOffset = totalFailureJitterCap
+	}
+	// sample 0 → -maxOffset, 0.5 → 0, 1 → +maxOffset
+	offset := time.Duration(float64(maxOffset) * (2*sample - 1))
+	delay := base + offset
+	if delay <= 0 {
+		return time.Nanosecond
+	}
+	return delay
 }
 
 func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.Time) (*classroomRefreshAttempt, bool) {
@@ -116,10 +166,17 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 	case result.kind == refreshFailed || result.err != nil:
 		s.lastRefreshErr = result.err
 		s.consecutiveTotalFailures++
-		s.nextRefreshAllowed = s.now().Add(totalFailureBackoff(s.consecutiveTotalFailures))
+		// Sample once under refreshMu for this completed total failure only.
+		sample := 0.5
+		if s.backoffRandom != nil {
+			sample = s.backoffRandom()
+		}
+		base := totalFailureBackoffBase(s.consecutiveTotalFailures)
+		s.nextRefreshAllowed = s.now().Add(jitteredBackoff(base, sample))
 	case result.kind == refreshPartial:
 		s.lastRefreshErr = nil
-		// Partial campus success is usable and does not escalate the open ladder.
+		// Partial campus success is usable and does not escalate the open ladder
+		// or apply total-failure jitter.
 		s.nextRefreshAllowed = s.now().Add(staleRefreshBackoff)
 	default:
 		s.lastRefreshErr = nil

@@ -47,7 +47,9 @@ type ClassroomService struct {
 	campuses     []config.CampusConfig
 	jwClient     JWClient
 	clock        Clock
-	now          func() time.Time
+	// backoffRandom returns one sample in [0,1] for total-failure jitter.
+	// Always non-nil after construction (production or injected).
+	backoffRandom RandomSample
 
 	refreshMu                sync.Mutex
 	refreshInFlight          bool
@@ -69,6 +71,11 @@ type ClassroomService struct {
 	status   RuntimeStatus
 }
 
+// RandomSample returns a unit-interval sample used by total-failure jitter.
+// Implementations should return a value intended for [0,1]; the policy clamps
+// invalid samples and never trusts callers to supply an arbitrary duration.
+type RandomSample func() float64
+
 type ClassroomServiceOptions struct {
 	Campuses      []config.CampusConfig
 	TokenOverride string
@@ -77,6 +84,9 @@ type ClassroomServiceOptions struct {
 	Clock Clock
 	// Metrics is optional; nil disables runtime metric emission.
 	Metrics RuntimeMetrics
+	// BackoffRandom is optional; nil uses a concurrent-safe production source.
+	// Only unit samples are accepted — the jitter policy clamps and bounds them.
+	BackoffRandom RandomSample
 }
 
 func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCache, client JWClient) (*ClassroomService, error) {
@@ -94,14 +104,18 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 	if clock == nil {
 		clock = systemClock{}
 	}
+	backoffRandom := options.BackoffRandom
+	if backoffRandom == nil {
+		backoffRandom = productionBackoffRandom
+	}
 	s := &ClassroomService{
-		cache:        store,
-		campuses:     append([]config.CampusConfig(nil), options.Campuses...),
-		jwClient:     client,
-		clock:        clock,
-		now:          func() time.Time { return clock.Now().In(businessLocation) },
-		warmupJitter: randomWarmupJitter,
-		metrics:      options.Metrics,
+		cache:         store,
+		campuses:      append([]config.CampusConfig(nil), options.Campuses...),
+		jwClient:      client,
+		clock:         clock,
+		backoffRandom: backoffRandom,
+		warmupJitter:  randomWarmupJitter,
+		metrics:       options.Metrics,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,
@@ -112,4 +126,13 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 		onLoginFailure: s.recordLoginFailure,
 	}
 	return s, nil
+}
+
+// now returns the business-location instant from the injected Clock.
+// Production and tests share this single time seam (same instance as TokenManager).
+func (s *ClassroomService) now() time.Time {
+	if s == nil || s.clock == nil {
+		return time.Now().In(businessLocation)
+	}
+	return s.clock.Now().In(businessLocation)
 }
