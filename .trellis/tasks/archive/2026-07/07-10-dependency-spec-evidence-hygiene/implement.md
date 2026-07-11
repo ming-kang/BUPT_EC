@@ -89,7 +89,7 @@
 | 07-10-frontend-reload-deadline-jitter | `c584b97` | `75b1cd4` |
 | 07-10-installer-mirror-url-safety | `30cbbad` | `e0afe5d` |
 | 07-10-upstream-message-unicode-safety | `66987d4` | `af288e0` |
-| 07-10-dependency-spec-evidence-hygiene | `97e9862` | *(archive commit)* |
+| 07-10-dependency-spec-evidence-hygiene | `f3a0d29` | `f6ea24f` |
 
 ### Historical evidence note
 

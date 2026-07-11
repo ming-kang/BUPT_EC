@@ -49,7 +49,7 @@ frontend lint/test/build/audits、installer tests 通过；shellcheck/actionlint
 | frontend-reload-deadline-jitter | `c584b97` | `75b1cd4` |
 | installer-mirror-url-safety | `30cbbad` | `e0afe5d` |
 | upstream-message-unicode-safety | `66987d4` | `af288e0` |
-| dependency-spec-evidence-hygiene | `97e9862` | *(hygiene archive)* |
+| dependency-spec-evidence-hygiene | `f3a0d29` | `f6ea24f` |
 
 ### Historical evidence gap (do not forge)
 
