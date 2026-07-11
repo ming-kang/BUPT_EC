@@ -129,7 +129,8 @@ refresh.
 isUsableBusinessDaySnapshot(data, nowMs = Date.now())
 mergeFetchResult(prev, next, nowMs = Date.now())
 failureRetryDelay(failureCount)
-nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
+withJitter(delayMs, random = Math.random)
+nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.random } = {})
 ```
 
 ### 3. Contracts
@@ -138,14 +139,21 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
   Asia/Shanghai date, and a parseable future `stale_until`.
 - `mergeFetchResult` keeps prior data after a client failure only while that
   snapshot remains displayable; otherwise it returns `data: null`.
-- Consecutive client failures retry after 5s, 10s, 20s, then 30s maximum. A
+- Consecutive client failures retry after 10s, 20s, 30s, then 60s maximum. A
   valid HTTP 200 classroom payload resets the count.
-- A partial payload polls at 30s; an ordinary stale payload may poll at 5s; a
-  fresh payload waits for `expires_at`.
-- Every scheduled delay is capped by `stale_until`, even when `expires_at` or
-  failure backoff would cross Shanghai midnight.
+- A partial payload base-polls at 30s; an ordinary stale payload base-polls at
+  15s; a fresh payload waits for `expires_at` (1s floor).
+- Scheduling pipeline: base delay → **one** unit random sample → positive-only
+  jitter `base + sample * min(base*10%, 5s)` → absolute clamp to
+  `max(0, stale_until - now)` when the snapshot is still displayable. Business
+  deadline wins when it is earlier than the rate-limit floor. Jitter must not
+  shorten documented minimum intervals.
+- Invalid / throwing / non-finite random sources fall back to sample 0.5 and
+  never yield NaN delays.
 - Background retries never enable the full-page spinner. If the timer wakes at
-  an invalid boundary, clear the campuses before starting the reload.
+  an invalid boundary, clear the campuses before starting the reload. Hidden
+  tabs cancel timers; becoming visible after `stale_until` revalidates promptly
+  without keeping yesterday's filters for a normal poll interval.
 - `partial_campuses` is optional. When present, warnings resolve IDs through the
   payload's campus names and fall back to the ID when no name is available.
 
@@ -156,10 +164,11 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
 | same-day snapshot, future `stale_until`, fetch failure | preserve data, set `stale` and `client_refresh_failed` |
 | previous-day or expired snapshot, fetch failure | hard error envelope with `data: null` |
 | missing/invalid `date`, `stale_until`, or `campuses` | fail closed without throwing |
-| hard error with failure count 1/2/3/4+ | retry after 5s/10s/20s/30s |
-| valid partial payload | reset client-failure count, poll after 30s |
-| valid stale payload | poll after at most 5s |
-| fresh expiry later than `stale_until` | wake at `stale_until` |
+| hard error with failure count 1/2/3/4+ | retry after 10s/20s/30s/60s |
+| valid partial payload | reset client-failure count, base poll 30s + positive jitter |
+| valid stale payload | base poll 15s + positive jitter |
+| fresh expiry later than `stale_until` | wake at `stale_until` (post-jitter clamp) |
+| sample=1 near hard deadline | final delay ≤ remaining `stale_until` |
 
 ### 5. Good/Base/Bad Cases
 
@@ -169,7 +178,7 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
 - Base: a fresh complete payload waits until `expires_at` and resets prior
   transport failure backoff.
 - Bad: testing only `campuses` and retaining any prior `code: 0` payload after
-  midnight.
+  midnight; or applying symmetric jitter that schedules past `stale_until`.
 
 ### 6. Tests Required
 
@@ -177,8 +186,11 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now() } = {})
   required fields.
 - `useTodayClassrooms.test.js`: preserve valid prior data, hard-empty invalid
   prior data, and reset/increment consecutive failure count.
-- `reloadSchedule.test.js`: 5/10/20/30 cap, hard-empty retry, 30s partial poll,
-  5s stale poll, and `stale_until` earlier than expiry/backoff.
+- `reloadSchedule.test.js`: 10/20/30/60 cap, hard-empty retry, 30s partial /
+  15s stale bases, single random sample, positive-only jitter bounds, invalid
+  RNG fallbacks, and post-jitter `stale_until` clamp (including sample=1).
+- `useTodayClassrooms.lifecycle.test.jsx`: hidden pause; hide → past deadline →
+  visible → single prompt reload.
 - `todayClassroomsResponse.test.js`: campus-name warning and missing-field
   compatibility.
 

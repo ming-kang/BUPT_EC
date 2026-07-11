@@ -121,7 +121,7 @@ Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.L
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via `reloadSchedule.js`: near `expires_at` when fully fresh, after 5 seconds for ordinary stale data, after 30 seconds for partial-campus data, and with a 5s/10s/20s/30s client-failure backoff. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future. Background polls do **not** full-page spin.
+- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via pure helpers in `reloadSchedule.js`: near `expires_at` when fully fresh (1s floor), ≥15s for ordinary stale data, ≥30s for partial-campus data, and 10s/20s/30s/60s client-failure backoff. Each schedule samples `random` once, applies **positive-only** bounded jitter (≤10% of base, cap 5s), then clamps to remaining `stale_until` so the final delay never exceeds the hard display deadline. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future. Hidden tabs drop timers; resume after expiry clears stale campuses before a single background reload. Background polls do **not** full-page spin.
 - `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.

@@ -3,7 +3,7 @@
   "name": "frontend-reload-deadline-jitter",
   "title": "前端重载截止时间与抖动修复",
   "description": "修复前端 reload jitter 越过 stale_until 和重复随机采样，并补齐 visibility 截止时间回归。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

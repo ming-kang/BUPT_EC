@@ -62,14 +62,14 @@
 
 ## Acceptance Criteria
 
-- [ ] random spy 证明每次 delay 只调用一次随机源。
-- [ ] 非法 random 不产生 NaN、负 delay 或未捕获异常。
-- [ ] stale/partial/failure delay 不早于对应基础间隔，除非 stale_until 更早。
-- [ ] 任意 random sample 下最终 delay 都不超过 stale_until - now。
-- [ ] 上海午夜附近不会因正向 jitter 继续展示昨天 snapshot。
-- [ ] hidden 跨过截止时间后恢复 visible 只触发一次清理和 background reload。
-- [ ] 现有 last-good-data、timeout、manual retry、partial warning 和 spinner 测试继续通过。
-- [ ] frontend lint、全部 Vitest、production build、两级 audit 和 git diff --check 通过。
+- [x] random spy 证明每次 delay 只调用一次随机源。
+- [x] 非法 random 不产生 NaN、负 delay 或未捕获异常。
+- [x] stale/partial/failure delay 不早于对应基础间隔，除非 stale_until 更早。
+- [x] 任意 random sample 下最终 delay 都不超过 stale_until - now。
+- [x] 上海午夜附近不会因正向 jitter 继续展示昨天 snapshot。
+- [x] hidden 跨过截止时间后恢复 visible 只触发一次清理和 background reload。
+- [x] 现有 last-good-data、timeout、manual retry、partial warning 和 spinner 测试继续通过。
+- [x] frontend lint、全部 Vitest、production build、两级 audit 和 git diff --check 通过。
 
 ## Out of Scope
 

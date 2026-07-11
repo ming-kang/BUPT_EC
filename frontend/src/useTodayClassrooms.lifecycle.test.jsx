@@ -272,4 +272,85 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     expect(fetch.mock.calls.length).toBe(callsAfterLoad);
   });
+
+  it("clears expired snapshot and reloads once when becoming visible after stale_until", async () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    let visibility = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibility,
+    });
+
+    const date = shanghaiToday();
+    // Short remaining lifetime so we can cross the hard deadline while hidden.
+    const staleUntil = new Date(Date.now() + 2_000).toISOString();
+    let fetchCount = 0;
+    fetch.mockImplementation(async () => {
+      fetchCount += 1;
+      // First response is near expiry; later reloads return a long-lived day.
+      if (fetchCount === 1) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            usablePayload({
+              data: {
+                date,
+                expires_at: new Date(Date.now() + 1_000).toISOString(),
+                stale_until: staleUntil,
+              },
+            }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => usablePayload(),
+      };
+    });
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    expect(screen.getByTestId("campus-count").textContent).toBe("1");
+    const callsAfterLoad = fetch.mock.calls.length;
+
+    // Hide: reload effect tears down its timer; no polls while hidden.
+    await act(async () => {
+      visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+    // Stale snapshot may still be in state while hidden.
+    expect(screen.getByTestId("campus-count").textContent).toBe("1");
+
+    // Become visible after the hard deadline: schedule a prompt revalidate.
+    await act(async () => {
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    // Duplicate visible events must not enqueue extra work.
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+
+    // MIN_FRESH_DELAY_MS with sample=0 is exactly 1s; fire the timer.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+
+    await waitFor(() => {
+      expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+    });
+    // Exactly one background reload after resume (not ordinary 15s stale poll thrash).
+    expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+      expect(screen.getByTestId("campus-count").textContent).toBe("1");
+    });
+  });
 });

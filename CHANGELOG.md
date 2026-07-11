@@ -50,14 +50,19 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   success resets the ladder, partial success keeps the fixed 30s soft backoff
   without total-failure jitter.
 - Frontend auto-reload uses rate-aware delays (stale ≥15s, partial ≥30s, failure
-  10/20/30/60s) with light jitter, pauses while the tab is hidden, and aborts
-  hung `/api/get_data` fetches after 40s.
+  10/20/30/60s) with positive-only bounded jitter (≤10% of base, cap 5s), clamps
+  the final delay to `stale_until` after jitter, pauses while the tab is hidden,
+  and aborts hung `/api/get_data` fetches after 40s.
 - Dark-mode pre-hydration bootstrap is a CSP-safe module script (no inline JS).
 - Selection preference persistence moved out of the reducer into
   `SelectionProvider` effects so the reducer stays pure.
 
 ### Fixed
 
+- Frontend auto-reload jitter is positive-only (does not shorten rate-limit
+  floors), samples the random source once per schedule, and clamps the final
+  delay to remaining `stale_until` after jitter so multi-tab desync cannot
+  schedule past the hard display deadline.
 - Loopback `GET /metrics` no longer double-gzips when scrapers send
   `Accept-Encoding: gzip` (Prometheus handler compression disabled; router gzip
   remains the sole encoder).
