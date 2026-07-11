@@ -8,6 +8,15 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+
+## [0.1.6] - 2026-07-11
+
+### Fixed
+
+- Installer entrypoint no longer aborts with `BASH_SOURCE[0]: unbound variable`
+  when run via `curl ... | bash` (stdin has no `BASH_SOURCE` under `set -u`).
+  Sourced unit tests still skip `main`.
+
 ## [0.1.5] - 2026-07-11
 
 ### Security
@@ -213,7 +222,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
 - Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
 
-[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.2...v0.1.3

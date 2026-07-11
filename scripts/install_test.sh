@@ -1055,6 +1055,26 @@ test_successful_upgrade_commits_and_cleans_backup() {
   assert_command_count 1 "curl http://127.0.0.1:8080/healthz" "${MOCK_COMMAND_LOG}" "successful health check count"
 }
 
+test_entrypoint_stdin_pipe_reaches_root_check() {
+  # curl | bash feeds the script on stdin; with set -u the old BASH_SOURCE[0]
+  # guard aborted before main. Expect a clean root/EUID failure instead.
+  local output status
+  set +e
+  output="$(cat "${SCRIPT_DIR}/install.sh" | env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash 2>&1)"
+  status=$?
+  set -e
+  if [[ "${output}" == *"BASH_SOURCE"* ]]; then
+    fail "stdin pipe still trips BASH_SOURCE: ${output}"
+  fi
+  if [[ "${output}" != *"must run as root"* ]]; then
+    fail "stdin pipe should fail on root check, got status=${status}: ${output}"
+  fi
+  if [[ "${status}" -eq 0 ]]; then
+    fail "stdin pipe root check should exit non-zero"
+  fi
+}
+
+test_entrypoint_stdin_pipe_reaches_root_check
 test_version_policy
 test_checksum_failures_preserve_targets
 test_staging_failures_preserve_targets

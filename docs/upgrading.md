@@ -15,7 +15,7 @@ Stable:
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 # or:
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.5/install.sh | sudo VERSION=v0.1.5 bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.6/install.sh | sudo VERSION=v0.1.6 bash
 ```
 
 Nightly (edge):

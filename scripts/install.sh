@@ -33,12 +33,22 @@ INSTALLER_TMP_DIR=""
 TRANSACTION_ACTIVE=false
 TRANSACTION_BACKUP_DIR=""
 
+# Captured at top-level load time. Inside functions, stdin-fed scripts report a
+# fake BASH_SOURCE[0] (e.g. "main"), so entrypoint detection must not run there.
+# - ./install.sh or curl|bash: not sourced → run main
+# - source install.sh (unit tests): sourced → skip main
+# Under `set -u`, BASH_SOURCE[0] is unbound for scripts fed on stdin — use :- .
+INSTALLER_SOURCED=false
+if [[ -n "${BASH_SOURCE[0]:-}" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+  INSTALLER_SOURCED=true
+fi
+
 # Tests source this script and call this explicit helper. Production main never
 # reads a path override from the environment, so normal installer execution
 # always targets the fixed /opt and /etc locations above.
 configure_installer_test_root() {
   local root="$1"
-  if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  if [[ "${INSTALLER_SOURCED}" != "true" ]]; then
     echo "configure_installer_test_root is only available when install.sh is sourced." >&2
     return 1
   fi
@@ -1215,6 +1225,6 @@ main() {
   echo "Upgrade later: rerun this installer."
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+if [[ "${INSTALLER_SOURCED}" != "true" ]]; then
   main "$@"
 fi
