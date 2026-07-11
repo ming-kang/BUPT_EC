@@ -75,6 +75,13 @@ Useful log attributes include elapsed durations, stable operation names, and
 classified error values. Prefer structured attributes such as `"elapsed"` and
 `"err"` rather than concatenated message strings.
 
+When a log attribute carries a JW upstream failure string (typically via a
+`*jwError` whose message already passed `safeRemoteMessage`), that text must
+already be single-line Unicode-normalized, secret-redacted, and ≤256 runes.
+Do not log raw `envelope.Msg` / HTTP body snippets. JSON slog lines must remain
+one record per event; Unicode line separators and C1 controls are folded before
+logging so they cannot split a JSON line.
+
 ## What to Log
 
 Log operational state transitions that help diagnose outages without exposing

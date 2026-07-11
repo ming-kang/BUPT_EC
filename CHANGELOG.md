@@ -15,9 +15,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Security
 
-- Upstream JW error text is now sanitized before internal logs/errors: control
-  characters collapse, sensitive key/value fragments redact, and messages cap at
-  256 runes (clients still only see fixed SafeErrorMessage text).
+- Upstream JW error text is sanitized before internal logs/errors: Unicode
+  whitespace, line/paragraph separators, C0/C1 controls, and format/bidi
+  controls fold to ASCII space (normalize before redaction so Unicode spaces
+  cannot bypass sensitive key/value matching); token/password/account/Bearer
+  fragments redact; messages cap at 256 runes (clients still only see fixed
+  SafeErrorMessage text).
 - Go builds and releases now require patched Go 1.25.12 (or Go 1.26.5+), and
   the reachable `quic-go` dependency is updated to v0.59.1.
 - PR and release quality gates now audit production frontend dependencies at

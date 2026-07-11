@@ -68,13 +68,13 @@ ASCII 清洗和敏感 key/value 匹配。
 
 ## Acceptance Criteria
 
-- [ ] U+0085、U+2028、U+2029、Unicode spaces 和 bidi/format controls 不原样保留。
-- [ ] 连续控制/空白折叠为一个 ASCII space，普通文本保持可读。
-- [ ] Unicode whitespace 无法绕过 token/password/account/Bearer 脱敏。
-- [ ] 任意输出最多 256 runes，empty/all-unsafe 使用固定 fallback。
-- [ ] API error body 仍不包含任何原始上游文本。
-- [ ] 所有 JW 上游 message 调用点均经过同一个 safeRemoteMessage pipeline。
-- [ ] table tests、fuzz seeds、slog JSON 回归、go test -race ./...、vet/build 通过。
+- [x] U+0085、U+2028、U+2029、Unicode spaces 和 bidi/format controls 不原样保留。
+- [x] 连续控制/空白折叠为一个 ASCII space，普通文本保持可读。
+- [x] Unicode whitespace 无法绕过 token/password/account/Bearer 脱敏。
+- [x] 任意输出最多 256 runes，empty/all-unsafe 使用固定 fallback。
+- [x] API error body 仍不包含任何原始上游文本。
+- [x] 所有 JW 上游 message 调用点均经过同一个 safeRemoteMessage pipeline。
+- [x] table tests、fuzz seeds、slog JSON 回归、go test -race ./...、vet/build 通过。
 
 ## Out of Scope
 

@@ -80,7 +80,7 @@ service/
   warmup.go            cancellable startup/midnight scheduler + background drain
   runtime_status.go      RuntimeStatus for /readyz
   classroom_builder.go   JW rows → campuses/buildings/rooms normalization
-  jw_error.go            error classification (auth/config/query/parse) + safe messages
+  jw_error.go            error classification + SafeErrorMessage + Unicode-safe upstream sanitizer
   crypto.go              AES password encryption for the JW login protocol
   urlutil.go             JW API URL validation and building
   model/                 JSON payload shapes

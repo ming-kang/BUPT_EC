@@ -3,7 +3,7 @@
   "name": "upstream-message-unicode-safety",
   "title": "上游消息 Unicode 清洗加固",
   "description": "覆盖 Unicode 控制、分隔、空白和格式字符，防止多行日志与敏感字段脱敏绕过。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -104,20 +105,27 @@ func sanitizeRemoteMessage(message string) string {
 		return ""
 	}
 
-	// Collapse control characters and all whitespace to single spaces so log
-	// lines stay single-line and cannot inject fake structured fields.
+	// Normalize first so redaction regexes only need ASCII space, then redact
+	// secrets, then bound length. Order matters: Unicode whitespace must not
+	// bypass key/value matching, and truncation must not leave a secret half.
+	out := normalizeRemoteMessageRunes(message)
+	if out == "" {
+		return ""
+	}
+
+	out = redactSensitiveRemoteFragments(out)
+	out = truncateRunes(out, safeRemoteMessageRuneLimit)
+	return strings.TrimSpace(out)
+}
+
+// normalizeRemoteMessageRunes folds unsafe Unicode runs to a single ASCII space
+// and trims edges. Safe text (letters, digits, punctuation, emoji) is kept.
+func normalizeRemoteMessageRunes(message string) string {
 	var b strings.Builder
 	b.Grow(len(message))
 	lastSpace := false
 	for _, r := range message {
-		if r < 0x20 || r == 0x7f {
-			if !lastSpace {
-				b.WriteByte(' ')
-				lastSpace = true
-			}
-			continue
-		}
-		if r == ' ' || r == '\u00a0' {
+		if isUnsafeRemoteRune(r) {
 			if !lastSpace {
 				b.WriteByte(' ')
 				lastSpace = true
@@ -127,14 +135,18 @@ func sanitizeRemoteMessage(message string) string {
 		b.WriteRune(r)
 		lastSpace = false
 	}
-	out := strings.TrimSpace(b.String())
-	if out == "" {
-		return ""
-	}
+	return strings.TrimSpace(b.String())
+}
 
-	out = redactSensitiveRemoteFragments(out)
-	out = truncateRunes(out, safeRemoteMessageRuneLimit)
-	return strings.TrimSpace(out)
+// isUnsafeRemoteRune reports runes that must not appear in internal log lines:
+// Unicode whitespace (incl. Zl/Zp), C0/C1 controls, and format controls (Cf)
+// such as bidi overrides and zero-width characters.
+func isUnsafeRemoteRune(r rune) bool {
+	if unicode.IsSpace(r) || unicode.IsControl(r) {
+		return true
+	}
+	// Cf is not always covered by IsControl; fold format/bidi/zero-width runes.
+	return unicode.In(r, unicode.Cf)
 }
 
 var (

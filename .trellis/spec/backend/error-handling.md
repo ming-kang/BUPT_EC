@@ -106,13 +106,43 @@ JW responses often use business codes inside JSON bodies. Keep HTTP status and
 business-code classification together in `service/jw_client.go` helpers:
 
 - classify business code `401`/`403` as auth failure even if HTTP status is 500;
-- trim remote messages with `safeRemoteMessage` before storing them in internal
-  errors;
+- pass every login/query remote message through `safeRemoteMessage` before
+  storing it in internal errors or structured logs;
 - classify malformed response bodies as `jw_bad_response` rather than returning
   raw JSON parser errors to clients.
 
+### Upstream message sanitization
+
+`safeRemoteMessage` is the only path for JW upstream text that enters internal
+`jwError` values and slog fields. Clients never receive it; they only see
+`SafeErrorMessage` fixed Chinese copy.
+
+Pipeline (order is a security contract):
+
+1. **Normalize** — fold every unsafe rune run to a single ASCII space and trim.
+   Unsafe means Unicode whitespace (`unicode.IsSpace`, including Zl/Zp such as
+   U+2028/U+2029 and U+0085), C0/C1 controls (`unicode.IsControl`), and format
+   controls (`unicode.Cf`: bidi overrides, zero-width, word joiner). Ordinary
+   letters, digits, punctuation, CJK, and emoji stay readable; no NFC/NFKC.
+2. **Redact** — ASCII and CJK sensitive key/value patterns plus Bearer tokens
+   (`token`, `authorization`, `password`, `passwd`, `username`, `account`,
+   `令牌`/`密码`/`账号`/`学号`, `Bearer …`). Replacement keeps a safe key label
+   and fixed `[REDACTED]` value. Normalize first so Unicode whitespace cannot
+   bypass RE2's ASCII `\s`.
+3. **Bound** — cap at 256 Unicode runes after redaction (never mid-code-point).
+4. **Fallback** — empty or all-unsafe input becomes
+   `remote service returned failure`.
+
+Output invariants: non-empty; ≤256 runes; no unsafe rune classes except the
+intentional ASCII space collapse target; deterministic; no raw redacted values.
+Helpers stay pure and must not read runtime credentials.
+
+Guarded by `service/safe_remote_message_test.go` (table matrix, redaction-before-
+truncate, slog JSON single-line, fuzz seeds) plus
+`TestSafeErrorMessageStillHidesUpstreamText`.
+
 Tests such as `TestParseJWQueryResponseClassifiesBusinessAuthCode` and
-`TestClassifyJWHTTPErrorUsesBusinessAuthCode` document these edge cases.
+`TestClassifyJWHTTPErrorUsesBusinessAuthCode` document business-code edge cases.
 
 ## Common Mistakes
 

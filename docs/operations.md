@@ -114,7 +114,10 @@ Example record:
 ```
 
 Partial refreshes use warning level and include `failed_campuses` plus the
-classified internal errors. These diagnostics never include JW credentials or
+classified internal errors. Upstream JW message text is normalized for single-line
+logs (Unicode whitespace/controls/format runes collapsed), secret key/value
+fragments redacted, and capped at 256 runes before it appears in those fields.
+These diagnostics never include JW credentials or
 tokens.
 
 Set `LOG_CALLER=1` in the environment file to add source file/line to each record (useful when debugging, off by default).
