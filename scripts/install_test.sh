@@ -1060,7 +1060,8 @@ test_entrypoint_stdin_pipe_reaches_root_check() {
   # guard aborted before main. Expect a clean root/EUID failure instead.
   local output status
   set +e
-  output="$(cat "${SCRIPT_DIR}/install.sh" | env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash 2>&1)"
+  # Feed install.sh on stdin (same as curl | bash); avoid pipe/cat for shellcheck.
+  output="$(env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash <"${SCRIPT_DIR}/install.sh" 2>&1)"
   status=$?
   set -e
   if [[ "${output}" == *"BASH_SOURCE"* ]]; then
