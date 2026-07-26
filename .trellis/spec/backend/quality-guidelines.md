@@ -81,8 +81,15 @@ Local test patterns:
 - Login metric tests use a recording `RuntimeMetrics` (or Gather on an isolated
   registry) and assert one observation per shared network login, correct
   `source` provenance, non-negative duration, and no secret labels.
-- Frontend `*.lifecycle.test.jsx` files mount real hooks under jsdom via
-  `@testing-library/react`; pure helper tests remain on the default node env.
+- Frontend `*.lifecycle.test.jsx` and `components/*.test.jsx` files mount real
+  hooks/components under jsdom via `@testing-library/react`, opting in with a
+  file-level `@vitest-environment jsdom` directive; pure helper tests remain on
+  the default node env configured in `vite.config.js:50`. Shared DOM-only stubs
+  (`matchMedia` for antd) live in `frontend/src/test/setup.js`, which guards on
+  `typeof window` so node-environment tests are unaffected.
+- Tests that mount the SWR-backed hook must isolate the module-global cache
+  with `<SWRConfig value={{ provider: () => new Map() }}>`; see the SWR gotchas
+  in api-contract.md's "Frontend Snapshot Validity and Reload Backoff".
 
 Avoid tests that only restate the implementation. Prefer tests that protect
 contract edges, race-prone behavior, security checks, or user-visible output.
@@ -133,9 +140,32 @@ bash scripts/install_test.sh
 shellcheck scripts/*.sh
 cd frontend && pnpm lint
 cd frontend && pnpm build
+cd frontend && node scripts/check-bundle-size.mjs
 cd frontend && pnpm audit:prod
 cd frontend && pnpm audit:dev
 ```
+
+The bundle size budget step ("Check bundle size budget", right after "Build
+frontend" in `quality.yml`) is the one gate `task check` deliberately omits,
+because it needs a fresh production build and that build dominates local check
+latency. The omission is intentional and documented in place — the comment on
+`Taskfile.yml`'s `check` task names the missing step and spells out the manual
+command; keep both sides in sync if either changes. Run
+`pnpm -C frontend build && pnpm -C frontend size` (or
+`node frontend/scripts/check-bundle-size.mjs`) by hand when touching frontend
+dependencies, chunk splitting, or anything that lands in `dist/`.
+
+`frontend/scripts/check-bundle-size.mjs` is dependency-free (`node:fs` +
+`node:zlib` only) and measures **gzip level 9 over every `js`/`css`/`html`/`svg`
+file under `frontend/dist`**. That metric is not Vite's console gzip column
+(zlib default level) — never mix the two when arguing about a regression. The
+budget is `BUDGET_BYTES = 230_888` (check-bundle-size.mjs:25), derived as
+`ceil(measured total × 1.10)` from the 209,898 B measured on 2026-07-27, with
+the 10% headroom absorbing dependency patch churn. Raising it requires editing
+that constant together with a recorded justification in the comment block above
+it; the file also records the pre-modernization baseline (293,407 B) and the
+accepted trade-off that this is a *total* budget, so grouping antd into one
+eagerly preloaded vendor chunk raised first load while cutting the total ~28%.
 
 The tag split in that list is deliberate: `go vet` / `go test -race` /
 `go build ./...` stay tag-less as the bare-clone gate (they must pass on a
@@ -184,6 +214,39 @@ Generate and verify `frontend/pnpm-lock.yaml` with pnpm 9.15.x.
 two workflow files and breaks silently when only one side is renamed; the
 `timeout-minutes` exception avoids a recurring "add timeout to every job"
 false fix that GitHub rejects at parse time.
+
+### Convention: Frontend Dependency Lines and Build Target
+
+**What**: Ranges in `frontend/package.json` are deliberate *line* locks, not
+staleness. Upgrade within a line freely (patch/minor); crossing a line is its
+own evaluated change with its own visual/behavior regression pass.
+
+- `antd` stays on `^5` (currently `^5.29.3`). antd 6 is a separate migration,
+  not a dependency bump.
+- `react` / `react-dom` / `@types/react*` stay on the `^18.3` line.
+- `vite` stays on `^7`, and `@vitejs/plugin-react` must stay on `^5`: its 6.x
+  peer range is `vite ^8` only, so bumping the plugin alone silently drags the
+  bundler major or breaks install resolution.
+- `vitest` stays on `^3` (natively compatible with Vite 7) and `eslint` /
+  `@eslint/js` on the `^9` maintenance line.
+- **Never run `pnpm update --latest`** (or `pnpm up --latest`) in `frontend/`.
+  Every one of the packages above has a `latest` dist-tag beyond its pinned
+  line, so one command crosses several majors at once and destroys regression
+  attribution. Bump the specific package, then run lint/test/build/size/audits.
+- `pnpm.overrides` is intentionally absent. It previously held four CVE
+  pins that became dead weight after a fresh resolve. If an audit goes red
+  again, add a single entry naming the advisory in a comment — never a blanket
+  override block.
+- `build.target: ['es2020', 'safari14']` in `vite.config.js:33` is an explicit
+  rejection of Vite 7's new default baseline (Safari 16 / Chrome 107). The
+  default would silently drop iOS < 16 devices, which are a real share of the
+  campus user base, and nothing in the test suite would fail. Keep the explicit
+  target until raising the baseline is evaluated on its own.
+
+**Why**: Each of these has a failure mode that no gate catches: a plugin peer
+range that quietly forces a bundler major, a browser baseline change that only
+shows up on other people's phones, and a single `--latest` invocation that
+makes a regression impossible to bisect.
 
 ## Scenario: Dependency Security Baseline
 
@@ -270,15 +333,28 @@ Backend API changes often require frontend changes because the React app reads
 the backend payload directly. Before changing `service/model/realtime_data.go`,
 `classroom_builder.go`, or `handler.go`, inspect these frontend files:
 
-- `frontend/src/useTodayClassrooms.js` for fetch and normalization.
+- `frontend/src/useTodayClassrooms.js` for the SWR call, the fetch boundary and
+  the render-time envelope derivation.
 - `frontend/src/todayClassroomsResponse.js` for API envelope normalization.
+- `frontend/src/apiError.js` for the structured fetch-boundary error
+  (`status` / `code` / `logId`).
 - `frontend/src/components/BuildingPicker.jsx` for building assumptions.
 - `frontend/src/components/ClassTimePicker.jsx` for campus node assumptions.
 - `frontend/src/components/TodayClassroomTable.jsx` for `free_nodes` filtering.
 
+Read api-contract.md's "Scenario: Frontend Snapshot Validity and Reload
+Backoff" **before** touching the data layer: SWR configuration, the retry
+ladder, visibility handling and the never-falsy poll interval are contract
+surface, not implementation detail.
+
 Frontend code uses ES modules, React hooks, 2-space indentation, PascalCase
 component filenames, matching component CSS files, and shared selection state
-through `useSelection()` rather than prop drilling.
+through `useSelection()` rather than prop drilling. Prefer derived render-time
+values over `useEffect`-synced state; keep effects for genuine external
+synchronization (store convergence, timers, DOM listeners). The main classroom
+table is native `<table>` markup styled through the shared `.ec-table` system,
+not `antd`'s `Table` — do not reintroduce it, it is the single largest bundle
+line item.
 
 ## Documentation and Release Hygiene
 

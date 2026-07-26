@@ -20,16 +20,24 @@ when building with `-tags embed_assets` (assets staged under `web/dist`;
 page so a bare clone compiles and tests. API contracts therefore need to
 account for both backend model types and frontend consumers.
 
+There is no separate frontend spec package: the React app's binding rules live
+inside these files. The client data layer (SWR configuration, snapshot
+validity, reload backoff, visibility handling, error envelope and `logId`
+surfacing) is specified in [API Response Contract](./api-contract.md) under
+"Scenario: Frontend Snapshot Validity and Reload Backoff"; frontend dependency
+line locks, `build.target`, the bundle size budget and frontend test
+conventions live in [Quality Guidelines](./quality-guidelines.md).
+
 ## Guidelines Index
 
 | Guide | Description | Status |
 | --- | --- | --- |
 | [Directory Structure](./directory-structure.md) | Backend package ownership, entry points, and where new code belongs | Source-backed |
 | [Runtime State and Cache](./runtime-state-and-cache.md) | No-database architecture, `ClassroomService` state, cache, refresh, and JW token rules | Source-backed |
-| [API Response Contract](./api-contract.md) | `/api/get_data`, health endpoints, SPA fallback, and frontend-facing JSON shape | Source-backed |
+| [API Response Contract](./api-contract.md) | `/api/get_data`, health endpoints, SPA fallback, frontend-facing JSON shape, and the client SWR data-layer contract | Source-backed |
 | [Error Handling](./error-handling.md) | JW error classification, safe user messages, stale data errors, and API failures | Source-backed |
 | [Logging Guidelines](./logging-guidelines.md) | `log/slog`, `log_id` propagation, log outputs, and secret redaction rules | Source-backed |
-| [Quality Guidelines](./quality-guidelines.md) | Formatting, tests, CI commands, release hygiene, and review checklist | Source-backed |
+| [Quality Guidelines](./quality-guidelines.md) | Formatting, tests, CI commands, frontend dependency lines and bundle budget, release hygiene, and review checklist | Source-backed |
 
 ## Non-Negotiable Local Rules
 

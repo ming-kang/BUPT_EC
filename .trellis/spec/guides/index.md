@@ -36,6 +36,9 @@ These guides help you **ask the right questions before coding**.
 - [ ] You're not sure where to put some logic
 - [ ] You are adding an event kind, JSONL record, RPC payload, or config field
 - [ ] UI / command code starts casting raw payload fields directly
+- [ ] You are replacing hand-written logic with a library (its defaults now own
+      contract clauses you used to see in your own file — read the owning spec's
+      contract section before writing any code)
 
 → Read [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md)
 

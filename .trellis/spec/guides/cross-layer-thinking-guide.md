@@ -123,6 +123,46 @@ After implementation:
 
 ---
 
+## Handing A Hand-Written Layer To A Library
+
+Replacing hand-written code with a library moves a contract across a boundary
+you do not control. The behavior that used to be visible in your own file is
+now a default, and defaults change what your spec promised.
+
+### Checklist: Before Swapping In A Library
+
+- [ ] Find the spec that owns the behavior and read its contract clauses
+      **first** — in this repo, anything touching the classroom data layer
+      starts at api-contract.md's "Scenario: Frontend Snapshot Validity and
+      Reload Backoff"
+- [ ] Build a clause-by-clause mapping: for each contract line, is it now
+      carried by a library default, by config, by glue you write, or by nothing?
+      "By nothing" is the finding you were looking for
+- [ ] For clauses the library carries by a *different mechanism*, decide whether
+      the observable behavior is still equivalent, and reword the spec to
+      describe the new mechanism — a spec that still says "cancel the timer"
+      when the library says "keep the timer, skip the fetch" will be mis-read by
+      the next reader
+- [ ] List the semantic drifts you are accepting, with the reason they are safe
+      (budget, throttle, cap), and add an assertion for each
+- [ ] Check whether a config option actually does what its name suggests in
+      *your* usage before relying on it
+- [ ] Add a regression for the library's own footgun, not just for your logic
+
+**Real-world example**: Moving `useTodayClassrooms` onto SWR mapped cleanly for
+backoff and snapshot preservation, but three things only surfaced through a
+clause-by-clause pass: `refreshInterval` returning a falsy value ends polling
+*permanently* (a null pre-first-data delay would have frozen the app on its
+first render, with no existing test covering it); `keepPreviousData` is a no-op
+under a constant key, so the option that looked like "keep the last snapshot on
+failure" was not the mechanism at all; and already-armed retry timers have no
+visibility gate, so "hidden tabs issue zero requests" needed explicit glue on
+top of the library's own pause. One accepted drift (focus-triggered failures
+reset the backoff ladder) was written into the spec and asserted, instead of
+being discovered later as a bug.
+
+---
+
 ## Cross-Platform Template Consistency
 
 In Trellis, command templates (e.g., `record-session.md`) exist in **multiple platforms** with identical or near-identical content. This is a cross-layer boundary.

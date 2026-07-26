@@ -150,7 +150,10 @@ full-width parentheses, and room deduplication.
 
 The frontend calls only `/api/get_data` for classroom data. Important consumers:
 
-- `frontend/src/useTodayClassrooms.js` fetches and validates the response shape.
+- `frontend/src/useTodayClassrooms.js` owns the single `useSWR` call for the
+  endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.js:21`), validates
+  the response shape inside its fetcher, and derives the UI envelope at render
+  time.
 - `frontend/src/components/BuildingPicker.jsx` reads campus `buildings`.
 - `frontend/src/components/ClassTimePicker.jsx` reads campus `nodes`.
 - `frontend/src/components/TodayClassroomTable.jsx` filters rooms by selected
@@ -175,6 +178,24 @@ Preserve these semantics unless the frontend is updated in the same change:
   reuses prior same-day campus data, do not present it as every campus's data
   freshness timestamp.
 
+The hook hands components a single normalized envelope, not SWR's raw state:
+
+```text
+resp
+├── code: 0 for a usable snapshot, otherwise the HTTP status or business code
+├── msg:  safe message (never a raw transport/JW error)
+├── data: TodayClassrooms | null
+└── logId: server correlation ID, "" when unknown — error envelopes only
+```
+
+`logId` is a frontend-side field (it does not exist in the backend success
+envelope): the fetch boundary reads `payload.log_id`, falling back to the
+`X-Log-Id` response header, and `components/GlobalEmpty.jsx:19-23` renders it
+as a dim `log_id: …` line under the error description so a user can quote it
+in a bug report. Do not surface it on code-0 stale/partial envelopes — the
+warning Alert has no correlation-ID story and the success body carries no
+`log_id`.
+
 When changing this contract, update backend tests, frontend validation, affected
 components, user docs, and `CHANGELOG.md` if users can observe the change.
 
@@ -183,28 +204,77 @@ components, user docs, and `CHANGELOG.md` if users can observe the change.
 ### 1. Scope / Trigger
 
 Apply this contract whenever frontend fetch merging, classroom cache timestamps,
-reload scheduling, or partial-campus warnings change. It prevents a browser tab
-from retaining yesterday's classroom data or polling faster than the backend can
-refresh.
+reload scheduling, SWR configuration, or partial-campus warnings change. It
+prevents a browser tab from retaining yesterday's classroom data or polling
+faster than the backend can refresh.
+
+The data layer is `useSWR` plus pure glue: SWR owns transport, cache, dedupe,
+focus/reconnect revalidation and the retry chain; the repo owns the schedule
+math (`reloadSchedule.js`), the validity predicate
+(`classroomDataValidity.js`), and the render-time derivation that turns SWR's
+`data`/`error` tracks back into the single `resp` envelope the UI consumes.
 
 ### 2. Signatures
 
 ```js
-isUsableBusinessDaySnapshot(data, nowMs = Date.now())
-mergeFetchResult(prev, next, nowMs = Date.now())
-failureRetryDelay(failureCount)
-withJitter(delayMs, random = Math.random)
-nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.random } = {})
+// frontend/src/classroomDataValidity.js
+isUsableBusinessDaySnapshot(data, nowMs = Date.now())            // :7
+
+// frontend/src/reloadSchedule.js  (unchanged by the SWR migration)
+failureRetryDelay(failureCount)                                  // :13
+withJitter(delayMs, random = Math.random)                        // :52
+nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.random } = {})  // :81
+
+// frontend/src/todayClassroomsResponse.js
+normalizeResponse(payload) -> { ok: true, resp } | { ok: false, reason }   // :49
+
+// frontend/src/apiError.js
+new ApiError(message, { status, code, logId })                   // :6
+
+// frontend/src/useTodayClassrooms.js — pure glue, all separately testable
+hasUsableClassroomData(resp, nowMs = Date.now())                 // :32
+shouldFullPageSpin(isBackground, hasUsableData)                  // :43
+mergeFetchResult(prev, next, nowMs = Date.now())                 // :55
+fetchTodayClassrooms(url)                                        // :126  SWR fetcher
+pollingInterval(latest)                                          // :184  refreshInterval
+retryDelayFor(retryCount, latestData, options = {})              // :195
+retryOnError(error, key, config, revalidate, opts)               // :208  onErrorRetry
+
+// default export, return shape unchanged from the pre-SWR hook
+useTodayClassrooms() -> { resp, spinning, reloading, isError, retry }   // :225
 ```
+
+`nextFailureCount` no longer exists: SWR's 1-based `retryCount` is the failure
+counter, and success/non-retry revalidations reset it internally.
 
 ### 3. Contracts
 
 - A displayable snapshot has an array `campuses`, a `date` equal to the current
   Asia/Shanghai date, and a parseable future `stale_until`.
+- Throwing is the single error channel. `fetchTodayClassrooms` throws `ApiError`
+  for every outcome that must not replace the cached snapshot: transport
+  failure, 40s `AbortSignal.timeout`, non-2xx status, malformed payload
+  (`normalizeResponse` returning `{ ok: false }`), a non-zero service envelope
+  over HTTP 2xx, and a success envelope whose cache metadata is not displayable.
+  Anything it returns is a usable snapshot. `normalizeResponse` itself never
+  throws — it returns a discriminated result, so parsing is not control flow.
+- `ApiError` carries the real HTTP `status`, the business envelope `code` and
+  the server `logId`. The derived envelope's `code` is `status ?? businessCode
+  ?? 500`, never a blanket 500 (`useTodayClassrooms.js:103`).
+- `logId` comes from `payload.log_id` with the `X-Log-Id` response header as
+  fallback (`useTodayClassrooms.js:141`). It rides on hard-error envelopes only
+  (`resp.logId`); code-0 stale merges never surface it.
 - `mergeFetchResult` keeps prior data after a client failure only while that
-  snapshot remains displayable; otherwise it returns `data: null`.
+  snapshot remains displayable; otherwise it returns `data: null`. It runs at
+  **render time** over SWR's separate `data`/`error` tracks (a throwing fetcher
+  leaves `data` untouched), not at setState time.
 - Consecutive client failures retry after 10s, 20s, 30s, then 60s maximum. A
-  valid HTTP 200 classroom payload resets the count.
+  valid HTTP 200 classroom payload resets the count. The counter is SWR's
+  `retryCount`, which starts at 1 and maps 1:1 onto the ladder — pass it
+  straight to `retryDelayFor`, no offset arithmetic.
+- Polling and the retry ladder are never both armed: SWR suspends
+  `refreshInterval` while the cache holds an error, and `onErrorRetry` owns
+  scheduling until a revalidation succeeds.
 - A partial payload base-polls at 30s; an ordinary stale payload base-polls at
   15s; a fresh payload waits for `expires_at` (1s floor).
 - Scheduling pipeline: base delay → **one** unit random sample → positive-only
@@ -214,10 +284,41 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.rand
   shorten documented minimum intervals.
 - Invalid / throwing / non-finite random sources fall back to sample 0.5 and
   never yield NaN delays.
-- Background retries never enable the full-page spinner. If the timer wakes at
-  an invalid boundary, clear the campuses before starting the reload. Hidden
-  tabs cancel timers; becoming visible after `stale_until` revalidates promptly
-  without keeping yesterday's filters for a normal poll interval.
+- Background retries never enable the full-page spinner. When a render observes
+  a code-0 snapshot that has crossed midnight or `stale_until`, it clears the
+  campuses (`EXPIRED_SNAPSHOT_MESSAGE` envelope, `useTodayClassrooms.js:285`)
+  while the clamped reload is in flight.
+- Hidden tabs issue zero classroom requests. Three separate mechanisms carry
+  that, and all three must stay in place:
+  1. `refreshWhenHidden` stays at its `false` default, so the polling chain
+     keeps re-arming its timer but skips the fetch while hidden.
+  2. SWR only chains a *new* retry when `isActive()` (visible and online), so
+     the ladder pauses on hide. This precondition is gated on
+     `revalidateOnFocus`/`revalidateOnReconnect` being enabled — turning
+     `revalidateOnFocus` off makes it vacuously true and lets hidden tabs
+     keep retrying. Keep `revalidateOnFocus: true`.
+  3. An **already-armed** retry timer has no visibility gate inside SWR, so
+     `retryOnError`'s own `setTimeout` callback re-checks
+     `document.visibilityState` and abandons the attempt when hidden
+     (`useTodayClassrooms.js:214-222`).
+- Becoming visible after `stale_until` revalidates promptly instead of keeping
+  yesterday's filters for a normal poll interval. `revalidateOnFocus` (which
+  listens to both `visibilitychange` and `window.focus`) carries this, and it
+  also re-issues the request that a hidden tab abandoned above.
+  `focusThrottleInterval` is `FOCUS_THROTTLE_MS = 15_000`
+  (`useTodayClassrooms.js:27`), aligned with `STALE_POLL_MS`: the 5s default
+  would let multi-tab switching exceed the Nginx 30 req/min budget, and the
+  throttle is also what makes repeated visible events fire a single reload.
+- **Accepted semantic drift from the pre-SWR scheduler**: a focus-triggered
+  revalidation that fails resets the backoff ladder to 10s, because it reaches
+  the fetcher without a `retryCount`. The old hand-written layer only cleared
+  `failureCount` on success. This is one notch more aggressive by design and
+  stays inside the request budget — the 15s focus throttle caps how often a
+  reset can happen, and the ladder still caps at 60s and still clamps to
+  `stale_until`.
+- Unmounting does not abort an in-flight request; SWR only ignores the late
+  result. Acceptable for a single-page app that unmounts only on navigation
+  away, but it means "unmount cancels the request" is not a testable guarantee.
 - `partial_campuses` is optional. When present, warnings resolve IDs through the
   payload's campus names and fall back to the ID when no name is available.
 
@@ -227,12 +328,18 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.rand
 | --- | --- |
 | same-day snapshot, future `stale_until`, fetch failure | preserve data, set `stale` and `client_refresh_failed` |
 | previous-day or expired snapshot, fetch failure | hard error envelope with `data: null` |
-| missing/invalid `date`, `stale_until`, or `campuses` | fail closed without throwing |
-| hard error with failure count 1/2/3/4+ | retry after 10s/20s/30s/60s |
+| missing/invalid `date`, `stale_until`, or `campuses` | fail closed without throwing; `normalizeResponse` returns `{ ok: false, reason }` and the fetcher converts it to one `ApiError` |
+| non-2xx status | envelope `code` is the real HTTP status, not 500 |
+| non-zero envelope over HTTP 2xx | envelope `code` is the business code |
+| hard error with `retryCount` 1/2/3/4+ | retry after 10s/20s/30s/60s |
+| failing revalidation triggered by focus/manual retry (no `retryCount`) | ladder restarts at 10s (accepted drift, throttled to once per 15s) |
+| hard error carrying `log_id` body or `X-Log-Id` header | `resp.logId` set; `GlobalEmpty` renders the `log_id` line |
 | valid partial payload | reset client-failure count, base poll 30s + positive jitter |
 | valid stale payload | base poll 15s + positive jitter |
 | fresh expiry later than `stale_until` | wake at `stale_until` (post-jitter clamp) |
 | sample=1 near hard deadline | final delay ≤ remaining `stale_until` |
+| no data yet (pre-first-fetch `refreshInterval` call) | interval falls back to `MIN_FRESH_DELAY_MS`, never 0/null |
+| tab hidden when an armed retry fires | request abandoned; `revalidateOnFocus` reissues it on return |
 
 ### 5. Good/Base/Bad Cases
 
@@ -242,21 +349,62 @@ nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.rand
 - Base: a fresh complete payload waits until `expires_at` and resets prior
   transport failure backoff.
 - Bad: testing only `campuses` and retaining any prior `code: 0` payload after
-  midnight; or applying symmetric jitter that schedules past `stale_until`.
+  midnight; applying symmetric jitter that schedules past `stale_until`; or
+  letting `refreshInterval` return `nextReloadDelay(...)` unguarded, which
+  silently ends all polling on the first call.
 
 ### 6. Tests Required
 
 - `classroomDataValidity.test.js`: same-day, cross-day, expired, and malformed
   required fields.
-- `useTodayClassrooms.test.js`: preserve valid prior data, hard-empty invalid
-  prior data, and reset/increment consecutive failure count.
 - `reloadSchedule.test.js`: 10/20/30/60 cap, hard-empty retry, 30s partial /
   15s stale bases, single random sample, positive-only jitter bounds, invalid
   RNG fallbacks, and post-jitter `stale_until` clamp (including sample=1).
-- `useTodayClassrooms.lifecycle.test.jsx`: hidden pause; hide → past deadline →
-  visible → single prompt reload.
-- `todayClassroomsResponse.test.js`: campus-name warning and missing-field
-  compatibility.
+- `todayClassroomsResponse.test.js`: `normalizeResponse` returning
+  `{ ok: false, reason }` for every malformed shape (assert the discriminated
+  result, never `toThrow`), safe normalization of non-zero service envelopes,
+  the campus-name warning, and missing-field compatibility.
+- `apiError.test.js`: `status` / `code` / `logId` stay structured on the error
+  object, and `logId` defaults to `""` when no details are passed.
+- `useTodayClassrooms.test.js` (pure glue, node env): `hasUsableClassroomData`
+  accept/reject matrix, `shouldFullPageSpin` quadrants, `pollingInterval`
+  reading the snapshot out of the cached envelope and never returning a falsy
+  interval, `retryDelayFor` mapping the 1-based `retryCount` onto the ladder and
+  clamping to a displayable `stale_until`, and the six `mergeFetchResult`
+  scenarios (preserve, non-ok envelope, hard-empty, cross-day/expired clear,
+  fail-closed metadata, successful replace).
+- `useTodayClassrooms.lifecycle.test.jsx` (jsdom, 12+ cases): initial load; late
+  responses after unmount being harmless (no abort); manual retry issuing a
+  second request and clearing the full-page error; a failed background reload
+  keeping the last good data; timer cleanup on unmount; the 40s timeout safe
+  message; real HTTP status plus body `log_id` in the error envelope;
+  `X-Log-Id` header fallback; **background polling still alive after the first
+  load** (the falsy-chain-death regression); no background reload while hidden;
+  an armed retry abandoning itself while hidden and recovering on focus; the
+  ladder restarting at 10s after an intervening success; and hide → past
+  deadline → visible → cleared snapshot with a single prompt reload.
+- `components/GlobalEmpty.test.jsx`: the `log_id` line renders for error
+  envelopes carrying one and is omitted when `logId` is empty or missing.
+- Component tests for the other consumers of this contract:
+  `components/TodayClassroomTable.test.jsx` (native `thead` with three
+  `scope="col"` headers, `free_nodes` intersection filtering, capacity
+  rendering, and the room modal following background refreshes without
+  closing), `components/ClassTimePicker.test.jsx`,
+  `components/BuildingPicker.test.jsx`,
+  `components/CampusButtonGroup.test.jsx` (derived selection and
+  `aria-pressed`), and `components/ErrorBoundary.test.jsx`.
+
+> **Gotcha (SWR test isolation)**: SWR's cache is a module global. Every test
+> that mounts the hook must wrap the probe in
+> `<SWRConfig value={{ provider: () => new Map() }}>`, or `data`, `error` and
+> dedupe state leak across cases. Keep `dedupingInterval` at the production
+> default: the always-alive polling chain fires a bootstrap tick roughly 1s
+> after mount (the pre-first-data interval) and production deduping absorbs it,
+> while `0` turns that tick into a real request and makes fetch counts flaky
+> (bound `mutate()` bypasses deduping, so manual retry still works). Fake
+> timers cannot advance jsdom's internal `AbortSignal.timeout` clock, so the
+> timeout case rebuilds it on the patched global `setTimeout`
+> (`useTodayClassrooms.lifecycle.test.jsx:103-114`).
 
 ### 7. Wrong vs Correct
 
@@ -274,6 +422,42 @@ return canPreserve
   ? { code: 0, data: { ...prev.data, stale: true, error: clientError } }
   : { code: 500, msg: message, data: null };
 ```
+
+#### Wrong
+
+```js
+// Chain death: nextReloadDelay(undefined) is null before the first payload,
+// and SWR ends the polling chain for good on a falsy interval.
+refreshInterval: (latest) => nextReloadDelay(latest?.data, { failureCount: 0 }),
+```
+
+#### Correct
+
+```js
+// Module-level identity + never-falsy floor (useTodayClassrooms.js:184).
+export function pollingInterval(latest) {
+  const delay = nextReloadDelay(latest?.data, { failureCount: 0 });
+  return Math.max(1, delay ?? MIN_FRESH_DELAY_MS);
+}
+```
+
+> **Gotcha (SWR polling chain)**: the polling effect depends only on
+> `[refreshInterval, refreshWhenHidden, refreshWhenOffline, key]` and re-arms
+> itself through `execute → .then(next)`. Two consequences: (1) any falsy
+> return value (`0`, `null`, `undefined`) stops polling **permanently**, not
+> just for one tick — hence the `Math.max(1, … ?? MIN_FRESH_DELAY_MS)` wrapper
+> and the dedicated "polling still alive after the first load" test; (2) the
+> function must keep a **stable module-level identity** — an inline arrow gives
+> the effect a new dependency on every render, which restarts the timer and
+> lets unrelated re-renders indefinitely postpone a 15s/30s poll.
+>
+> **Gotcha (keepPreviousData)**: it only returns the laggy value while the
+> *current key* has no cache entry, i.e. across key switches. This app's key is
+> the constant `"/api/get_data"`, so the option is a no-op here — do not add it
+> believing it implements "keep the last snapshot on failure". That behavior
+> comes from SWR storing `data` and `error` on separate tracks: a throwing
+> fetcher writes `error` and leaves `data` intact, and `mergeFetchResult`
+> derives the stale envelope from the pair at render time.
 
 ## Health and Readiness
 
