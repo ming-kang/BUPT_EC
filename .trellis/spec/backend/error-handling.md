@@ -48,8 +48,8 @@ layer:
 4. `handler.go::GetData` converts the error to `service.SafeErrorMessage(err)`
    and includes the request `log_id` for operator correlation.
 
-Do not turn service errors into HTTP responses inside `service/`. Do not import
-Gin into `service/`.
+Do not turn service errors into HTTP responses inside `service/`. HTTP status
+codes and JSON envelopes belong only to `handler.go` / `router.go`.
 
 ## Auth Retry and Backoff
 
@@ -81,7 +81,8 @@ stale refresh backoff. Do not add unbounded retry loops around JW endpoints.
 ```
 
 The `msg` value must come from `SafeErrorMessage`. The `log_id` comes from
-`logs.GetLogIDFromContext(ctx)` and lets operators find matching structured log
+`logs.GetLogIDFromContext(r.Context())` — the `apiLogContext` middleware in
+`router.go` injected it — and lets operators find matching structured log
 records.
 
 Stale success responses are different: `GetTodayClassrooms` may return usable

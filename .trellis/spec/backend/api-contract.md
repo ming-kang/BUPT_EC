@@ -2,7 +2,13 @@
 
 ## Routes
 
-`router.go` defines the public HTTP surface:
+`router.go::Routes() http.Handler` defines the public HTTP surface. It builds
+an `http.ServeMux` and wraps it in the middleware chain (outer → inner):
+`gzipSkipProbes` → gzhttp wrapper → `apiLogContext` → `recovery` → mux.
+`main.go` wires the result as the `http.Server` `Handler`. Handlers use plain
+`func(w http.ResponseWriter, r *http.Request)` signatures and shape JSON
+through `router.go::writeJSON` (`Content-Type: application/json;
+charset=utf-8`, `json.Marshal`, no trailing newline).
 
 | Route | Handler | Contract |
 | --- | --- | --- |
@@ -10,16 +16,74 @@
 | `GET /healthz` | `handler.go::Healthz` | Liveness probe: `200 {"status":"ok"}`. |
 | `GET /readyz` | `handler.go::Readyz` | Readiness probe with credential/cache/runtime status; 503 when not ready. |
 | `GET /metrics` | `handler.go::Metrics` | Loopback Prometheus exposition from an isolated registry; nil handler → 404. |
-| non-API paths | `router.go::NoRoute` | Serve embedded `frontend/dist/index.html` for SPA routing. |
-| unknown `/api/*` paths | `router.go::NoRoute` | JSON 404: `{"code":404,"msg":"not found"}`. |
+| `GET /assets/` | `router.go::immutableCache` + `http.FileServerFS` | Hashed frontend build assets with immutable caching; directory paths are 404. |
+| any other path/method | `router.go::Routes` `fallback` | Unknown `/api/*` → JSON 404 `{"code":404,"msg":"not found","log_id":...}`; existing dist-root files (`favicon.ico`) → served `no-cache`; everything else → SPA fallback to `index.html`. |
 
-`router.go` also applies gzip to normal responses when the client accepts gzip,
-but intentionally skips `/healthz` and `/readyz` for simple probes. `/metrics`
-uses the same outer gzip middleware; production constructs
-`promhttp.HandlerFor` with `DisableCompression: true` so the body is compressed
-at most once. Scrapers with `Accept-Encoding: gzip` must get valid Prometheus
-text after a single decompress. Public Nginx keeps `location = /metrics`
-`return 404` and does not proxy the path.
+Compression is owned by `klauspost/compress/gzhttp`
+(`router.go::newGzipWrapper`), configured with `EnableZstd(false)` (gzip-only
+behavior surface for now), an explicit `ContentTypes` allowlist
+(json/html/plain/css/javascript/svg/xml/wasm — deliberately no `image/png`,
+`font/woff2`, or `application/octet-stream`), and
+`gzhttp.MinSize(gzhttp.DefaultMinSize)` (1024 bytes, written out as
+documentation). Responses that already carry `Content-Encoding` pass through
+untouched — gzhttp skips them automatically. `/healthz` and `/readyz` bypass
+the wrapper entirely via the path-level `gzipSkipProbes` shim, so probe
+responses are never compressed and never carry `Vary`. `/metrics` flows
+through the same wrapper (the parameterless `text/plain` allowlist entry
+matches `text/plain; version=0.0.4`); production constructs
+`promhttp.HandlerFor` with `DisableCompression: true` as a second guard so
+the body is compressed at most once. Scrapers with `Accept-Encoding: gzip`
+must get valid Prometheus text after a single decompress. Public Nginx keeps
+`location = /metrics` `return 404` and does not proxy the path.
+
+> **Gotcha (gzhttp content types)**: gzhttp's *default* `ContentTypeFilter`
+> does not exclude `image/png` or `font/woff2`. The explicit `ContentTypes`
+> allowlist in `newGzipWrapper` is what keeps already-compressed static
+> assets from being re-compressed — do not drop it when touching options.
+
+### Static Asset Caching
+
+| Resource | Cache-Control | ETag |
+| --- | --- | --- |
+| `/assets/*` (content-hashed filenames) | `public, max-age=31536000, immutable` | none — the hash in the filename is the version |
+| `index.html` (incl. every SPA fallback) | `no-cache` | weak `W/"<first 8 bytes of sha256, hex>"`, computed once in `Routes()` |
+| `favicon.ico` (dist root, unhashed) | `no-cache` | none |
+
+- `index.html` is read once at assembly time and served through
+  `http.ServeContent` with a zero modtime, so conditional requests go purely
+  through `If-None-Match` → 304. The ETag is **weak** on purpose: gzhttp
+  keeps the original ETag on compressed variants, and one strong ETag over
+  two byte streams would violate RFC 7232; weak comparison still yields 304.
+- `/assets/...` **directory** paths (trailing slash) always return 404 in
+  `immutableCache`: listings have no content hash and must never be served
+  with (or without) the immutable header.
+- Missing `/assets/<name>` files are a real 404, not an `index.html`
+  fallback — a wrong asset name must not receive HTML.
+
+### HTTP Surface Behavior Facts
+
+- `http.ServeMux` redirects unclean paths (`//healthz`, `..` segments) and
+  `/assets` (no trailing slash) with **307** to the cleaned path; this is
+  mux-builtin behavior and not configurable.
+- Trailing-slash variants such as `/api/get_data/` are **not** redirected;
+  they fall through to the fallback (JSON 404 for API paths, SPA otherwise).
+- The catch-all `mux.Handle("/", fallback)` is method-independent, so the
+  ServeMux can never answer 405: `POST /api/get_data` lands in the fallback
+  and yields the JSON 404 envelope.
+- Every response passing through the gzhttp wrapper carries
+  `Vary: Accept-Encoding` — including identity, 404, and 304 responses.
+- HEAD requests are never compressed.
+- `apiLogContext` sets the `X-Log-Id` response header for `/api/*` requests
+  only; SPA and static responses must not carry it.
+- `recovery` sits innermost so a panic converts to a clean 500 (when no
+  bytes were written) before reaching the gzhttp writer; the panic value and
+  stack go to slog with the request `log_id`.
+
+> **Gotcha (go:embed)**: `//go:embed all:dist` in `web/embed_enabled.go`
+> requires at least one matching file. Building with `-tags embed_assets`
+> while `web/dist` is empty or missing fails compilation; the tag-less
+> default build (placeholder FS in `web/embed_disabled.go`) is what keeps a
+> bare clone compiling.
 
 ## `/api/get_data` Response Shape
 

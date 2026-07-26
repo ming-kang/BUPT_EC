@@ -2,10 +2,10 @@
 
 ## Overview
 
-Backend changes should preserve the current small-service architecture: thin Gin
-handlers, injectable service dependencies, no local timetable database, safe JW
-error handling, and source-backed API contracts. Keep code readable and verify
-with the same commands CI uses.
+Backend changes should preserve the current small-service architecture: thin
+`net/http` handlers, injectable service dependencies, no local timetable
+database, safe JW error handling, and source-backed API contracts. Keep code
+readable and verify with the same commands CI uses.
 
 Primary references:
 
@@ -31,7 +31,7 @@ Primary references:
   than mutating config/cache globals.
 - Use contexts for external work. JW login, API URL fetch, classroom refreshes,
   and HTTP requests all use bounded contexts.
-- Keep handlers thin and service logic testable without Gin.
+- Keep handlers thin and service logic testable without the HTTP layer.
 - Keep public JSON structs in `service/model/` with explicit `json` tags.
 - Use `errors.As`, `errors.Is`, or `errors.Join` instead of string-matching
   error text.
@@ -69,8 +69,11 @@ Local test patterns:
   pair or `JW_TOKEN`. All must skip cleanly when their required credentials are
   missing.
 - Handler tests should inject deterministic fakes through `NewHTTPServer` and
-  use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
-  middleware such as `/api` `log_id` correlation matters.
+  use `httptest` against `HTTPServer.Routes()` when middleware behavior such
+  as `/api` `log_id` correlation (`X-Log-Id`), gzip, caching headers, or the
+  fallback matters. Gzip assertions must go through the production
+  `newGzipWrapper` configuration (never a test-private wrapper) and use
+  bodies ≥1KB, since `MinSize` is 1024.
 - Metrics endpoint tests must use a real `promhttp.HandlerFor` over
   `NewPrometheusMetrics()`'s isolated registry (not a fixed fake body), with
   `DisableCompression: true` matching production, and assert identity/gzip
@@ -95,6 +98,17 @@ go vet ./...
 go test ./...
 ```
 
+`Taskfile.yml` provides the local development entry points and must stay in
+sync with `.github/workflows/quality.yml` (the sync note is at the top of
+both files):
+
+```bash
+task test    # go test -race ./...
+task check   # gofmt/vet/tidy/verify + frontend lint/test/audits
+task build   # frontend build → copy to web/dist → go build -tags embed_assets
+task vuln    # pinned govulncheck
+```
+
 For frontend source, API-normalization, selection-state, or package changes,
 also run:
 
@@ -112,7 +126,8 @@ CI and release quality gates also run (via `.github/workflows/quality.yml`):
 go mod tidy -diff
 go mod verify
 go test -race ./...
-go build -o bupt-ec -v ./
+go build ./...
+rm -rf web/dist && cp -r frontend/dist web/dist && go build -tags embed_assets ./...
 govulncheck ./...
 bash scripts/install_test.sh
 shellcheck scripts/*.sh
@@ -121,6 +136,12 @@ cd frontend && pnpm build
 cd frontend && pnpm audit:prod
 cd frontend && pnpm audit:dev
 ```
+
+The tag split in that list is deliberate: `go vet` / `go test -race` /
+`go build ./...` stay tag-less as the bare-clone gate (they must pass on a
+checkout with no frontend build, via the `web` placeholder branch), while
+the separate `-tags embed_assets` build step catches embed pattern breakage
+before release.
 
 Frontend audit policy is executable through `frontend/package.json` so local,
 PR, and release checks share the same thresholds: production dependencies fail
@@ -141,13 +162,23 @@ Generate and verify `frontend/pnpm-lock.yaml` with pnpm 9.15.x.
   `quality.yml`.
 - `frontend/dist` is built once in the `quality.yml` reusable gate and shared
   as the `frontend-dist` artifact (retention 3 days). `release.yml`'s
-  `build-go` downloads it before `go build` so `//go:embed frontend/dist`
-  resolves; keep the upload/download artifact names in sync when renaming.
+  `build-go` downloads it to `path: web/dist` (release.yml:45-49) before
+  `go build -tags embed_assets` so `//go:embed all:dist` in the `web`
+  package resolves; keep the upload/download artifact names and the
+  download path in sync when renaming.
+- `quality.yml`'s `go vet` / `go test -race` / `go build ./...` steps run
+  **without** `-tags embed_assets` on purpose: they gate the bare-clone
+  (placeholder) build. The dedicated "Build with embedded assets" step
+  (copy `frontend/dist` → `web/dist`, then `go build -tags embed_assets
+  ./...`) is the embed-mode gate; do not "fix" the tag-less steps by adding
+  the tag.
 - Release binaries build with
-  `go build -trimpath -ldflags "-s -w -X main.version=<value>"`; the version
-  value is the tag name for tag builds and `nightly-<short-sha>` otherwise.
-  Keep the `-X` target in sync with the `version` variable in `main.go`
-  (see api-contract.md "Health and Readiness" for the injection gotchas).
+  `go build -trimpath -tags embed_assets -ldflags "-s -w -X main.version=<value>"`;
+  the version value is the tag name for tag builds and `nightly-<short-sha>`
+  otherwise. Keep the `-X` target in sync with the `version` variable in
+  `main.go` (see api-contract.md "Health and Readiness" for the injection
+  gotchas) and keep `task build` in `Taskfile.yml` aligned with the same
+  flag set.
 
 **Why**: The pinning rule is a supply-chain gate; the artifact contract spans
 two workflow files and breaks silently when only one side is renamed; the
@@ -228,8 +259,10 @@ with:
   go-version: "1.25.12"
 ```
 
-The Go build embeds `frontend/dist/` through `router.go`, so local full builds
-need `cd frontend && pnpm build` first if `frontend/dist/` is missing.
+The Go build embeds the frontend only when built with `-tags embed_assets`,
+which expects `frontend/dist` copied to `web/dist` (see the `web` package in
+directory-structure.md). `task build` runs the whole chain; default builds
+compile without any frontend output and serve a placeholder page.
 
 ## Frontend and Cross-Layer Quality
 
@@ -367,6 +400,14 @@ commit_installation <staging-dir> <app-addr>
 rollback_installation <backup-dir>
 perform_install_transaction <staging-dir> <backup-dir> <app-addr>
 ```
+
+> **Common Mistake (positional parameters)**: `render_env_file`
+> (install.sh:607, 11 args) and `prepare_staging` (install.sh:749, 13 args)
+> take all configuration as positional parameters. Adding or removing a
+> middle parameter silently shifts every later one (e.g.
+> `download_base_url` receiving a version string), so any arity change must
+> update both signatures, every call site, and the
+> `scripts/install_test.sh` fixture arguments in the same edit.
 
 ### 3. Contracts
 

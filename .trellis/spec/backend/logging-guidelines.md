@@ -9,9 +9,11 @@ selection is an explicit startup value, not a logging-package environment read.
 
 Reference files:
 
-- `logs/log_util.go`: logger setup, `log_id` generation, Gin context helpers.
+- `logs/log_util.go`: logger setup, `log_id` generation, and the context
+  helpers `GenNewContext` / `GetLogIDFromContext`.
 - `logs/logger.go`: slog handler wrapper that injects `log_id` into records.
-- `router.go`: applies `logs.SetNewContextForGinContext` to `/api` routes.
+- `router.go`: the `apiLogContext` middleware that attaches a `log_id`
+  context to `/api` requests.
 - `handler.go`, `service/realtime_data.go`, `service/token_manager.go`: request
   and refresh/login logging examples.
 - `docs/operations.md`: operator-facing log behavior.
@@ -36,13 +38,20 @@ Do not create independent loggers in handlers or service code. Use the default
 
 ## Request `log_id` Propagation
 
-Every `/api/*` request must pass through `logs.SetNewContextForGinContext` in
-`router.go`. That middleware:
+Every `/api/*` request must pass through the `apiLogContext` middleware in
+`router.go` (root package, inside the chain assembled by `Routes()`). When
+`isAPIPath(r.URL.Path)` is true it:
 
-- creates a context carrying a generated log ID under an unexported typed key;
-- stores the context in Gin under `"ctx"`;
-- sets the `LogID` response header;
-- lets `logs.GetContextFromGinContext` retrieve the same context in handlers.
+- calls `logs.GenNewContext(r.Context())` to create a context carrying a
+  generated log ID under an unexported typed key;
+- sets the `X-Log-Id` response header from `logs.GetLogIDFromContext(ctx)`;
+- forwards the request as `r.WithContext(ctx)` so handlers and the fallback
+  JSON 404 read the same context via plain `r.Context()`.
+
+Non-API traffic (SPA fallback, `/assets/*`, probes) is left alone and must
+not carry an `X-Log-Id` header. The `recovery` middleware logs panics with
+`slog.ErrorContext(r.Context(), ...)`, so panic records also carry the
+request `log_id` for API paths.
 
 The custom slog handler adds the `log_id` attribute to records when the context
 contains one. API error responses also include `log_id` so operators can match a
@@ -51,7 +60,7 @@ client-visible failure to structured logs.
 When adding API handlers, always log with the request context:
 
 ```go
-ctx := logs.GetContextFromGinContext(c)
+ctx := r.Context()
 slog.InfoContext(ctx, "GetData")
 ```
 
@@ -134,8 +143,9 @@ update `scripts/install.sh` and `docs/operations.md` together.
 
 ## Anti-Patterns
 
-- Adding route handlers outside `/api` that need request correlation but do not
-  use `logs.SetNewContextForGinContext`.
+- Adding route handlers that need request correlation on paths outside the
+  `isAPIPath` scope of `apiLogContext`, so their contexts never carry a
+  `log_id`.
 - Logging with a background context when a request context is available.
 - Adding plaintext logs of credentials to make JW debugging easier.
 - Relying only on file logs in environments where stdout is the primary log

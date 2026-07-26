@@ -7,14 +7,18 @@ architecture changes.
 
 ## Project Shape
 
-The backend is a small Go 1.25.12+ service built around Gin handlers and a single
-`service.ClassroomService` instance. It does not store classroom timetables in a
-database. Runtime data comes from the BUPT JW HTTP API, is normalized into
-`service/model.TodayClassrooms`, and is cached in process for the current day.
+The backend is a small Go 1.25.12+ service built around standard-library
+`net/http` handlers (an `http.ServeMux` assembled in `router.go::Routes()`)
+and a single `service.ClassroomService` instance. It does not store classroom
+timetables in a database. Runtime data comes from the BUPT JW HTTP API, is
+normalized into `service/model.TodayClassrooms`, and is cached in process for
+the current day.
 
-The React/Vite frontend is embedded into the Go binary from `frontend/dist/` by
-`router.go`; API contracts therefore need to account for both backend model
-types and frontend consumers.
+The React/Vite frontend is embedded into the Go binary by the `web/` package
+when building with `-tags embed_assets` (assets staged under `web/dist`;
+`task build` runs the chain). Default tag-less builds serve a placeholder
+page so a bare clone compiles and tests. API contracts therefore need to
+account for both backend model types and frontend consumers.
 
 ## Guidelines Index
 
@@ -36,7 +40,8 @@ types and frontend consumers.
 - Do not expose raw JW errors, credentials, tokens, or upstream response bodies
   to API clients or logs.
 - Run Go quality checks after backend changes: `gofmt`, `go vet ./...`, and the
-  relevant `go test` command. CI runs `go test -race ./...`.
+  relevant `go test` command. CI runs `go test -race ./...` (locally:
+  `task test` / `task check`).
 - If a user-visible behavior, endpoint, config, or release asset changes, update
   `README.md`/`docs/` and add a `CHANGELOG.md` `[Unreleased]` bullet in the same
   change.
