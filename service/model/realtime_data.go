@@ -23,12 +23,6 @@ type JWClassInfo struct {
 	NodeName   string `json:"NODENAME"`
 }
 
-type QueryResponse struct {
-	Code string        `json:"code"`
-	Msg  string        `json:"Msg"`
-	Data []JWClassInfo `json:"data"`
-}
-
 type APIError struct {
 	Type    string `json:"type"`
 	Message string `json:"message"`

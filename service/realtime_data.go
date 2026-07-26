@@ -28,16 +28,13 @@ var ErrNoTodayCache = errors.New("no today classroom cache")
 
 const partialCampusErrorMessage = "部分校区数据刷新失败，已展示可用数据"
 
-func (s *ClassroomService) Login(ctx context.Context) error {
-	_, err := s.tokenManager.EnsureToken(ctx, true)
-	return err
-}
-
-func (s *ClassroomService) QueryOne(ctx context.Context, id string) ([]model.JWClassInfo, error) {
+// queryOne and queryAll are synchronous JW entry points kept for white-box
+// tests: queryOne queries one campus, queryAll drives one full refresh.
+func (s *ClassroomService) queryOne(ctx context.Context, id string) ([]model.JWClassInfo, error) {
 	return s.queryCampus(ctx, id)
 }
 
-func (s *ClassroomService) QueryAll(ctx context.Context) (*model.TodayClassrooms, error) {
+func (s *ClassroomService) queryAll(ctx context.Context) (*model.TodayClassrooms, error) {
 	return classroomResponseFromRefresh(s.refreshTodayClassrooms(ctx))
 }
 
@@ -93,7 +90,7 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 }
 
 func (s *ClassroomService) queryCampus(ctx context.Context, campusID string) ([]model.JWClassInfo, error) {
-	token, err := s.tokenManager.EnsureToken(ctx, false)
+	token, err := s.tokenManager.EnsureToken(ctx)
 	if err != nil {
 		return nil, err
 	}

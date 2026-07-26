@@ -16,10 +16,6 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-// LogIDKey is retained for callers that need a stable string label; the
-// context value itself uses an unexported typed key to avoid collisions.
-const LogIDKey = "K_LOGID"
-
 type ctxKey int
 
 const logIDCtxKey ctxKey = 1

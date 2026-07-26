@@ -18,9 +18,8 @@ const (
 )
 
 type tokenOperationResult struct {
-	token          string
-	source         tokenSource
-	loginPerformed bool
+	token  string
+	source tokenSource
 }
 
 // authRecoveryDecision is the result of rechecking token state after an auth
@@ -57,45 +56,30 @@ func (m *TokenManager) now() time.Time {
 	return time.Now()
 }
 
-func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error) {
+func (m *TokenManager) EnsureToken(ctx context.Context) (string, error) {
 	ctx = nonNilContext(ctx)
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
 
-	if !forceRefresh {
-		if state := m.cachedTokenState(); state.token != "" {
-			return state.token, nil
-		}
+	if state := m.cachedTokenState(); state.token != "" {
+		return state.token, nil
 	}
 
-	for {
-		if err := ctx.Err(); err != nil {
-			return "", err
+	resultCh := m.tokenGroup.DoChan("jw-token", func() (interface{}, error) {
+		if state := m.cachedTokenState(); state.token != "" {
+			return state, nil
 		}
-		resultCh := m.tokenGroup.DoChan("jw-token", func() (interface{}, error) {
-			if !forceRefresh {
-				if state := m.cachedTokenState(); state.token != "" {
-					return state, nil
-				}
-				if state := m.installOverrideToken(); state.token != "" {
-					return state, nil
-				}
-			}
-			return m.loginAndStore(ctx, "login")
-		})
-		result, err := waitTokenResult(ctx, resultCh)
-		if err != nil {
-			return "", err
+		if state := m.installOverrideToken(); state.token != "" {
+			return state, nil
 		}
-		// A force-login caller may have joined a normal EnsureToken operation
-		// that only installed or reused a token. Start one new shared operation
-		// so forceRefresh still means an actual login.
-		if forceRefresh && !result.loginPerformed {
-			continue
-		}
-		return result.token, nil
+		return m.loginAndStore(ctx, "login")
+	})
+	result, err := waitTokenResult(ctx, resultCh)
+	if err != nil {
+		return "", err
 	}
+	return result.token, nil
 }
 
 // RefreshAfterAuthFailure coordinates recovery for a specific rejected token.
@@ -180,9 +164,8 @@ func (m *TokenManager) loginAndStore(ctx context.Context, triggerSource string) 
 	m.notifyLoginSuccess(completedAt)
 	slog.InfoContext(loginCtx, "jw login succeeded", "elapsed", duration)
 	return tokenOperationResult{
-		token:          token,
-		source:         tokenSourceLogin,
-		loginPerformed: true,
+		token:  token,
+		source: tokenSourceLogin,
 	}, nil
 }
 

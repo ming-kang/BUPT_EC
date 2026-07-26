@@ -39,7 +39,7 @@ Do not create independent loggers in handlers or service code. Use the default
 Every `/api/*` request must pass through `logs.SetNewContextForGinContext` in
 `router.go`. That middleware:
 
-- creates a context containing `logs.LogIDKey`;
+- creates a context carrying a generated log ID under an unexported typed key;
 - stores the context in Gin under `"ctx"`;
 - sets the `LogID` response header;
 - lets `logs.GetContextFromGinContext` retrieve the same context in handlers.

@@ -144,7 +144,7 @@ func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
 		},
 	}, tokenManagerTestOptions{override: "override-token"})
 
-	override, err := manager.EnsureToken(context.Background(), false)
+	override, err := manager.EnsureToken(context.Background())
 	if err != nil {
 		t.Fatalf("EnsureToken() error = %v", err)
 	}
@@ -205,7 +205,7 @@ func TestCanceledTokenWaiterDoesNotCancelSharedLogin(t *testing.T) {
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	canceledResult := make(chan error, 1)
 	go func() {
-		_, err := manager.EnsureToken(canceledCtx, false)
+		_, err := manager.EnsureToken(canceledCtx)
 		canceledResult <- err
 	}()
 	select {
@@ -215,7 +215,7 @@ func TestCanceledTokenWaiterDoesNotCancelSharedLogin(t *testing.T) {
 	}
 	survivorResult := make(chan error, 1)
 	go func() {
-		token, err := manager.EnsureToken(context.Background(), false)
+		token, err := manager.EnsureToken(context.Background())
 		if err == nil && token != "shared-login-token" {
 			err = fmt.Errorf("unexpected shared login result")
 		}

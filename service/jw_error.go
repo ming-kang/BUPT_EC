@@ -1,7 +1,6 @@
 package service
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -62,9 +61,6 @@ func classifyError(err error) string {
 	var jwErr *jwError
 	if errors.As(err, &jwErr) {
 		return string(jwErr.kind)
-	}
-	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-		return string(jwErrorUpstream)
 	}
 	return string(jwErrorUpstream)
 }

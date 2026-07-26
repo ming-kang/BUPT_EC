@@ -73,7 +73,7 @@ func TestLoginMetricsFirstLoginSuccess(t *testing.T) {
 		},
 	}, tokenManagerTestOptions{metrics: metrics, clock: clock})
 
-	token, err := manager.EnsureToken(context.Background(), false)
+	token, err := manager.EnsureToken(context.Background())
 	if err != nil {
 		t.Fatalf("EnsureToken() error = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestLoginMetricsFirstLoginSuccess(t *testing.T) {
 	}
 
 	// Cache hit must not observe again.
-	if _, err := manager.EnsureToken(context.Background(), false); err != nil {
+	if _, err := manager.EnsureToken(context.Background()); err != nil {
 		t.Fatalf("second EnsureToken() error = %v", err)
 	}
 	if got := len(metrics.snapshot()); got != 1 {
@@ -109,7 +109,7 @@ func TestLoginMetricsFailureDoesNotLeakLabels(t *testing.T) {
 		},
 	}, tokenManagerTestOptions{metrics: metrics})
 
-	_, err := manager.EnsureToken(context.Background(), false)
+	_, err := manager.EnsureToken(context.Background())
 	if err == nil {
 		t.Fatal("EnsureToken() expected error")
 	}
@@ -133,7 +133,7 @@ func TestLoginMetricsOverrideRecoverySource(t *testing.T) {
 		},
 	}, tokenManagerTestOptions{override: "override-token", metrics: metrics})
 
-	override, err := manager.EnsureToken(context.Background(), false)
+	override, err := manager.EnsureToken(context.Background())
 	if err != nil {
 		t.Fatalf("EnsureToken() error = %v", err)
 	}
@@ -200,7 +200,7 @@ func TestLoginMetricsConcurrentWaitersObserveOnce(t *testing.T) {
 	errCh := make(chan error, waiters)
 	for range waiters {
 		go func() {
-			token, err := manager.EnsureToken(context.Background(), false)
+			token, err := manager.EnsureToken(context.Background())
 			if err != nil {
 				errCh <- err
 				return
@@ -273,7 +273,7 @@ func TestLoginMetricsNegativeDurationClamped(t *testing.T) {
 			return "token", nil
 		},
 	}, tokenManagerTestOptions{metrics: metrics, clock: clock})
-	if _, err := manager.EnsureToken(context.Background(), false); err != nil {
+	if _, err := manager.EnsureToken(context.Background()); err != nil {
 		t.Fatalf("EnsureToken() error = %v", err)
 	}
 	logs := metrics.snapshot()
@@ -292,7 +292,7 @@ func TestLoginMetricsAPIURLFailureIsFailedObservation(t *testing.T) {
 			return "", errors.New("serverconfig down")
 		},
 	}, tokenManagerTestOptions{metrics: metrics})
-	if _, err := manager.EnsureToken(context.Background(), false); err == nil {
+	if _, err := manager.EnsureToken(context.Background()); err == nil {
 		t.Fatal("EnsureToken() expected API URL failure")
 	}
 	logs := metrics.snapshot()
