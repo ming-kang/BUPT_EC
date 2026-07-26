@@ -58,11 +58,6 @@ func installToken(svc *ClassroomService, token string) {
 	svc.tokenManager.setToken(token, tokenSourceLogin)
 }
 
-// installAPIURL seeds a known JW API URL so tests skip the serverconfig fetch.
-func installAPIURL(svc *ClassroomService, apiURL string) {
-	svc.tokenManager.setAPIURL(apiURL)
-}
-
 // tokenManagerTestOptions configures newTokenManagerForTest. Zero values pick
 // safe defaults: NoopMetrics and the production system clock.
 type tokenManagerTestOptions struct {

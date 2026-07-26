@@ -12,14 +12,6 @@ import (
 	"BUPT_EC/service/model"
 )
 
-func tokenTestRows(campusID string) []model.JWClassInfo {
-	return []model.JWClassInfo{{
-		NodeName:   "1",
-		NodeTime:   "08:00-08:45",
-		Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
-	}}
-}
-
 func TestConcurrentAuthFailuresShareOneLogin(t *testing.T) {
 	var oldQueries atomic.Int32
 	var loginCalls atomic.Int32
@@ -291,5 +283,99 @@ func TestCanceledAPIURLWaiterDoesNotCancelSharedFetch(t *testing.T) {
 	}
 	if got := fetchCalls.Load(); got != 1 {
 		t.Fatalf("FetchAPIURL calls = %d, want 1", got)
+	}
+}
+
+func TestEnsureTokenUsesOverrideWithoutLogin(t *testing.T) {
+	// Real HTTP client with empty credentials: any accidental login attempt
+	// would fail fast with a config error instead of touching the network.
+	svc := newTestServiceWithOverride(t, newHTTPJWClientForTest(t, "", ""), "override-token")
+
+	token, err := svc.tokenManager.EnsureToken(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureToken() error = %v", err)
+	}
+	if token != "override-token" {
+		t.Fatal("EnsureToken() did not return the injected override")
+	}
+}
+
+func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
+	var refreshCalls atomic.Int32
+	var seenTokens []string
+	client := &mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			refreshCalls.Add(1)
+			return "new-token", nil
+		},
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			seenTokens = append(seenTokens, token)
+			if token == "old-token" {
+				return nil, newJWError(jwErrorAuth, "jw query", nil, "token expired")
+			}
+			return []model.JWClassInfo{{NodeName: "1", NodeTime: "08:00-08:45", Classrooms: "教学实验综合楼-N101(10)"}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+	installToken(svc, "old-token")
+
+	rows, err := svc.queryCampus(context.Background(), "01")
+	if err != nil {
+		t.Fatalf("queryCampus() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected rows after token refresh, got %#v", rows)
+	}
+	if refreshCalls.Load() != 1 {
+		t.Fatalf("expected one token refresh, got %d", refreshCalls.Load())
+	}
+	if len(seenTokens) != 2 || seenTokens[0] != "old-token" || seenTokens[1] != "new-token" {
+		t.Fatal("queryCampus() used an unexpected token sequence")
+	}
+}
+
+func TestEnsureTokenDoesNotReapplyInvalidatedJWToken(t *testing.T) {
+	var loginCalls atomic.Int32
+	client := &mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			loginCalls.Add(1)
+			return "fresh-login-token", nil
+		},
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			if token == "bad-override" {
+				return nil, newJWError(jwErrorAuth, "jw query", nil, "token invalid")
+			}
+			if token != "fresh-login-token" {
+				return nil, errors.New("unexpected test token")
+			}
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: "教学实验综合楼-N101(10)",
+			}}, nil
+		},
+	}
+	svc := newTestServiceWithOverride(t, client, "bad-override")
+
+	rows, err := svc.queryCampus(context.Background(), "01")
+	if err != nil {
+		t.Fatalf("queryCampus() error = %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected rows after override invalidation, got %#v", rows)
+	}
+	if loginCalls.Load() != 1 {
+		t.Fatalf("loginCalls = %d, want 1", loginCalls.Load())
+	}
+
+	token, err := svc.tokenManager.EnsureToken(context.Background())
+	if err != nil {
+		t.Fatalf("EnsureToken() after recovery error = %v", err)
+	}
+	if token != "fresh-login-token" {
+		t.Fatal("EnsureToken() reapplied the invalidated override")
+	}
+	if loginCalls.Load() != 1 {
+		t.Fatalf("loginCalls after EnsureToken = %d, want 1", loginCalls.Load())
 	}
 }

@@ -2,6 +2,19 @@ package service
 
 import "testing"
 
+func TestEncryptJWPassword(t *testing.T) {
+	encrypted, err := encryptJWPassword("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if encrypted == "" {
+		t.Fatal("encrypted password should not be empty")
+	}
+	if encrypted == "test-password" {
+		t.Fatal("encrypted password should not equal plaintext")
+	}
+}
+
 // AES known vectors for encryptJWPassword.
 //
 // Generation method (independent of this package): Node.js crypto

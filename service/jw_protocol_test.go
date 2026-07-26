@@ -236,6 +236,101 @@ func TestJWClientLoginProtocolContract(t *testing.T) {
 	}
 }
 
+func TestValidateJWAPIURL(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "default host appends slash",
+			input: "https://jwglweixin.bupt.edu.cn/bjyddx",
+			want:  "https://jwglweixin.bupt.edu.cn/bjyddx/",
+		},
+		{
+			name:  "allowed bupt subdomain strips query and fragment",
+			input: "https://api.bupt.edu.cn/base?token=secret#fragment",
+			want:  "https://api.bupt.edu.cn/base/",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := validateJWAPIURL(tt.input)
+			if err != nil {
+				t.Fatalf("validateJWAPIURL() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("validateJWAPIURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	invalid := []string{
+		"http://jwglweixin.bupt.edu.cn/bjyddx/",
+		"https://evil.example/bjyddx/",
+		"https://evilbupt.edu.cn/bjyddx/",
+		"https://user@jwglweixin.bupt.edu.cn/bjyddx/",
+		"https://jwglweixin.bupt.edu.cn:8443/bjyddx/",
+	}
+	for _, input := range invalid {
+		t.Run(input, func(t *testing.T) {
+			if got, err := validateJWAPIURL(input); err == nil {
+				t.Fatalf("validateJWAPIURL() = %q, want error", got)
+			}
+		})
+	}
+}
+
+func TestClassifyErrorHandlesJoinedJWError(t *testing.T) {
+	err := errors.Join(context.DeadlineExceeded, newJWError(jwErrorAuth, "jw query", nil, "token expired"))
+	if got := classifyError(err); got != string(jwErrorAuth) {
+		t.Fatalf("classifyError() = %q, want %q", got, jwErrorAuth)
+	}
+}
+
+func TestParseJWQueryResponseClassifiesBusinessAuthCode(t *testing.T) {
+	_, err := parseJWQueryResponse([]byte(`{"code":"401","Msg":"illegal access","data":""}`))
+	if err == nil {
+		t.Fatal("expected auth error")
+	}
+	if !isJWErrorKind(err, jwErrorAuth) {
+		t.Fatalf("parseJWQueryResponse() error kind = %s, want %s", classifyError(err), jwErrorAuth)
+	}
+}
+
+func TestClassifyJWHTTPErrorUsesBusinessAuthCode(t *testing.T) {
+	kind, message := classifyJWHTTPError(http.StatusInternalServerError, []byte(`{"code":"401","Msg":"illegal access","data":""}`))
+	if kind != jwErrorAuth {
+		t.Fatalf("classifyJWHTTPError() kind = %s, want %s", kind, jwErrorAuth)
+	}
+	if message != "illegal access" {
+		t.Fatalf("classifyJWHTTPError() message = %q, want illegal access", message)
+	}
+}
+
+func TestIsAuthFailureMessageDoesNotMatchBareExpiry(t *testing.T) {
+	if isAuthFailureMessage("活动已过期") {
+		t.Fatal("bare 过期 should not be treated as auth failure")
+	}
+	if isAuthFailureMessage("数据失效") {
+		t.Fatal("bare 失效 should not be treated as auth failure")
+	}
+	if !isAuthFailureMessage("token 已过期") {
+		t.Fatal("token-related message should be auth failure")
+	}
+	if !isAuthFailureMessage("请重新登录") {
+		t.Fatal("重新登录 should be auth failure")
+	}
+}
+
+func TestSafeErrorMessageForNoTodayCache(t *testing.T) {
+	msg := SafeErrorMessage(ErrNoTodayCache)
+	if msg != "暂无可用的今日空教室数据，请稍后重试" {
+		t.Fatalf("SafeErrorMessage(ErrNoTodayCache) = %q", msg)
+	}
+}
+
 func TestJWClientFetchAPIURLFallsBackOnInvalidConfig(t *testing.T) {
 	doer := serviceHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.String() != ServerConfigURL {

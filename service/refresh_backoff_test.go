@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math"
 	"sync"
 	"sync/atomic"
@@ -165,6 +166,56 @@ func TestTotalFailureLadderEscalatesAndFullResets(t *testing.T) {
 	next, consecutive, _ = backoffState(svc)
 	if consecutive != 0 || !next.IsZero() {
 		t.Fatalf("full did not reset: consecutive=%d next=%v", consecutive, next)
+	}
+}
+
+func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
+	fixed := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
+	clock := newFakeClock(fixed)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{
+		Clock:         clock,
+		BackoffRandom: func() float64 { return 0.5 },
+	})
+
+	completeRefresh(svc, classroomRefreshResult{
+		kind:  refreshPartial,
+		value: &model.TodayClassrooms{Error: &model.APIError{Message: partialCampusErrorMessage}},
+	})
+	next, consecutive, lastErr := backoffState(svc)
+	if want := fixed.Add(staleRefreshBackoff); !next.Equal(want) {
+		t.Fatalf("partial nextRefreshAllowed = %v, want %v", next, want)
+	}
+	if lastErr != nil {
+		t.Fatalf("partial lastRefreshErr = %v, want nil", lastErr)
+	}
+	if consecutive != 0 {
+		t.Fatalf("partial consecutiveTotalFailures = %d, want 0", consecutive)
+	}
+
+	completeRefresh(svc, classroomRefreshResult{
+		kind:  refreshFull,
+		value: &model.TodayClassrooms{},
+	})
+	next, _, lastErr = backoffState(svc)
+	if !next.IsZero() || lastErr != nil {
+		t.Fatalf("full outcome did not clear coordinator state: next=%v err=%v", next, lastErr)
+	}
+
+	failure := newJWError(jwErrorQuery, "jw query", nil, "down")
+	completeRefresh(svc, classroomRefreshResult{
+		kind: refreshFailed,
+		err:  failure,
+	})
+	// sample=0.5 → base ladder step only (first total failure = 30s).
+	next, consecutive, lastErr = backoffState(svc)
+	if want := fixed.Add(backoffLadder(1)); !next.Equal(want) {
+		t.Fatalf("failed nextRefreshAllowed = %v, want %v", next, want)
+	}
+	if !errors.Is(lastErr, failure) {
+		t.Fatalf("failed lastRefreshErr = %v, want %v", lastErr, failure)
+	}
+	if consecutive != 1 {
+		t.Fatalf("failed consecutiveTotalFailures = %d, want 1", consecutive)
 	}
 }
 
