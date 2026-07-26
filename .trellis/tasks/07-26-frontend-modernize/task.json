@@ -3,7 +3,7 @@
   "name": "frontend-modernize",
   "title": "前端现代化：依赖升级、SWR、原生表格、chunk 拆分",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

@@ -17,7 +17,7 @@
 - R2 升级后 `pnpm test`、`pnpm lint`、`pnpm build` 全绿，人工视觉回归（亮/暗色、移动端宽度）。
 
 数据层：
-- R3 引入 `swr`，重写 `useTodayClassrooms`：`refreshInterval: (data) => nextReloadDelay(...)`、`keepPreviousData`、`onErrorRetry` 用现有 failureRetryDelay 阶梯、fetcher 内 `AbortSignal.timeout(40_000)`。**保留** `reloadSchedule.js`、`classroomDataValidity.js`、`todayClassroomsResponse.js` 领域逻辑及其测试。
+- R3 引入 `swr`，重写 `useTodayClassrooms`：`refreshInterval: (data) => nextReloadDelay(...)`（须防 falsy 链死，见 design D3）、失败保留快照靠 SWR data/error 双轨 + 渲染期 mergeFetchResult 派生（研究修正：`keepPreviousData` 在恒定 key 下是 no-op，不采用）、`onErrorRetry` 用 `nextReloadDelay(data, {failureCount: retryCount})`（含 stale_until 钳制，非裸 failureRetryDelay）、fetcher 内 `AbortSignal.timeout(40_000)`。**保留** `reloadSchedule.js`、`classroomDataValidity.js`、`todayClassroomsResponse.js` 领域逻辑及其测试。
 - R4 normalizeResponse 改为返回值而非 throw 控制流，保留真实 HTTP status；顺带透传后端 `log_id` 并在 GlobalEmpty 错误态展示（低成本运维收益）。
 - R5 现有 `useTodayClassrooms.*.test.jsx` 生命周期语义（可见性暂停、退避、stale 保留快照）在 SWR 化后仍有等价测试覆盖。
 

@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "核对项 1：前端 Scenario 契约矩阵逐条——同日保留/跨日硬空/退避阶梯/轮询基数/单次采样正抖动/stale_until 钳制/隐藏暂停/可见重验/spinner 规则，SWR 化后全部有测试承担"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/swr-datalayer.md", "reason": "核对项 2：§3 映射表逐行对账；§5.2 测试账本无静默丢失；防链死/可见性自查/focusThrottle 三个陷阱有测试或代码证据"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/deps-upgrade.md", "reason": "核对项 3：版本全部落在锁定线内（antd 5.x/vite 7.x/react 18.x/eslint 9.x）、overrides 删除后 audit 双绿、build.target 显式锁定"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/build-chunks.md", "reason": "核对项 4：R6 先于 R8 顺序、visualizer 产物不在 dist、预算阈值同脚本口径、antd-vendor hash 稳定性、总 gzip 不超升级前基线 293,407B"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/antd-ui-fixes.md", "reason": "核对项 5：A 档边界——仅删 Table+icons，.ant-tag 覆盖与其余 12 个 antd 导出保留；Modal 移出早退分支；R10 方案 A 的收敛 effect 守卫仍在"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对项 6：quality.yml 新增体积预算步符合 CI 规则（无新 action、位置正确）且与 Taskfile/docs 同步"}

@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/deps-upgrade.md", "reason": "版本矩阵（dist-tag 锁线，禁 --latest）、破坏性变更清单、overrides 考证与删除验证流程（Step 1/2 主依据）"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/swr-datalayer.md", "reason": "useTodayClassrooms 逐段解剖、SWR 2.4.2 源码级行为核对、语义等价映射表、R4 方案、测试迁移账本与逃生判据（Step 3/4 主依据）"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/antd-ui-fixes.md", "reason": "antd 组件普查矩阵、Table 原生化与 CSS 清理清单、SVG path 数据、Modal/effect/时钟修复现场与草案（Step 5/7/8 主依据）"}
+{"file": ".trellis/tasks/07-26-frontend-modernize/research/build-chunks.md", "reason": "产物基线实测、pnpm 下 manualChunks 正确写法、visualizer 接入陷阱（禁入 dist）、体积预算脚本草案与 CI 接线（Step 6 主依据）"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "权威前端契约：Scenario: Frontend Snapshot Validity and Reload Backoff（签名/契约/验证矩阵/必备测试）——SWR 化后每条必须仍有承担者"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CI Workflow Editing Rules 与 Taskfile/quality.yml 同步锚点约定，Step 6 改 CI 必读"}
