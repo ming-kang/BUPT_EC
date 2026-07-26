@@ -1,5 +1,5 @@
 import { Typography, Button } from "antd";
-import { GithubOutlined } from "@ant-design/icons";
+import { GithubIcon } from "./icons";
 
 function Footer() {
   const { Text } = Typography;
@@ -16,7 +16,7 @@ function Footer() {
         }
         type="text"
         size="small"
-        icon={<GithubOutlined />}
+        icon={<GithubIcon />}
         aria-label="GitHub"
       />
     </div>

@@ -2,23 +2,6 @@
     margin-bottom: 16px;
 }
 
-.today-classroom-table .ant-table-wrapper {
-    overflow-x: auto;
-}
-
-.today-classroom-table .ant-table-thead > tr > th {
-    font-weight: 500;
-    background-color: rgba(0, 0, 0, 0.02);
-}
-
-body.dark .today-classroom-table .ant-table-thead > tr > th {
-    background-color: rgba(255, 255, 255, 0.04);
-}
-
-.today-classroom-table .ant-table-tbody > tr {
-    transition: background-color 0.15s ease;
-}
-
 .today-classroom-table .room-name {
     background: none;
     border: none;
@@ -38,6 +21,64 @@ body.dark .today-classroom-table .ant-table-thead > tr > th {
     outline: 2px solid var(--ant-color-primary, #1677ff);
     outline-offset: 2px;
     border-radius: 4px;
+}
+
+/* Shared native-table core, used by both the main table and the modal table. */
+.ec-table-wrap {
+    overflow-x: auto;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-radius: var(--bupt-ec-radius-sm);
+}
+
+body.dark .ec-table-wrap {
+    border-color: rgba(255, 255, 255, 0.08);
+}
+
+.ec-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+}
+
+.ec-table th,
+.ec-table td {
+    padding: 10px 14px;
+    text-align: center;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+body.dark .ec-table th,
+body.dark .ec-table td {
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.ec-table th {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(0, 0, 0, 0.55);
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+body.dark .ec-table th {
+    color: rgba(255, 255, 255, 0.55);
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.ec-table tr:last-child td {
+    border-bottom: none;
+}
+
+/* Row hover highlight for the main table only (modal table had none). */
+.today-classroom-table .ec-table td {
+    transition: background-color 0.15s ease;
+}
+
+.today-classroom-table .ec-table tbody tr:hover td {
+    background-color: rgba(0, 0, 0, 0.02);
+}
+
+body.dark .today-classroom-table .ec-table tbody tr:hover td {
+    background-color: rgba(255, 255, 255, 0.04);
 }
 
 .room-info {
@@ -80,53 +121,9 @@ body.dark .room-info__section-title {
     color: rgba(255, 255, 255, 0.45);
 }
 
-.room-info__table-wrap {
-    overflow-x: auto;
-    border: 1px solid rgba(0, 0, 0, 0.06);
-    border-radius: var(--bupt-ec-radius-sm);
-}
-
-body.dark .room-info__table-wrap {
-    border-color: rgba(255, 255, 255, 0.08);
-}
-
-.room-info__table {
-    width: 100%;
-    border-collapse: collapse;
-    font-variant-numeric: tabular-nums;
-}
-
-.room-info__table th,
-.room-info__table td {
-    padding: 10px 14px;
-    text-align: center;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-body.dark .room-info__table th,
-body.dark .room-info__table td {
-    border-bottom-color: rgba(255, 255, 255, 0.08);
-}
-
-.room-info__table th {
-    font-size: 12px;
-    font-weight: 500;
-    color: rgba(0, 0, 0, 0.55);
-    background-color: rgba(0, 0, 0, 0.02);
-}
-
-body.dark .room-info__table th {
-    color: rgba(255, 255, 255, 0.55);
-    background-color: rgba(255, 255, 255, 0.04);
-}
-
-.room-info__table tr:last-child td {
-    border-bottom: none;
-}
-
+/* Modal-only column modifiers keep the room-info naming. */
 .room-info__col-node {
     width: 28%;
-    text-align: center !important;
     color: var(--ant-color-primary, #1677ff);
     font-weight: 500;
 }
@@ -139,32 +136,34 @@ body.dark .room-info__col-time {
     color: rgba(255, 255, 255, 0.85);
 }
 
-.room-info__empty {
+.ec-table td.room-info__empty {
     text-align: center;
     color: rgba(0, 0, 0, 0.45);
-    padding: 24px 14px !important;
+    padding: 24px 14px;
 }
 
-body.dark .room-info__empty {
+body.dark .ec-table td.room-info__empty {
     color: rgba(255, 255, 255, 0.45);
 }
 
 @media (max-width: 767px) {
-    .today-classroom-table .ant-table {
+    .today-classroom-table .ec-table {
         font-size: 0.9em;
     }
 
-    .today-classroom-table .ant-table-cell {
+    .today-classroom-table .ec-table th,
+    .today-classroom-table .ec-table td {
         padding: 10px 6px;
     }
 }
 
 @media (max-width: 479px) {
-    .today-classroom-table .ant-table {
+    .today-classroom-table .ec-table {
         font-size: 0.85em;
     }
 
-    .today-classroom-table .ant-table-cell {
+    .today-classroom-table .ec-table th,
+    .today-classroom-table .ec-table td {
         padding: 8px 4px;
     }
 

@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { Button, Divider, Modal, Switch, Typography } from "antd";
-import { GithubOutlined } from "@ant-design/icons";
+import { GithubIcon } from "./icons";
 import { useSelection } from "../selectionContext";
 
 function CampusSettingsModal(props) {
@@ -74,7 +74,7 @@ function CampusSettingsModal(props) {
                 "noopener,noreferrer"
               )
             }
-            icon={<GithubOutlined />}
+            icon={<GithubIcon />}
             size="small"
             type="link"
           >

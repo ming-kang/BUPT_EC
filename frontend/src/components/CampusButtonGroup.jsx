@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 import { Button } from "antd";
 import { Fragment, Suspense, lazy, useState } from "react";
-import { SettingOutlined } from "@ant-design/icons";
+import { SettingIcon } from "./icons";
 import { useSelection } from "../selectionContext";
 import "./CampusButtonGroup.css";
 
@@ -19,7 +19,7 @@ function CampusButtonGroup({ campuses, todayData }) {
         {list.length === 0 ? (
           <Button
             className="settings-trigger"
-            icon={<SettingOutlined />}
+            icon={<SettingIcon />}
             onClick={() => setOpenSettingModal(true)}
             aria-label="设置"
           />
@@ -29,7 +29,7 @@ function CampusButtonGroup({ campuses, todayData }) {
               {index === settingsSplitIndex ? (
                 <Button
                   className="settings-trigger"
-                  icon={<SettingOutlined />}
+                  icon={<SettingIcon />}
                   onClick={() => setOpenSettingModal(true)}
                   aria-label="设置"
                 />

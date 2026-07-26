@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { Card, Empty, Modal, Table, Tag } from "antd";
+import { Card, Empty, Modal, Tag } from "antd";
 import { useMemo, useState } from "react";
 import "./TodayClassroomTable.css";
 
@@ -94,50 +94,6 @@ function TodayClassroomTable(props) {
     setOpenModal(true);
   }
 
-  const columns = [
-    {
-      title: "教室",
-      key: "display_name",
-      dataIndex: "display_name",
-      align: "center",
-      render: (_, record) => (
-        <button
-          type="button"
-          className="room-name"
-          onClick={() => {
-            showClassroomInfo(record);
-          }}
-        >
-          {record.display_name}
-        </button>
-      ),
-    },
-    {
-      title: "座位数",
-      key: "capacity",
-      dataIndex: "capacity",
-      align: "center",
-      render: (capacity) => capacity || "未知",
-    },
-    {
-      title: "空闲节次",
-      key: "free_nodes",
-      dataIndex: "free_nodes",
-      align: "center",
-      render: (nodes) => (
-        <>
-          {(Array.isArray(nodes) ? nodes : [])
-            .filter((node) => selectedClassTimes.includes(node))
-            .map((node) => (
-              <Tag key={node} bordered={false}>
-                {String(node).padStart(2, "0")}
-              </Tag>
-            ))}
-        </>
-      ),
-    },
-  ];
-
   return (
     <div className="today-classroom-table">
       <Card
@@ -148,19 +104,47 @@ function TodayClassroomTable(props) {
           },
         }}
       >
-        <Table
-          dataSource={emptyClassrooms}
-          columns={columns}
-          pagination={false}
-          bordered={false}
-          tableLayout="auto"
-          size="small"
-          rowKey={(record) => `${record.building}-${record.display_name}`}
-          style={{
-            width: "100%",
-          }}
-          scroll={{ x: true }}
-        />
+        <div className="ec-table-wrap">
+          <table className="ec-table">
+            <thead>
+              <tr>
+                <th scope="col">教室</th>
+                <th scope="col">座位数</th>
+                <th scope="col">空闲节次</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emptyClassrooms.map((record) => (
+                <tr key={`${record.building}-${record.display_name}`}>
+                  <td>
+                    <button
+                      type="button"
+                      className="room-name"
+                      onClick={() => {
+                        showClassroomInfo(record);
+                      }}
+                    >
+                      {record.display_name}
+                    </button>
+                  </td>
+                  <td>{record.capacity || "未知"}</td>
+                  <td>
+                    {(Array.isArray(record.free_nodes)
+                      ? record.free_nodes
+                      : []
+                    )
+                      .filter((node) => selectedClassTimes.includes(node))
+                      .map((node) => (
+                        <Tag key={node} bordered={false}>
+                          {String(node).padStart(2, "0")}
+                        </Tag>
+                      ))}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
       <Modal
         title={modalTitle}
@@ -176,8 +160,8 @@ function TodayClassroomTable(props) {
             <span className="room-info__capacity-value">{modalCapacity}</span>
           </div>
           <div className="room-info__section-title">空闲节次</div>
-          <div className="room-info__table-wrap">
-            <table className="room-info__table">
+          <div className="ec-table-wrap">
+            <table className="ec-table">
               <thead>
                 <tr>
                   <th className="room-info__col-node">节次</th>
