@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-07-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~377 | Active |
+| `journal-1.md` | ~404 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-07-26 | 重构批次2：后端减法（backend-subtraction） | `6f49267`, `2962903`, `4bc181f`, `a70d8ef`, `8d7687f`, `7b91a29`, `8f60ae6` | `main` |
 | 11 | 2026-07-26 | 重构批次1：工程卫生速赢（hygiene-quick-wins） | `da6fd95`, `01bfa3d`, `57aff63`, `9ad81ec`, `af371b8`, `6b14d10` | `main` |
 | 10 | 2026-07-10 | Dependency security refresh | `215d736`, `3c98705`, `2a66e93` | `main` |
 | 9 | 2026-07-10 | 运行时配置与依赖组装 | `d4bda80` | `main` |

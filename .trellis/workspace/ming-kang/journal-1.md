@@ -375,3 +375,30 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+
+## Session 12: 重构批次2：后端减法（backend-subtraction）
+
+**Date**: 2026-07-26
+**Task**: 重构批次2：后端减法（backend-subtraction）
+**Branch**: `main`
+
+### Summary
+
+完成 arch-simplify-refactor 子任务2：删除 cache/ 包与停更 8 年的 go-cache（换 atomic.Pointer 单值存储，Date 跨天守卫保留）、NoopMetrics 默认注入（删 14 处防御检查）、死代码清理（QueryResponse/LogIDKey/forceRefresh/Login/reflect 判空×3）、退避阶梯合一、循环变量清理、RuntimeStatus omitzero（wire 等价）、白盒测试收敛至 export_test.go 种子函数、1438 行测试拆 11 文件 + integration tag。生产代码净删 249 行。经 trellis-check 零缺陷核对 + 契约/完整性双镜头对抗验证，全部契约逐字节不变。插曲：Step 4 代理 OOM 中断但工作已完成，逐项核验后照常提交。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6f49267` | (see git log) |
+| `2962903` | (see git log) |
+| `4bc181f` | (see git log) |
+| `a70d8ef` | (see git log) |
+| `8d7687f` | (see git log) |
+| `7b91a29` | (see git log) |
+| `8f60ae6` | (see git log) |
+
+### Status
+
+[OK] **Completed**
