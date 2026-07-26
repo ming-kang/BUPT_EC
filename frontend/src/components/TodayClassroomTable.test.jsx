@@ -3,8 +3,15 @@
  *
  * TodayClassroomTable native-table rendering (R6): header semantics, row
  * filtering/sorting, free_nodes tag rendering, and the empty-state branches.
+ * Plus the room-info modal (R9): content derived from props at render time.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import TodayClassroomTable from "./TodayClassroomTable";
 
@@ -17,7 +24,10 @@ const campusData = {
           display_name: "3-201",
           capacity: 120,
           free_nodes: [1, 2, 3, 5],
-          free_times: [],
+          free_times: [
+            { node: 2, time: "10:25-11:10" },
+            { node: 3, time: "11:15-12:00" },
+          ],
         },
         {
           display_name: "3-101",
@@ -145,5 +155,128 @@ describe("TodayClassroomTable", () => {
     const { container } = renderTable({ selectedClassTimes: [1, 4] });
     expect(screen.getByText("没有符合条件的空教室")).toBeTruthy();
     expect(container.querySelector("table")).toBeNull();
+  });
+});
+
+describe("TodayClassroomTable room modal (R9)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  function rerenderTable(rerender, campus, overrides = {}) {
+    rerender(
+      <TodayClassroomTable
+        selectedCampusData={campus}
+        selectedBuildings={["教三", "教四"]}
+        selectedClassTimes={[2, 3]}
+        {...overrides}
+      />
+    );
+  }
+
+  it("updates open-modal content when props refresh in the background", () => {
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole("button", { name: "3-201" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("10:25-11:10")).toBeTruthy();
+
+    // Background refresh: 3-201's free times move to the evening.
+    rerenderTable(rerender, {
+      buildings: [
+        {
+          name: "教三",
+          rooms: [
+            {
+              display_name: "3-201",
+              capacity: 120,
+              free_nodes: [2, 3],
+              free_times: [{ node: 11, time: "18:40-19:25" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(within(dialog).queryByText("10:25-11:10")).toBeNull();
+    expect(within(dialog).getByText("18:40-19:25")).toBeTruthy();
+  });
+
+  it("keeps the modal open with fallback content when the room disappears", () => {
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole("button", { name: "3-201" }));
+    const dialog = screen.getByRole("dialog");
+
+    // Refresh drops 教三 entirely; 教四 still fills the table.
+    rerenderTable(rerender, {
+      buildings: [
+        {
+          name: "教四",
+          rooms: [
+            {
+              display_name: "4-102",
+              capacity: 60,
+              free_nodes: [2, 3, 4],
+              free_times: [],
+            },
+          ],
+        },
+      ],
+    });
+    expect(within(dialog).getByText("暂无空闲节次")).toBeTruthy();
+    expect(within(dialog).getByText("—")).toBeTruthy();
+    expect(document.querySelector(".ant-modal-wrap").style.display).not.toBe(
+      "none"
+    );
+  });
+
+  it("keeps the modal mounted when the table falls into the empty state", () => {
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole("button", { name: "3-201" }));
+    const dialog = screen.getByRole("dialog");
+
+    // Refresh leaves no room matching the selected nodes → empty-state card,
+    // but the modal must stay mounted and keep following the room's data.
+    rerenderTable(rerender, {
+      buildings: [
+        {
+          name: "教三",
+          rooms: [
+            {
+              display_name: "3-201",
+              capacity: 120,
+              free_nodes: [9],
+              free_times: [{ node: 9, time: "20:20-21:05" }],
+            },
+          ],
+        },
+      ],
+    });
+    expect(screen.getByText("没有符合条件的空教室")).toBeTruthy();
+    expect(within(dialog).getByText("20:20-21:05")).toBeTruthy();
+  });
+
+  it("converts capacity at render time and follows refreshes", () => {
+    const { rerender } = renderTable();
+    fireEvent.click(screen.getByRole("button", { name: "3-101" }));
+    const dialog = screen.getByRole("dialog");
+    // capacity 0 renders as 未知 (converted at render, not stored).
+    expect(within(dialog).getByText("未知")).toBeTruthy();
+
+    rerenderTable(rerender, {
+      buildings: [
+        {
+          name: "教三",
+          rooms: [
+            {
+              display_name: "3-101",
+              capacity: 45,
+              free_nodes: [2, 3],
+              free_times: [],
+            },
+          ],
+        },
+      ],
+    });
+    expect(within(dialog).queryByText("未知")).toBeNull();
+    expect(within(dialog).getByText("45")).toBeTruthy();
   });
 });

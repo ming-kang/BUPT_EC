@@ -49,9 +49,18 @@ function AppContent() {
         : [],
     [resp]
   );
+  // Derive the effective campus during render so the first data frame
+  // already shows the selected campus and its cards (no post-effect blank
+  // frame). The effect below only reconciles the store, whose reducer also
+  // resets buildings/class times on campus change.
+  const activeCampusId = chooseCampusId({
+    campuses,
+    partialCampusIds: resp.data?.partial_campuses,
+    selectedCampusId: selectedCampus,
+  });
   const selectedCampusData = useMemo(
-    () => campuses.find((campus) => campus.id === selectedCampus) || null,
-    [campuses, selectedCampus]
+    () => campuses.find((campus) => campus.id === activeCampusId) || null,
+    [campuses, activeCampusId]
   );
 
   useEffect(() => {
@@ -72,15 +81,10 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    const nextCampusId = chooseCampusId({
-      campuses,
-      partialCampusIds: resp.data?.partial_campuses,
-      selectedCampusId: selectedCampus,
-    });
-    if (nextCampusId !== selectedCampus) {
-      dispatch({ type: "SET_CAMPUS", id: nextCampusId });
+    if (activeCampusId !== selectedCampus) {
+      dispatch({ type: "SET_CAMPUS", id: activeCampusId });
     }
-  }, [campuses, resp.data?.partial_campuses, selectedCampus, dispatch]);
+  }, [activeCampusId, selectedCampus, dispatch]);
 
   return (
     <ConfigProvider
@@ -108,7 +112,11 @@ function AppContent() {
               message={classroomWarningMessage(resp.data)}
             />
           ) : null}
-          <CampusButtonGroup campuses={campuses} todayData={resp} />
+          <CampusButtonGroup
+            campuses={campuses}
+            todayData={resp}
+            activeCampusId={activeCampusId}
+          />
           <BuildingPicker selectedCampusData={selectedCampusData} />
           <ClassTimePicker
             selectedCampusData={selectedCampusData}

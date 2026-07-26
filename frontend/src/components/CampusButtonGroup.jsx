@@ -7,8 +7,8 @@ import "./CampusButtonGroup.css";
 
 const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
 
-function CampusButtonGroup({ campuses, todayData }) {
-  const { state, dispatch } = useSelection();
+function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
+  const { dispatch } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
   const list = Array.isArray(campuses) ? campuses : [];
   const settingsSplitIndex = Math.floor(list.length / 2);
@@ -35,7 +35,7 @@ function CampusButtonGroup({ campuses, todayData }) {
                 />
               ) : null}
               <Button
-                type={state.selectedCampus === campus.id ? "primary" : "default"}
+                type={activeCampusId === campus.id ? "primary" : "default"}
                 onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
               >
                 {campus.name}
@@ -65,6 +65,9 @@ CampusButtonGroup.propTypes = {
     })
   ).isRequired,
   todayData: PropTypes.object.isRequired,
+  // Render-time derived campus id from App (R10): first frame already
+  // highlights the effective campus before the store reconciles.
+  activeCampusId: PropTypes.string.isRequired,
 };
 
 export default CampusButtonGroup;

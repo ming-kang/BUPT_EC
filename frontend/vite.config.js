@@ -48,6 +48,9 @@ export default defineConfig({
     // Default stays node for pure helper tests; lifecycle files opt into jsdom
     // via their file-level @vitest-environment directive.
     environment: 'node',
+    // DOM-only stubs (matchMedia for antd) live here; the file guards on
+    // `typeof window` so node-environment tests are untouched.
+    setupFiles: ['./src/test/setup.js'],
   },
   server: {
     proxy: {

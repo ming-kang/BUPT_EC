@@ -27,8 +27,23 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
       }, msUntilNextFiveMinuteTick(new Date()));
     }
 
+    // R11: browsers throttle background-tab timers, so `now` can lag tens of
+    // minutes after the tab was hidden. When it becomes visible again, drop
+    // the stale alarm, resync immediately, and re-align to the 5-minute grid.
+    function onVisibilityChange() {
+      if (document.visibilityState !== "hidden") {
+        window.clearTimeout(timeoutID);
+        setNow(new Date());
+        scheduleNextTick();
+      }
+    }
+
     scheduleNextTick();
-    return () => window.clearTimeout(timeoutID);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.clearTimeout(timeoutID);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 
   const selectedClassTimes = useMemo(
@@ -43,6 +58,15 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
     : [];
   const nowTime = formatShanghaiTime(now);
   const isToday = todayDate === formatShanghaiDate(now);
+
+  // R10: prune during render so ended nodes never flash as selected while
+  // waiting for the convergence effect below. The store still converges via
+  // that effect (guards unchanged), keeping TodayClassroomTable consistent.
+  const prunedSelected = pruneEndedClassTimes(selectedClassTimes, options, {
+    nowTime,
+    isToday,
+    canSelectAllDay: state.canSelectAllDay,
+  });
 
   useEffect(() => {
     if (!selectedCampusData) {
@@ -85,7 +109,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
     const selectable = normalizedOptions.filter((item) => !item.disabled);
     return (
       selectable.length > 0 &&
-      selectable.every((item) => selectedClassTimes.includes(item.node))
+      selectable.every((item) => prunedSelected.includes(item.node))
     );
   }
 
@@ -112,12 +136,12 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
       {normalizedOptions.map((item) => (
         <Button
           key={item.node}
-          type={selectedClassTimes.includes(item.node) ? "primary" : "default"}
+          type={prunedSelected.includes(item.node) ? "primary" : "default"}
           className={state.showClassTime ? "time-slot-show-time" : ""}
           onClick={() => {
-            const times = selectedClassTimes.includes(item.node)
-              ? selectedClassTimes.filter((node) => node !== item.node)
-              : [...selectedClassTimes, item.node];
+            const times = prunedSelected.includes(item.node)
+              ? prunedSelected.filter((node) => node !== item.node)
+              : [...prunedSelected, item.node];
             dispatch({ type: "SET_CLASS_TIMES", times });
           }}
           disabled={item.disabled}
