@@ -81,32 +81,20 @@ func NewPrometheusMetrics() (*PrometheusMetrics, error) {
 
 // Registry exposes the private Prometheus registry for /metrics.
 func (m *PrometheusMetrics) Registry() *prometheus.Registry {
-	if m == nil {
-		return nil
-	}
 	return m.registry
 }
 
 func (m *PrometheusMetrics) ObserveRefresh(outcome string, duration time.Duration) {
-	if m == nil {
-		return
-	}
 	outcome = normalizeOutcome(outcome)
 	m.refreshTotal.WithLabelValues(outcome).Inc()
 	m.refreshDuration.WithLabelValues(outcome).Observe(duration.Seconds())
 }
 
 func (m *PrometheusMetrics) ObserveRefreshSuppressed() {
-	if m == nil {
-		return
-	}
 	m.refreshSuppressed.Inc()
 }
 
 func (m *PrometheusMetrics) SetRefreshInFlight(inFlight bool) {
-	if m == nil {
-		return
-	}
 	if inFlight {
 		m.refreshInFlight.Set(1)
 		return
@@ -115,24 +103,15 @@ func (m *PrometheusMetrics) SetRefreshInFlight(inFlight bool) {
 }
 
 func (m *PrometheusMetrics) ObserveCacheServe(state string) {
-	if m == nil {
-		return
-	}
 	m.cacheServes.WithLabelValues(normalizeCacheState(state)).Inc()
 }
 
 func (m *PrometheusMetrics) ObserveLogin(outcome, source string, duration time.Duration) {
-	if m == nil {
-		return
-	}
 	m.loginTotal.WithLabelValues(normalizeOutcome(outcome), normalizeLoginSource(source)).Inc()
 	m.loginDuration.WithLabelValues(normalizeOutcome(outcome)).Observe(duration.Seconds())
 }
 
 func (m *PrometheusMetrics) ObserveCampusFailure(campusID, kind string) {
-	if m == nil {
-		return
-	}
 	m.campusFailures.WithLabelValues(normalizeCampusID(campusID), normalizeErrorKind(kind)).Inc()
 }
 

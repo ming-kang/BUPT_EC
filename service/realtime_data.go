@@ -47,7 +47,7 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 		fresh := !cached.ExpiresAt.Before(now)
 		// Fully fresh success: serve without touching JW.
 		if fresh && cached.Error == nil {
-			s.observeCacheServe("fresh")
+			s.metrics.ObserveCacheServe("fresh")
 			return classroomResponse(cached, false, nil), nil
 		}
 		// Soft-stale: past fresh TTL, or partial-campus error still inside the
@@ -58,20 +58,20 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 			if fresh {
 				s.startClassroomRefresh(ctx, now)
 				if cached.Error != nil || len(cached.PartialCampuses) > 0 {
-					s.observeCacheServe("partial")
+					s.metrics.ObserveCacheServe("partial")
 				} else {
-					s.observeCacheServe("fresh")
+					s.metrics.ObserveCacheServe("fresh")
 				}
 				return classroomResponse(cached, false, cached.Error), nil
 			}
-			s.observeCacheServe("stale")
+			s.metrics.ObserveCacheServe("stale")
 			return s.getStaleTodayClassrooms(ctx, cached, now), nil
 		}
 	}
 
 	attempt, started := s.startClassroomRefresh(ctx, now)
 	if !started {
-		s.observeCacheServe("miss")
+		s.metrics.ObserveCacheServe("miss")
 		if err := s.getLastRefreshError(); err != nil {
 			return nil, err
 		}
@@ -80,21 +80,15 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 	select {
 	case <-attempt.done:
 		if attempt.result.kind == refreshPartial {
-			s.observeCacheServe("partial")
+			s.metrics.ObserveCacheServe("partial")
 		} else if attempt.result.err == nil {
-			s.observeCacheServe("fresh")
+			s.metrics.ObserveCacheServe("fresh")
 		} else {
-			s.observeCacheServe("miss")
+			s.metrics.ObserveCacheServe("miss")
 		}
 		return classroomResponseFromRefresh(attempt.result)
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	}
-}
-
-func (s *ClassroomService) observeCacheServe(state string) {
-	if s.metrics != nil {
-		s.metrics.ObserveCacheServe(state)
 	}
 }
 
@@ -139,16 +133,16 @@ func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) classroom
 	switch result.kind {
 	case refreshFailed:
 		s.recordRefreshFailure(result.err)
-		s.observeRefresh("failed", elapsed)
+		s.metrics.ObserveRefresh("failed", elapsed)
 		for _, failure := range result.failures {
-			s.observeCampusFailure(failure.CampusID, classifyError(failure.Err))
+			s.metrics.ObserveCampusFailure(failure.CampusID, classifyError(failure.Err))
 		}
 		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", elapsed, "err", result.err)
 	case refreshPartial:
 		s.recordRefreshPartial(completedAt)
-		s.observeRefresh("partial", elapsed)
+		s.metrics.ObserveRefresh("partial", elapsed)
 		for _, failure := range result.failures {
-			s.observeCampusFailure(failure.CampusID, classifyError(failure.Err))
+			s.metrics.ObserveCampusFailure(failure.CampusID, classifyError(failure.Err))
 		}
 		slog.WarnContext(ctx, "classroom refresh partially succeeded",
 			"elapsed", elapsed,
@@ -156,22 +150,10 @@ func (s *ClassroomService) refreshTodayClassrooms(ctx context.Context) classroom
 			"errors", joinCampusRefreshFailures(result.failures))
 	default:
 		s.recordRefreshSuccess(completedAt)
-		s.observeRefresh("full", elapsed)
+		s.metrics.ObserveRefresh("full", elapsed)
 		slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", elapsed)
 	}
 	return result
-}
-
-func (s *ClassroomService) observeRefresh(outcome string, duration time.Duration) {
-	if s.metrics != nil {
-		s.metrics.ObserveRefresh(outcome, duration)
-	}
-}
-
-func (s *ClassroomService) observeCampusFailure(campusID, kind string) {
-	if s.metrics != nil {
-		s.metrics.ObserveCampusFailure(campusID, kind)
-	}
 }
 
 type campusQueryResult struct {

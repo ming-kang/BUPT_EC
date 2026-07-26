@@ -165,7 +165,7 @@ func (m *TokenManager) loginAndStore(ctx context.Context, triggerSource string) 
 	token, err := m.login(loginCtx)
 	duration := m.elapsedSince(startedAt)
 	if err != nil {
-		m.observeLogin("failed", triggerSource, duration)
+		m.metrics.ObserveLogin("failed", triggerSource, duration)
 		m.notifyLoginFailure(err)
 		slog.WarnContext(loginCtx, "jw login failed", "elapsed", duration, "err", err)
 		return tokenOperationResult{}, err
@@ -176,7 +176,7 @@ func (m *TokenManager) loginAndStore(ctx context.Context, triggerSource string) 
 	if duration < 0 {
 		duration = 0
 	}
-	m.observeLogin("success", triggerSource, duration)
+	m.metrics.ObserveLogin("success", triggerSource, duration)
 	m.notifyLoginSuccess(completedAt)
 	slog.InfoContext(loginCtx, "jw login succeeded", "elapsed", duration)
 	return tokenOperationResult{
@@ -200,13 +200,6 @@ func (m *TokenManager) elapsedSince(startedAt time.Time) time.Duration {
 		return 0
 	}
 	return duration
-}
-
-func (m *TokenManager) observeLogin(outcome, source string, duration time.Duration) {
-	if m == nil || m.metrics == nil {
-		return
-	}
-	m.metrics.ObserveLogin(outcome, source, duration)
 }
 
 func (m *TokenManager) notifyLoginSuccess(at time.Time) {

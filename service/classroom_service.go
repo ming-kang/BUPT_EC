@@ -80,7 +80,7 @@ type ClassroomServiceOptions struct {
 	// Clock is optional; nil uses the real wall clock. Instants are converted to
 	// Asia/Shanghai for business-day logic by ClassroomService.now.
 	Clock Clock
-	// Metrics is optional; nil disables runtime metric emission.
+	// Metrics is optional; nil uses NoopMetrics (no runtime metric emission).
 	Metrics RuntimeMetrics
 	// BackoffRandom is optional; nil uses a concurrent-safe production source.
 	// Only unit samples are accepted — the jitter policy clamps and bounds them.
@@ -110,19 +110,23 @@ func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*Cla
 	if warmupJitter == nil {
 		warmupJitter = randomWarmupJitter
 	}
+	metrics := options.Metrics
+	if metrics == nil {
+		metrics = NoopMetrics{}
+	}
 	s := &ClassroomService{
 		campuses:      append([]config.CampusConfig(nil), options.Campuses...),
 		jwClient:      client,
 		clock:         clock,
 		backoffRandom: backoffRandom,
 		warmupJitter:  warmupJitter,
-		metrics:       options.Metrics,
+		metrics:       metrics,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,
 		overrideToken:  options.TokenOverride,
 		clock:          clock,
-		metrics:        options.Metrics,
+		metrics:        metrics,
 		onLoginSuccess: s.recordLoginSuccess,
 		onLoginFailure: s.recordLoginFailure,
 	}

@@ -303,19 +303,3 @@ func TestLoginMetricsAPIURLFailureIsFailedObservation(t *testing.T) {
 		t.Fatalf("observation = %#v, want failed/login", logs[0])
 	}
 }
-
-func TestLoginMetricsNilMetricsSafe(t *testing.T) {
-	// Deliberately a bare literal: this test asserts the nil-metrics guard and
-	// must not go through newTokenManagerForTest (which injects NoopMetrics).
-	// It is deleted together with the guard when metrics become non-nil always.
-	manager := &TokenManager{
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "token", nil
-			},
-		},
-	}
-	if _, err := manager.EnsureToken(context.Background(), false); err != nil {
-		t.Fatalf("EnsureToken() with nil metrics error = %v", err)
-	}
-}

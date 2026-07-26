@@ -120,9 +120,7 @@ func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.T
 	if !s.nextRefreshAllowed.IsZero() && now.Before(s.nextRefreshAllowed) {
 		s.refreshMu.Unlock()
 		s.backgroundMu.Unlock()
-		if s.metrics != nil {
-			s.metrics.ObserveRefreshSuppressed()
-		}
+		s.metrics.ObserveRefreshSuppressed()
 		return nil, false
 	}
 
@@ -130,9 +128,7 @@ func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.T
 	attempt := &classroomRefreshAttempt{done: make(chan struct{})}
 	s.refreshAttempt = attempt
 	s.refreshWorkers.Add(1)
-	if s.metrics != nil {
-		s.metrics.SetRefreshInFlight(true)
-	}
+	s.metrics.SetRefreshInFlight(true)
 	s.refreshMu.Unlock()
 	s.backgroundMu.Unlock()
 
@@ -158,9 +154,7 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 	if s.refreshAttempt == attempt {
 		s.refreshInFlight = false
 		s.refreshAttempt = nil
-		if s.metrics != nil {
-			s.metrics.SetRefreshInFlight(false)
-		}
+		s.metrics.SetRefreshInFlight(false)
 	}
 	switch {
 	case result.kind == refreshFailed || result.err != nil:
