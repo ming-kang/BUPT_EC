@@ -1,11 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   hasUsableClassroomData,
   mergeFetchResult,
-  nextFailureCount,
+  pollingInterval,
+  retryDelayFor,
   shouldFullPageSpin,
 } from "./useTodayClassrooms";
 import { fallbackErrorMessage } from "./todayClassroomsResponse";
+import {
+  MIN_FRESH_DELAY_MS,
+  PARTIAL_POLL_MS,
+  STALE_POLL_MS,
+} from "./reloadSchedule";
 
 const now = Date.parse("2026-07-10T12:00:00+08:00");
 
@@ -90,11 +96,75 @@ describe("shouldFullPageSpin", () => {
   });
 });
 
-describe("nextFailureCount", () => {
-  it("increments consecutive failures and resets after valid success", () => {
-    expect(nextFailureCount(0, false)).toBe(1);
-    expect(nextFailureCount(2, false)).toBe(3);
-    expect(nextFailureCount(3, true)).toBe(0);
+describe("pollingInterval", () => {
+  // Pin Date.now() to the fixtures' business day so usability checks pass.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("never returns a falsy interval (SWR chain-death guard)", () => {
+    // SWR permanently terminates the polling chain on 0/null intervals and
+    // nextReloadDelay(undefined) is null (pre-first-data), hence the floor.
+    expect(pollingInterval(undefined)).toBe(MIN_FRESH_DELAY_MS);
+    expect(pollingInterval(null)).toBe(MIN_FRESH_DELAY_MS);
+    expect(pollingInterval({ code: 500, msg: "boom", data: null })).toBe(
+      MIN_FRESH_DELAY_MS
+    );
+  });
+
+  it("derives the poll delay from the cached envelope's snapshot", () => {
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    expect(
+      pollingInterval({
+        ...goodPrev,
+        data: { ...goodPrev.data, stale: true },
+      })
+    ).toBe(STALE_POLL_MS);
+    expect(
+      pollingInterval({
+        ...goodPrev,
+        data: { ...goodPrev.data, partial_campuses: ["04"] },
+      })
+    ).toBe(PARTIAL_POLL_MS);
+    // Cross-day/expired cache revalidates promptly at the 1s floor.
+    expect(
+      pollingInterval({
+        ...goodPrev,
+        data: { ...goodPrev.data, stale_until: "2026-07-10T11:00:00+08:00" },
+      })
+    ).toBe(MIN_FRESH_DELAY_MS);
+  });
+});
+
+describe("retryDelayFor", () => {
+  const opts = { nowMs: now, random: () => 0 };
+
+  it("maps SWR's 1-based retryCount straight onto the failure ladder", () => {
+    expect(retryDelayFor(1, null, opts)).toBe(10_000);
+    expect(retryDelayFor(2, null, opts)).toBe(20_000);
+    expect(retryDelayFor(3, null, opts)).toBe(30_000);
+    expect(retryDelayFor(4, null, opts)).toBe(60_000);
+    expect(retryDelayFor(9, null, opts)).toBe(60_000);
+  });
+
+  it("clamps ladder delays to a displayable snapshot's stale_until deadline", () => {
+    const nearDeadline = {
+      ...goodPrev.data,
+      stale_until: new Date(now + 3_000).toISOString(),
+    };
+    // Even with maximum jitter, the retry wakes at the hard deadline.
+    expect(
+      retryDelayFor(1, nearDeadline, { nowMs: now, random: () => 1 })
+    ).toBe(3_000);
+    expect(
+      retryDelayFor(4, nearDeadline, { nowMs: now, random: () => 1 })
+    ).toBe(3_000);
   });
 });
 

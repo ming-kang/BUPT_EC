@@ -1,11 +1,29 @@
 /**
  * @vitest-environment jsdom
  *
- * Real mount/unmount harness for useTodayClassrooms. Pure helper cases stay in
- * useTodayClassrooms.test.js so later timeout/visibility work can extend this file.
+ * Real mount/unmount harness for the SWR-backed useTodayClassrooms. Pure
+ * helper cases stay in useTodayClassrooms.test.js.
+ *
+ * Harness notes (spike-verified):
+ * - Every case wraps the probe in SWRConfig with `provider: () => new Map()`
+ *   so SWR's module-global cache never leaks data/error/dedupe state across
+ *   cases.
+ * - dedupingInterval stays at the production default (2s) on purpose: the
+ *   always-alive polling chain fires a bootstrap tick ~1s after mount (the
+ *   pre-first-data interval) and production deduping absorbs it. Setting it
+ *   to 0 would turn that tick into a spurious request and make fetch counts
+ *   flaky. Manual retry still works because bound mutate() bypasses deduping.
+ * - AbortSignal.timeout is re-implemented on top of the vitest-patched global
+ *   setTimeout where the test needs to drive the 40s budget (fake timers
+ *   cannot advance jsdom's internal timeout).
+ * - Node prints a harmless `TimeoutNaNWarning` on visibilitychange dispatch:
+ *   SWR registers `setTimeout.bind(undefined, revalidateAllKeys)` as the
+ *   focus listener, so the DOM event object lands in the delay slot (NaN →
+ *   clamped to 1ms). Upstream artifact of swr@2.4.2, not a test bug.
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { SWRConfig } from "swr";
 import useTodayClassrooms, {
   CLIENT_FETCH_TIMEOUT_MESSAGE,
   CLIENT_FETCH_TIMEOUT_MS,
@@ -64,6 +82,14 @@ function HookProbe() {
   );
 }
 
+function renderProbe(config = {}) {
+  return render(
+    <SWRConfig value={{ provider: () => new Map(), ...config }}>
+      <HookProbe />
+    </SWRConfig>
+  );
+}
+
 function deferred() {
   let resolve;
   let reject;
@@ -72,6 +98,19 @@ function deferred() {
     reject = rej;
   });
   return { promise, resolve, reject };
+}
+
+/** Rebuild AbortSignal.timeout on the patched setTimeout so fake timers drive it. */
+function stubAbortSignalTimeout() {
+  return vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
+    const controller = new AbortController();
+    setTimeout(() => {
+      controller.abort(
+        new DOMException("The operation timed out.", "TimeoutError")
+      );
+    }, ms);
+    return controller.signal;
+  });
 }
 
 describe("useTodayClassrooms lifecycle", () => {
@@ -94,10 +133,13 @@ describe("useTodayClassrooms lifecycle", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    // Drop any per-case visibilityState override (falls back to the
+    // prototype's "visible") so hidden-tab cases cannot leak forward.
+    Reflect.deleteProperty(document, "visibilityState");
   });
 
   it("loads initial data on mount", async () => {
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
@@ -111,7 +153,7 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("spinning").textContent).toBe("false");
   });
 
-  it("aborts in-flight fetch on unmount", async () => {
+  it("ignores late responses after unmount without aborting the fetch", async () => {
     const pending = deferred();
     let seenSignal;
     fetch.mockImplementation((_url, init) => {
@@ -119,17 +161,20 @@ describe("useTodayClassrooms lifecycle", () => {
       return pending.promise;
     });
 
-    const view = render(<HookProbe />);
+    const view = renderProbe();
     await waitFor(() => {
       expect(fetch).toHaveBeenCalledTimes(1);
     });
+    // The fetcher always attaches its 40s timeout budget signal.
     expect(seenSignal).toBeInstanceOf(AbortSignal);
     expect(seenSignal.aborted).toBe(false);
 
     view.unmount();
-    expect(seenSignal.aborted).toBe(true);
+    // SWR does not abort in-flight requests on unmount (the timeout signal
+    // still bounds them); it only ignores the late result.
+    expect(seenSignal.aborted).toBe(false);
 
-    // Late resolve must not crash or update unmounted state.
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
       pending.resolve({
         ok: true,
@@ -138,6 +183,8 @@ describe("useTodayClassrooms lifecycle", () => {
       });
       await Promise.resolve();
     });
+    // No act warning, no unmounted-state update noise.
+    expect(errorSpy).not.toHaveBeenCalled();
   });
 
   it("manual retry issues a second request and clears full-page error", async () => {
@@ -153,7 +200,7 @@ describe("useTodayClassrooms lifecycle", () => {
         json: async () => usablePayload(),
       }));
 
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
@@ -186,7 +233,9 @@ describe("useTodayClassrooms lifecycle", () => {
         throw new Error("network down");
       });
 
-    render(<HookProbe />);
+    // dedupingInterval 0 here: the next background revalidation must issue a
+    // real second request instead of being absorbed by the dedupe window.
+    renderProbe({ dedupingInterval: 0 });
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
@@ -208,7 +257,7 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("clears the reload timer on unmount", async () => {
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
@@ -221,6 +270,7 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("times out hanging fetches with a safe message", async () => {
+    const timeoutSpy = stubAbortSignalTimeout();
     fetch.mockImplementation(
       (_url, init) =>
         new Promise((_resolve, reject) => {
@@ -229,15 +279,16 @@ describe("useTodayClassrooms lifecycle", () => {
             return;
           }
           if (signal.aborted) {
-            reject(new DOMException("Aborted", "AbortError"));
+            reject(signal.reason);
             return;
           }
           signal.addEventListener("abort", () => {
-            reject(new DOMException("Aborted", "AbortError"));
+            reject(signal.reason);
           });
         })
     );
-    render(<HookProbe />);
+
+    renderProbe();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(CLIENT_FETCH_TIMEOUT_MS + 10);
     });
@@ -247,6 +298,7 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("msg").textContent).toBe(
       CLIENT_FETCH_TIMEOUT_MESSAGE
     );
+    expect(timeoutSpy).toHaveBeenCalledWith(CLIENT_FETCH_TIMEOUT_MS);
   });
 
   it("keeps the real HTTP status and body log_id in the error envelope", async () => {
@@ -262,11 +314,11 @@ describe("useTodayClassrooms lifecycle", () => {
       }),
     }));
 
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
-    // errorEnvelope carries the real status, not a guessed 500.
+    // The derived envelope carries the real status, not a guessed 500.
     expect(screen.getByTestId("code").textContent).toBe("404");
     expect(screen.getByTestId("msg").textContent).toBe("接口不存在");
     expect(screen.getByTestId("log-id").textContent).toBe("body-log-id");
@@ -280,13 +332,39 @@ describe("useTodayClassrooms lifecycle", () => {
       json: async () => null,
     }));
 
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
     expect(screen.getByTestId("code").textContent).toBe("502");
     expect(screen.getByTestId("msg").textContent).toBe("请求失败 (502)");
     expect(screen.getByTestId("log-id").textContent).toBe("header-log-id");
+  });
+
+  it("keeps background polling alive after the first load (no falsy chain death)", async () => {
+    // Guards the SWR chain-death trap: a falsy refreshInterval return would
+    // silently end all future polling; nextReloadDelay(undefined) is null.
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    fetch.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => usablePayload({ data: { stale: true } }),
+    }));
+
+    renderProbe();
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetch.mock.calls.length;
+
+    // Stale payload → 15s base poll. The ~1s bootstrap tick is deduped; the
+    // chain then re-arms from the real snapshot.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(17_000);
+    });
+    await waitFor(() => {
+      expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+    });
   });
 
   it("does not schedule background reloads while the page is hidden", async () => {
@@ -303,7 +381,7 @@ describe("useTodayClassrooms lifecycle", () => {
         }),
     }));
 
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
@@ -312,6 +390,54 @@ describe("useTodayClassrooms lifecycle", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
     expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+  });
+
+  it("abandons an armed failure retry while hidden and recovers on focus", async () => {
+    // SWR fires already-armed error-retry timers even after the tab hides;
+    // retryOnError's callback must give up when hidden and let
+    // revalidateOnFocus reissue the request on return.
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    let visibility = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibility,
+    });
+    fetch
+      .mockImplementationOnce(async () => {
+        throw new Error("network down");
+      })
+      .mockImplementation(async () => ({
+        ok: true,
+        status: 200,
+        json: async () => usablePayload(),
+      }));
+
+    renderProbe();
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    const callsAfterError = fetch.mock.calls.length;
+
+    // The 10s ladder timer was armed while visible; hide before it fires.
+    await act(async () => {
+      visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+    // Timer fired but gave up: hidden tabs never fetch.
+    expect(fetch.mock.calls.length).toBe(callsAfterError);
+
+    // Becoming visible again revalidates promptly and clears the error.
+    await act(async () => {
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    expect(fetch.mock.calls.length).toBe(callsAfterError + 1);
   });
 
   it("clears expired snapshot and reloads once when becoming visible after stale_until", async () => {
@@ -350,14 +476,14 @@ describe("useTodayClassrooms lifecycle", () => {
       };
     });
 
-    render(<HookProbe />);
+    renderProbe();
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
     const callsAfterLoad = fetch.mock.calls.length;
 
-    // Hide: reload effect tears down its timer; no polls while hidden.
+    // Hide: the polling chain keeps re-arming but never fetches while hidden.
     await act(async () => {
       visibility = "hidden";
       document.dispatchEvent(new Event("visibilitychange"));
@@ -369,25 +495,24 @@ describe("useTodayClassrooms lifecycle", () => {
     // Stale snapshot may still be in state while hidden.
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
 
-    // Become visible after the hard deadline: schedule a prompt revalidate.
+    // Become visible after the hard deadline: revalidateOnFocus reloads
+    // immediately; the pending chain tick is absorbed by the dedupe window.
     await act(async () => {
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    // Duplicate visible events must not enqueue extra work.
+    // Duplicate visible events are throttled (focusThrottleInterval).
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
-    });
-
-    // MIN_FRESH_DELAY_MS with sample=0 is exactly 1s; fire the timer.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
     });
 
     await waitFor(() => {
       expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
     });
-    // Exactly one background reload after resume (not ordinary 15s stale poll thrash).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_000);
+    });
+    // Exactly one reload after resume (no ordinary 15s stale poll thrash).
     expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");

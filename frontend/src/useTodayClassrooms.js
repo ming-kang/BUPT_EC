@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
+import useSWR from "swr";
 import { ApiError } from "./apiError";
 import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
-import { nextReloadDelay } from "./reloadSchedule";
+import { MIN_FRESH_DELAY_MS, nextReloadDelay } from "./reloadSchedule";
 import {
   extractMessage,
   fallbackErrorMessage,
@@ -16,6 +17,16 @@ import {
  */
 export const CLIENT_FETCH_TIMEOUT_MS = 40_000;
 export const CLIENT_FETCH_TIMEOUT_MESSAGE = "请求超时，请稍后重试";
+
+export const TODAY_CLASSROOMS_KEY = "/api/get_data";
+
+/**
+ * SWR refetches on every visibilitychange/focus event. Throttle to the stale
+ * poll cadence so multi-tab switching stays inside the Nginx 30 req/min budget.
+ */
+export const FOCUS_THROTTLE_MS = 15_000;
+
+const EXPIRED_SNAPSHOT_MESSAGE = "当前缓存已失效，正在重新获取";
 
 /** True when the response can still drive the classroom UI. */
 export function hasUsableClassroomData(resp, nowMs = Date.now()) {
@@ -34,10 +45,6 @@ export function shouldFullPageSpin(isBackground, hasUsableData) {
     return false;
   }
   return !hasUsableData;
-}
-
-export function nextFailureCount(current, succeeded) {
-  return succeeded ? 0 : current + 1;
 }
 
 /**
@@ -88,173 +95,200 @@ function errorEnvelope(message, code = 500, logId = "") {
   };
 }
 
-function isPageVisible() {
-  if (typeof document === "undefined") {
-    return true;
+/**
+ * Envelope code precedence mirrors the pre-SWR behavior: the real HTTP status
+ * when the transport failed, otherwise the non-zero business code carried by
+ * an HTTP-2xx service error envelope, and 500 only as the last resort.
+ */
+function errorAsEnvelope(error) {
+  if (error instanceof ApiError) {
+    const status = Number.isFinite(error.status) ? error.status : null;
+    const businessCode =
+      Number.isFinite(error.code) && error.code !== 0 ? error.code : null;
+    return errorEnvelope(
+      error.message,
+      status ?? businessCode ?? 500,
+      error.logId
+    );
   }
-  return document.visibilityState !== "hidden";
+  return errorEnvelope(
+    error instanceof Error && error.message ? error.message : ""
+  );
+}
+
+/**
+ * SWR fetcher. Throwing is the single error channel: any outcome that must
+ * not replace the cached snapshot (transport failure, malformed payload,
+ * service error envelope, unusable business-day metadata) throws an ApiError;
+ * SWR then keeps the previous data on its data track ("failure preserves the
+ * last snapshot") and routes scheduling through onErrorRetry.
+ */
+export async function fetchTodayClassrooms(url) {
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(CLIENT_FETCH_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "TimeoutError") {
+      throw new ApiError(CLIENT_FETCH_TIMEOUT_MESSAGE, {});
+    }
+    throw error;
+  }
+
+  const payload = await readJson(response);
+  const logId = payload?.log_id || response.headers?.get("X-Log-Id") || "";
+  const businessCode = Number(payload?.code);
+  const code = Number.isFinite(businessCode) ? businessCode : undefined;
+
+  if (!response.ok) {
+    throw new ApiError(
+      extractMessage(payload) || `请求失败 (${response.status})`,
+      { status: response.status, code, logId }
+    );
+  }
+
+  const normalized = normalizeResponse(payload);
+  if (!normalized.ok) {
+    throw new ApiError(normalized.reason, {
+      status: response.status,
+      code,
+      logId,
+    });
+  }
+  if (normalized.resp.code !== 0) {
+    // Legitimate service error envelope over HTTP 2xx: the business code is
+    // the envelope code (no status attached, 2xx would shadow it).
+    throw new ApiError(normalized.resp.msg, { code: normalized.resp.code, logId });
+  }
+  if (!hasUsableClassroomData(normalized.resp)) {
+    // Success envelope with cross-day/expired/malformed cache metadata fails
+    // closed as a client failure (code 500) so the retry ladder, not the 1s
+    // poll floor, paces the next attempt (Nginx 30 req/min budget).
+    throw new ApiError(extractMessage(payload) || fallbackErrorMessage, {
+      logId,
+    });
+  }
+  return normalized.resp;
+}
+
+/**
+ * refreshInterval for useSWR. Module-level stable identity is required: the
+ * polling effect only re-arms via its own `execute → then(next)` chain, and
+ * SWR terminates that chain permanently on a falsy interval — while
+ * `nextReloadDelay(undefined)` (pre-first-data) is null. Hence the never-falsy
+ * wrapper. SWR passes the cached fetcher value (the envelope), the schedule
+ * pipeline wants the inner snapshot.
+ */
+export function pollingInterval(latest) {
+  const delay = nextReloadDelay(latest?.data, { failureCount: 0 });
+  return Math.max(1, delay ?? MIN_FRESH_DELAY_MS);
+}
+
+/**
+ * Failure backoff for onErrorRetry. SWR's retryCount starts at 1, aligning
+ * 1:1 with the 10/20/30/60s ladder. Never use failureRetryDelay directly:
+ * nextReloadDelay also clamps the ladder to a still-displayable snapshot's
+ * stale_until hard deadline (contract: wake at stale_until even mid-backoff).
+ */
+export function retryDelayFor(retryCount, latestData, options = {}) {
+  return nextReloadDelay(latestData, { ...options, failureCount: retryCount });
+}
+
+/**
+ * Custom onErrorRetry: ladder + stale_until clamp via retryDelayFor, and a
+ * visibility self-check inside the timer callback — SWR fires already-armed
+ * retry timers even after the tab hides (no isActive gate on
+ * ERROR_REVALIDATE_EVENT), so give up when hidden; revalidateOnFocus reissues
+ * the request when the tab returns. New retries are not chained while hidden
+ * (SWR's own isActive precondition), which pauses the ladder as the old
+ * scheduler did.
+ */
+export function retryOnError(_error, key, config, revalidate, opts) {
+  const cached = config?.cache?.get?.(key);
+  const delay = retryDelayFor(opts.retryCount, cached?.data?.data);
+  if (delay == null || !Number.isFinite(delay)) {
+    return;
+  }
+  setTimeout(() => {
+    if (
+      typeof document !== "undefined" &&
+      document.visibilityState === "hidden"
+    ) {
+      return;
+    }
+    revalidate(opts);
+  }, delay);
 }
 
 export default function useTodayClassrooms() {
-  const [reloadRequest, setReloadRequest] = useState({
-    key: 0,
-    background: false,
-  });
-  const [spinning, setSpinning] = useState(true);
-  const [reloading, setReloading] = useState(false);
-  const [failureCount, setFailureCount] = useState(0);
-  const [resp, setResp] = useState(loadingResponse);
-  const [pageVisible, setPageVisible] = useState(isPageVisible);
-  const respRef = useRef(resp);
-  respRef.current = resp;
+  // Only survivor of the old 6-useState machine: marks a user-initiated
+  // reload so the spin policy can tell it apart from background revalidation.
+  const [manualReload, setManualReload] = useState(false);
 
-  useEffect(() => {
-    if (typeof document === "undefined") {
-      return undefined;
+  const { data, error, isValidating, mutate } = useSWR(
+    TODAY_CLASSROOMS_KEY,
+    fetchTodayClassrooms,
+    {
+      refreshInterval: pollingInterval,
+      onErrorRetry: retryOnError,
+      // Red line: keep true. Besides "revalidate promptly after stale_until
+      // when becoming visible", SWR only pauses the error-retry chain on
+      // hidden tabs while revalidateOnFocus is on.
+      revalidateOnFocus: true,
+      focusThrottleInterval: FOCUS_THROTTLE_MS,
+      // Everything else stays default: refreshWhenHidden false (hidden tabs
+      // never fetch), shouldRetryOnError true, dedupingInterval 2s,
+      // errorRetryCount unset (the ladder itself caps at 60s).
     }
-    const onVisibility = () => {
-      setPageVisible(document.visibilityState !== "hidden");
-    };
-    document.addEventListener("visibilitychange", onVisibility);
-    return () => document.removeEventListener("visibilitychange", onVisibility);
-  }, []);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    let timedOut = false;
-    const isBackground = reloadRequest.background;
-    const timeoutId = setTimeout(() => {
-      timedOut = true;
-      controller.abort();
-    }, CLIENT_FETCH_TIMEOUT_MS);
-
-    async function loadData() {
-      const usable = hasUsableClassroomData(respRef.current);
-      const fullPageSpin = shouldFullPageSpin(isBackground, usable);
-
-      setSpinning(fullPageSpin);
-      // Subtle in-flight flag for background (or any non-full-page) reloads.
-      setReloading(!fullPageSpin);
-
-      if (fullPageSpin && !usable) {
-        setResp(loadingResponse);
-        respRef.current = loadingResponse;
-      }
-
-      try {
-        const response = await fetch("/api/get_data", {
-          signal: controller.signal,
-          headers: { Accept: "application/json" },
-        });
-        const payload = await readJson(response);
-        const logId =
-          payload?.log_id || response.headers?.get("X-Log-Id") || "";
-        const businessCode = Number(payload?.code);
-        const apiErrorDetails = {
-          status: response.status,
-          code: Number.isFinite(businessCode) ? businessCode : undefined,
-          logId,
-        };
-
-        if (!response.ok) {
-          throw new ApiError(
-            extractMessage(payload) || `请求失败 (${response.status})`,
-            apiErrorDetails
-          );
-        }
-
-        const normalized = normalizeResponse(payload);
-        if (!normalized.ok) {
-          throw new ApiError(normalized.reason, apiErrorDetails);
-        }
-
-        const nowMs = Date.now();
-        const succeeded = hasUsableClassroomData(normalized.resp, nowMs);
-        setFailureCount((current) => nextFailureCount(current, succeeded));
-        setResp((current) => {
-          const merged = mergeFetchResult(current, normalized.resp, nowMs);
-          respRef.current = merged;
-          return merged;
-        });
-      } catch (error) {
-        if (controller.signal.aborted && !timedOut) {
-          return;
-        }
-        // ApiError keeps the real HTTP status and log_id; anything else stays
-        // on the existing safe-message path with the generic 500 code.
-        const failed =
-          !timedOut && error instanceof ApiError
-            ? errorEnvelope(error.message, error.status, error.logId)
-            : errorEnvelope(
-                timedOut
-                  ? CLIENT_FETCH_TIMEOUT_MESSAGE
-                  : error instanceof Error
-                    ? error.message
-                    : fallbackErrorMessage
-              );
-        const nowMs = Date.now();
-        setFailureCount((current) => nextFailureCount(current, false));
-        setResp((current) => {
-          const merged = mergeFetchResult(current, failed, nowMs);
-          // mergeFetchResult rebuilds hard-empty envelopes without logId;
-          // re-attach it so the error UI can surface it (stale-snapshot
-          // merges keep code 0 and never show the hard error card).
-          const next =
-            merged.code !== 0 && failed.logId
-              ? { ...merged, logId: failed.logId }
-              : merged;
-          respRef.current = next;
-          return next;
-        });
-      } finally {
-        clearTimeout(timeoutId);
-        if (!controller.signal.aborted || timedOut) {
-          setSpinning(false);
-          setReloading(false);
-        }
-      }
-    }
-
-    loadData();
-    return () => {
-      clearTimeout(timeoutId);
-      controller.abort();
-    };
-  }, [reloadRequest]);
+  );
 
   const retry = useCallback(() => {
-    setReloadRequest((current) => ({
-      key: current.key + 1,
-      background: false,
-    }));
-  }, []);
+    setManualReload(true);
+    Promise.resolve(mutate())
+      .catch(() => {
+        // Failures surface through the hook's error track.
+      })
+      .finally(() => setManualReload(false));
+  }, [mutate]);
 
-  useEffect(() => {
-    if (!pageVisible || spinning || reloading) {
-      return undefined;
-    }
-    const delay = nextReloadDelay(resp.data, { failureCount });
-    if (delay == null) {
-      return undefined;
-    }
-    const timer = setTimeout(() => {
-      if (resp.code === 0 && !hasUsableClassroomData(resp)) {
-        const expired = errorEnvelope("当前缓存已失效，正在重新获取");
-        respRef.current = expired;
-        setResp(expired);
-      }
-      setReloadRequest((current) => ({
-        key: current.key + 1,
-        background: true,
-      }));
-    }, delay);
-    return () => clearTimeout(timer);
-  }, [failureCount, pageVisible, reloading, resp, spinning]);
+  // Render-time derivation replaces the old setState-time merging. SWR keeps
+  // data and error on separate tracks (a throwing fetcher never clears data),
+  // so mergeFetchResult sees the same (prev, next) pairs as before.
+  const nowMs = Date.now();
+  const hasUsable = hasUsableClassroomData(data, nowMs);
+  const neverResolved = data === undefined && error === undefined;
+  const isBackground = !neverResolved && !manualReload;
+  const spinning = isValidating && shouldFullPageSpin(isBackground, hasUsable);
+
+  let resp;
+  if (spinning || neverResolved) {
+    // Full-page spin implies no usable data: reset to the loading envelope,
+    // exactly like the old hook did before a foreground request.
+    resp = loadingResponse;
+  } else if (error) {
+    const failed = errorAsEnvelope(error);
+    const merged = mergeFetchResult(data ?? null, failed, nowMs);
+    // mergeFetchResult rebuilds hard-empty envelopes without logId; re-attach
+    // it so the error UI can surface it (stale-snapshot merges keep code 0
+    // and never show the hard error card).
+    resp =
+      merged.code !== 0 && failed.logId
+        ? { ...merged, logId: failed.logId }
+        : merged;
+  } else if (hasUsable) {
+    resp = data;
+  } else {
+    // code-0 cache crossed midnight or stale_until between revalidations:
+    // clear the campuses while the clamped reload is in flight.
+    resp = errorEnvelope(EXPIRED_SNAPSHOT_MESSAGE);
+  }
 
   return {
     resp,
     spinning,
-    reloading,
+    reloading: isValidating && !spinning,
     isError: resp.code !== 0 && !spinning,
     retry,
   };
