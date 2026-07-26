@@ -62,6 +62,8 @@ sudo journalctl -u bupt-ec -n 50 --no-pager
 
 `/healthz` should return `{"status":"ok"}` immediately. `/readyz` returns 200 once the first classroom refresh has succeeded (this may take a few seconds after a restart while the warmup login runs).
 
+Confirm the running build is the one you just installed: the `/readyz` body carries a `version` field that must equal the installed tag (for example `v0.1.6`), or `nightly-<short-sha>` on the nightly channel. If it still shows the previous version, the service was not restarted or a different artifact was installed — recheck `systemctl status bupt-ec` and rerun the installer with an explicit `VERSION`.
+
 Then open `https://<your-domain>/` in a browser and confirm the page loads today's data.
 
 ## Roll back to an earlier release

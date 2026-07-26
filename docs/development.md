@@ -44,6 +44,8 @@ rm -rf web/dist && cp -r frontend/dist web/dist
 go build -tags embed_assets -o bupt-ec ./
 ```
 
+This omits the version injection: `task build` also passes `-trimpath -ldflags "-s -w -X main.version=<git describe>"`, so a binary built with the bare command above reports `version: dev` in the startup log and on `/readyz`.
+
 For frontend work with hot reload, run both dev servers (the backend only needs to answer `/api`, so plain `go run ./` is fine here):
 
 ```bash
@@ -148,7 +150,8 @@ Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.L
 - `useTodayClassrooms.js` fetches `/api/get_data` through `swr` and schedules automatic reloads via pure helpers in `reloadSchedule.js`: near `expires_at` when fully fresh (1s floor), ≥15s for ordinary stale data, ≥30s for partial-campus data, and 10s/20s/30s/60s client-failure backoff. SWR's `refreshInterval` drives the poll (through a never-falsy wrapper — a falsy interval would end the polling chain permanently) and a custom `onErrorRetry` drives the backoff, so the same pure schedule covers both paths. Each schedule samples `random` once, applies **positive-only** bounded jitter (≤10% of base, cap 5s), then clamps to remaining `stale_until` so the final delay never exceeds the hard display deadline. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future; failures keep the last good snapshot because SWR stores data and errors on separate tracks and the hook merges them during render. Hidden tabs issue no requests (timers may re-arm, but polls are skipped and an armed retry gives up when it wakes hidden); resume after expiry clears stale campuses before a single background reload. Background polls do **not** full-page spin.
 - `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
-- The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.
+- `main.jsx` wraps `<App />` in a last-resort `ErrorBoundary` whose fallback is plain inline-styled HTML on purpose: a crash can originate inside `ConfigProvider`/antd itself, so the root fallback must not depend on them.
+- The classroom table is lazy-loaded behind `Suspense` and its own inner `ErrorBoundary`, so local degradation is handled before the root boundary takes over.
 - Dark mode follows system `prefers-color-scheme` only (bootstrap + React share that source; no conflicting `localStorage.darkMode`).
 
 ## Conventions

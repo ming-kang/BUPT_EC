@@ -8,7 +8,7 @@
 
 基于 2026-07-26 的三份架构审计（`research/audit-backend.md`、`research/audit-frontend.md`、`research/audit-engineering.md`），做一次以"减法"为主的重构：删除过度抽象与无关依赖、用标准库/成熟库替代手写基础设施、升级陈旧的前端依赖。对外行为保持不变或仅有显式批准的增量改进。
 
-价值：Go 模块 77 → ~10（被动 CVE 面大幅收缩）；净删千行级手写基础设施；裸克隆可开发（当前无前端产物时 `go vet` 直接失败）；修复 gzip 协议缺陷、Modal 过期数据等真实 bug。
+价值：go.mod 声明依赖 43 → 15 行（9 直接 + 34 indirect → 7 直接 + 8 indirect），完整 module graph（`go list -m all`）77 → 40（被动 CVE 面大幅收缩）；净删千行级手写基础设施；裸克隆可开发（当前无前端产物时 `go vet` 直接失败）；修复 gzip 协议缺陷、Modal 过期数据等真实 bug。
 
 ## 已确认决策（2026-07-26，用户拍板）
 

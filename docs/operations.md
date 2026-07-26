@@ -1,6 +1,6 @@
 # Operations
 
-Day-to-day operation of a deployed BUPT_EC server: service management, health checks, logs, caching behavior, and troubleshooting.
+Day-to-day operation of a deployed BUPT_EC server: service management, health checks, logs, caching behavior (data and static assets), and troubleshooting.
 
 ## Service management
 
@@ -89,10 +89,12 @@ Returns `200` when JW credentials are configured **and** a usable same-day cache
     "cache_stale": false,
     "cache_partial": false,
     "cache_date": "2026-07-03"
-  }
+  },
+  "version": "v0.1.6"
 }
 ```
 
+- `version`: build version string. Release binaries get the tag (or `nightly-<short-sha>`) injected via `-ldflags "-X main.version=..."`; locally built binaries report `dev`.
 - `cache_fresh`: within the ~5 minute fresh TTL.
 - `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
 - `cache_partial`: at least one configured campus used prior same-day data or an empty skeleton during the latest usable refresh. `partial_campuses` lists the affected campus IDs when present.
@@ -167,6 +169,20 @@ Refreshes are triggered on demand by `GET /api/get_data` and by a process-local 
 
 This means a midnight refresh suppressed by a backoff is retried after the allowed time instead of being abandoned until the following day. Concurrent requests and warmup share the same single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
+## Static asset caching (SPA)
+
+The Go binary serves the embedded frontend with two deliberately different policies:
+
+| Resource | Cache-Control | Revalidation |
+| --- | --- | --- |
+| `/assets/*` (build output, content hash in the filename) | `public, max-age=31536000, immutable` | none needed — a new build produces new filenames |
+| `index.html` and every SPA fallback path | `no-cache` | weak `ETag`, so unchanged HTML answers a cheap `304` |
+| `favicon.ico` (dist root, no content hash) | `no-cache` | served fresh each time (no `ETag`) |
+
+`no-cache` means "revalidate before reuse", not "never store". That split is
+what makes an upgrade visible on the next page load while hashed assets stay
+cacheable for a year. Do not add HTML caching in Nginx or a CDN in front of it.
+
 ## Deployment topology (supported today)
 
 ### Recommended
@@ -240,6 +256,7 @@ If the message instead says the automatic rollback was incomplete, note the prin
 | `/readyz` 503, `last_refresh_error` set, login OK | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
 | Page loads but shows the stale warning | `/readyz` → `cache_fresh` | Upstream refresh failing; check `last_refresh_error`. |
+| Browser still shows the old UI after an upgrade | `curl -sI https://<domain>/` → `Cache-Control` must be `no-cache`; `curl -s http://127.0.0.1:8080/readyz` → `version` | Service not restarted or old artifact installed (check `version` first). If the header is not `no-cache`, an Nginx/CDN layer is caching HTML — stop caching `index.html`; hashed `/assets/*` are safe to cache. A hard reload confirms which side is stale. |
 | Service not listening | `sudo journalctl -u bupt-ec -n 50` | Startup validation failed (missing credentials) or port conflict on `APP_ADDR`. |
 | 429 responses on `/api/` | Nginx rate limit | Installer default is 30 req/min per IP, burst 20; adjust the Nginx site if needed. |
 

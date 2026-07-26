@@ -67,7 +67,7 @@ Three workflows: `ci.yml` and `release.yml` both call `quality.yml` (reusable ga
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build` (tag-less, so a clean checkout stays buildable), an embedded-assets build (`go build -tags embed_assets` with the freshly built frontend copied to `web/dist`), `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, the bundle size budget check (`node scripts/check-bundle-size.mjs` in `frontend/`, over the freshly built `dist/`), `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build` (tag-less, so a clean checkout stays buildable), an embedded-assets build (`go build -tags embed_assets` with the freshly built frontend copied to `web/dist`), `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
 
 ### `release.yml` — pushes to `main` and `v*` tags
 
