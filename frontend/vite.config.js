@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
+    // Reject Vite 7's new Safari 16 default baseline to keep old-iOS (<16)
+    // devices working (~Vite 6 'modules' baseline); revisit in batch 4.
+    target: ['es2020', 'safari14'],
     rollupOptions: {
       output: {
         manualChunks(id) {
