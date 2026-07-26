@@ -349,3 +349,29 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 重构批次1：工程卫生速赢（hygiene-quick-wins）
+
+**Date**: 2026-07-26
+**Task**: 重构批次1：工程卫生速赢（hygiene-quick-wins）
+**Branch**: `main`
+
+### Summary
+
+完成 arch-simplify-refactor 任务树的子任务1：CI 提速与加固（pnpm 缓存、frontend-dist artifact 复用、timeout、go run govulncheck）、发布二进制版本注入（-trimpath -ldflags -X main.version，/readyz 新增 version 字段）、删除未使用的 dayjs、.gitignore/.env.example/docs 卫生修复、accepts_gzip_test.go 更名 router_test.go。经 3 分区并行实现 + trellis-check + 双镜头对抗验证，go test -race 与 pnpm 全套全绿。spec 沉淀：版本注入 gotcha 与 CI 工作流编辑规则。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da6fd95` | (see git log) |
+| `01bfa3d` | (see git log) |
+| `57aff63` | (see git log) |
+| `9ad81ec` | (see git log) |
+| `af371b8` | (see git log) |
+| `6b14d10` | (see git log) |
+
+### Status
+
+[OK] **Completed**
