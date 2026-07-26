@@ -12,7 +12,6 @@ import (
 
 	"BUPT_EC/service"
 
-	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -34,18 +33,15 @@ func newTestMetricsHandler(t *testing.T, observe func(*service.PrometheusMetrics
 	})
 }
 
-func newMetricsTestRouter(t *testing.T, metricsHandler http.Handler) *gin.Engine {
+func newMetricsTestRouter(t *testing.T, metricsHandler http.Handler) http.Handler {
 	t.Helper()
 	httpServer, err := NewHTTPServer(&fakeClassroomService{}, true, metricsHandler)
 	if err != nil {
 		t.Fatalf("NewHTTPServer() error = %v", err)
 	}
-	router := gin.New()
-	router.Use(gzipMiddleware())
-	router.GET("/metrics", httpServer.Metrics)
-	router.GET("/healthz", httpServer.Healthz)
-	router.GET("/readyz", httpServer.Readyz)
-	return router
+	// Reuse the full production chain so the gzip behavior asserted here can
+	// never drift from the wrapper configuration Routes ships.
+	return httpServer.Routes()
 }
 
 func TestMetricsEndpointIdentityAndGzipOnce(t *testing.T) {

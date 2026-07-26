@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -14,13 +15,7 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/gin-gonic/gin"
 )
-
-func init() {
-	gin.SetMode(gin.TestMode)
-}
 
 type fakeClassroomService struct {
 	todayClassrooms  *model.TodayClassrooms
@@ -63,11 +58,9 @@ func TestNewHTTPServerRejectsNilService(t *testing.T) {
 
 func TestReadyzRequiresConfiguredCredentialsAndUsableCache(t *testing.T) {
 	serveReadyz := func(httpServer *HTTPServer) *httptest.ResponseRecorder {
-		router := gin.New()
-		router.GET("/readyz", httpServer.Readyz)
 		responseRecorder := httptest.NewRecorder()
 		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-		router.ServeHTTP(responseRecorder, request)
+		http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
 		return responseRecorder
 	}
 
@@ -103,12 +96,9 @@ func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 		},
 	}, true)
 
-	router := gin.New()
-	router.GET("/readyz", httpServer.Readyz)
-
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	router.ServeHTTP(responseRecorder, request)
+	http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
 	if responseRecorder.Code != http.StatusOK {
 		t.Fatalf("partial cache readyz status = %d, want %d", responseRecorder.Code, http.StatusOK)
 	}
@@ -145,12 +135,11 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 		},
 	}, true)
 
-	router := gin.New()
-	httpServer.RegisterRoutes(router)
+	handler := httpServer.Routes()
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Code != http.StatusOK {
 		t.Fatalf("GetData status = %d, want %d", responseRecorder.Code, http.StatusOK)
 	}
@@ -180,12 +169,11 @@ func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 	upstreamError := errors.New("raw upstream token detail should not leak")
 	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: upstreamError}, true)
 
-	router := gin.New()
-	httpServer.RegisterRoutes(router)
+	handler := httpServer.Routes()
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Code != http.StatusServiceUnavailable {
 		t.Fatalf("GetData error status = %d, want %d", responseRecorder.Code, http.StatusServiceUnavailable)
 	}
@@ -208,12 +196,12 @@ func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 	if envelope.Data != nil {
 		t.Fatalf("GetData error data = %#v, want nil", envelope.Data)
 	}
-	logIDHeader := responseRecorder.Header().Get("LogID")
+	logIDHeader := responseRecorder.Header().Get("X-Log-Id")
 	if logIDHeader == "" {
-		t.Fatal("GetData error response should include a non-empty LogID header")
+		t.Fatal("GetData error response should include a non-empty X-Log-Id header")
 	}
 	if envelope.LogID != logIDHeader {
-		t.Fatalf("GetData error log_id = %q, want header LogID %q", envelope.LogID, logIDHeader)
+		t.Fatalf("GetData error log_id = %q, want header X-Log-Id %q", envelope.LogID, logIDHeader)
 	}
 	if strings.Contains(responseRecorder.Body.String(), upstreamError.Error()) {
 		t.Fatalf("GetData error response leaked raw error detail: %s", responseRecorder.Body.String())
@@ -221,26 +209,25 @@ func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 }
 
 func TestNoRouteServesSPAFallback(t *testing.T) {
-	router := gin.New()
-	newTestHTTPServer(nil, true).RegisterRoutes(router)
+	handler := newTestHTTPServer(nil, true).Routes()
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Code != http.StatusOK {
 		t.Fatalf("SPA fallback status = %d, want %d", responseRecorder.Code, http.StatusOK)
 	}
 	if contentType := responseRecorder.Header().Get("Content-Type"); !strings.HasPrefix(contentType, "text/html") {
 		t.Fatalf("SPA fallback Content-Type = %q, want text/html", contentType)
 	}
-	if logID := responseRecorder.Header().Get("LogID"); logID != "" {
-		t.Fatalf("SPA fallback must not force LogID header, got %q", logID)
+	if logID := responseRecorder.Header().Get("X-Log-Id"); logID != "" {
+		t.Fatalf("SPA fallback must not force X-Log-Id header, got %q", logID)
 	}
 
 	for _, path := range []string{"/api/nonexistent", "/api"} {
 		responseRecorder = httptest.NewRecorder()
 		request = httptest.NewRequest(http.MethodGet, path, nil)
-		router.ServeHTTP(responseRecorder, request)
+		handler.ServeHTTP(responseRecorder, request)
 		if responseRecorder.Code != http.StatusNotFound {
 			t.Fatalf("%s status = %d, want %d", path, responseRecorder.Code, http.StatusNotFound)
 		}
@@ -255,9 +242,9 @@ func TestNoRouteServesSPAFallback(t *testing.T) {
 		if err := json.Unmarshal(responseRecorder.Body.Bytes(), &envelope); err != nil {
 			t.Fatalf("%s decode: %v", path, err)
 		}
-		logIDHeader := responseRecorder.Header().Get("LogID")
+		logIDHeader := responseRecorder.Header().Get("X-Log-Id")
 		if logIDHeader == "" {
-			t.Fatalf("%s missing LogID header", path)
+			t.Fatalf("%s missing X-Log-Id header", path)
 		}
 		if envelope.LogID == "" || envelope.LogID != logIDHeader {
 			t.Fatalf("%s log_id = %q header = %q, want matching non-empty values", path, envelope.LogID, logIDHeader)
@@ -268,19 +255,82 @@ func TestNoRouteServesSPAFallback(t *testing.T) {
 	}
 }
 
-func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
-	httpServer := newTestHTTPServer(nil, true)
-	router := gin.New()
-	router.Use(gzipMiddleware())
-	router.GET("/api/test", func(c *gin.Context) {
-		c.String(http.StatusOK, strings.Repeat("x", 128))
-	})
-	router.GET("/healthz", httpServer.Healthz)
+func TestRecoveryConvertsPanicToCleanInternalError(t *testing.T) {
+	const secretDetail = "secret panic detail must never reach the client"
+	handler := recovery(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		panic(secretDetail)
+	}))
 
 	responseRecorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	handler.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/api/get_data", nil))
+	if responseRecorder.Code != http.StatusInternalServerError {
+		t.Fatalf("recovered panic status = %d, want %d", responseRecorder.Code, http.StatusInternalServerError)
+	}
+	if body := responseRecorder.Body.String(); strings.Contains(body, secretDetail) || body != "" {
+		t.Fatalf("recovered panic body = %q, want empty (no panic detail leak)", body)
+	}
+
+	// A panic after the response started must not overwrite the status.
+	handler = recovery(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		panic(secretDetail)
+	}))
+	responseRecorder = httptest.NewRecorder()
+	handler.ServeHTTP(responseRecorder, httptest.NewRequest(http.MethodGet, "/api/get_data", nil))
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("post-write panic status = %d, want %d (header already sent)", responseRecorder.Code, http.StatusOK)
+	}
+	if strings.Contains(responseRecorder.Body.String(), secretDetail) {
+		t.Fatalf("post-write panic leaked detail: %q", responseRecorder.Body.String())
+	}
+}
+
+// largeTodayClassrooms returns a payload whose JSON encoding comfortably
+// exceeds the gzhttp MinSize threshold (1024 bytes) so compression triggers.
+func largeTodayClassrooms(now time.Time) *model.TodayClassrooms {
+	campuses := make([]model.CampusInfo, 0, 32)
+	for i := range 32 {
+		campuses = append(campuses, model.CampusInfo{
+			ID:   fmt.Sprintf("%02d", i),
+			Name: fmt.Sprintf("测试校区-%02d", i),
+		})
+	}
+	return &model.TodayClassrooms{
+		Date:       now.Format("2006-01-02"),
+		UpdatedAt:  now,
+		ExpiresAt:  now.Add(time.Minute),
+		StaleUntil: now.Add(time.Hour),
+		Campuses:   campuses,
+	}
+}
+
+func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
+	httpServer := newTestHTTPServer(&fakeClassroomService{
+		todayClassrooms:  largeTodayClassrooms(time.Now()),
+		usableTodayCache: true,
+	}, true)
+	handler := httpServer.Routes()
+
+	// Identity baseline: no Accept-Encoding means no compression.
+	identityRecorder := httptest.NewRecorder()
+	identityRequest := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+	handler.ServeHTTP(identityRecorder, identityRequest)
+	if identityRecorder.Code != http.StatusOK {
+		t.Fatalf("identity status = %d, want %d", identityRecorder.Code, http.StatusOK)
+	}
+	if encoding := identityRecorder.Header().Get("Content-Encoding"); encoding != "" {
+		t.Fatalf("identity Content-Encoding = %q, want empty", encoding)
+	}
+	identityBody := identityRecorder.Body.String()
+	if len(identityBody) < 1024 {
+		t.Fatalf("fixture body = %d bytes, must be >= 1024 to exceed gzhttp MinSize", len(identityBody))
+	}
+
+	// Compressible API response with Accept-Encoding: gzip is compressed once.
+	responseRecorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
 	request.Header.Set("Accept-Encoding", "gzip")
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Header().Get("Content-Encoding") != "gzip" {
 		t.Fatalf("Content-Encoding = %q, want gzip", responseRecorder.Header().Get("Content-Encoding"))
 	}
@@ -296,26 +346,31 @@ func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gzip body: %v", err)
 	}
-	if string(body) != strings.Repeat("x", 128) {
-		t.Fatalf("unexpected decompressed body %q", string(body))
+	if string(body) != identityBody {
+		t.Fatalf("decompressed body differs from identity body:\n%q\nvs\n%q", body, identityBody)
 	}
 
+	// gzip;q=0 negotiates identity.
 	responseRecorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/api/test", nil)
+	request = httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
 	request.Header.Set("Accept-Encoding", "gzip;q=0")
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Header().Get("Content-Encoding") != "" {
 		t.Fatalf("gzip;q=0 Content-Encoding = %q, want empty", responseRecorder.Header().Get("Content-Encoding"))
 	}
-	if responseRecorder.Body.String() != strings.Repeat("x", 128) {
-		t.Fatalf("gzip;q=0 body should remain identity")
+	if responseRecorder.Body.String() != identityBody {
+		t.Fatal("gzip;q=0 body should remain identity")
 	}
 
+	// /healthz bypasses the gzip wrapper entirely: no compression, no Vary.
 	responseRecorder = httptest.NewRecorder()
 	request = httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	request.Header.Set("Accept-Encoding", "gzip")
-	router.ServeHTTP(responseRecorder, request)
+	handler.ServeHTTP(responseRecorder, request)
 	if responseRecorder.Header().Get("Content-Encoding") != "" {
 		t.Fatalf("healthz Content-Encoding = %q, want empty", responseRecorder.Header().Get("Content-Encoding"))
+	}
+	if vary := responseRecorder.Header().Get("Vary"); vary != "" {
+		t.Fatalf("healthz Vary = %q, want empty (probe bypasses the wrapper)", vary)
 	}
 }

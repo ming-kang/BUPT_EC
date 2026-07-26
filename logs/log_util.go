@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -55,12 +54,6 @@ func Init(isMain, addSource bool) error {
 	return nil
 }
 
-func SetNewContextForGinContext(c *gin.Context) {
-	newCtx := GenNewContext(c.Request.Context())
-	c.Set("ctx", newCtx)
-	c.Writer.Header().Set("LogID", GetLogIDFromContext(newCtx))
-}
-
 func RandomHex(n int) string {
 	bytes := make([]byte, n)
 	_, _ = rand.Read(bytes)
@@ -93,16 +86,4 @@ func GetLogIDFromContext(ctx context.Context) string {
 		return ""
 	}
 	return logID
-}
-
-func GetContextFromGinContext(c *gin.Context) context.Context {
-	if c == nil || c.Request == nil {
-		return GenNewContext(context.Background())
-	}
-	if raw, ok := c.Get("ctx"); ok {
-		if ctx, ok := raw.(context.Context); ok {
-			return ctx
-		}
-	}
-	return GenNewContext(c.Request.Context())
 }

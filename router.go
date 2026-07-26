@@ -1,221 +1,223 @@
 package main
 
 import (
-	"BUPT_EC/logs"
-	"compress/gzip"
-	"embed"
-	"io"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
-	"strconv"
+	"runtime/debug"
 	"strings"
+	"time"
 
-	"github.com/gin-contrib/static"
-	"github.com/gin-gonic/gin"
+	"BUPT_EC/logs"
+	"BUPT_EC/web"
+
+	"github.com/klauspost/compress/gzhttp"
 )
-
-//go:embed frontend/dist
-var f embed.FS
-
-type embedFileSystem struct {
-	http.FileSystem
-}
-
-func (e embedFileSystem) Exists(prefix string, path string) bool {
-	file, err := e.Open(path)
-	if err != nil {
-		return false
-	}
-	_ = file.Close()
-	return true
-}
-
-func EmbedFolder(fsEmbed embed.FS, targetPath string) static.ServeFileSystem {
-	fsys, err := fs.Sub(fsEmbed, targetPath)
-	if err != nil {
-		panic(err)
-	}
-	return embedFileSystem{
-		FileSystem: http.FS(fsys),
-	}
-}
 
 func isAPIPath(path string) bool {
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// apiLogContextMiddleware attaches exactly one request log_id for /api paths,
-// including unknown routes handled by NoRoute. Non-API traffic is left alone.
-func apiLogContextMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if isAPIPath(c.Request.URL.Path) {
-			logs.SetNewContextForGinContext(c)
-		}
-		c.Next()
+// writeJSON writes v with the exact Content-Type and body bytes the
+// pre-rewrite handlers produced (Marshal, no trailing newline). Marshal
+// errors are impossible for the fixed envelope shapes and intentionally
+// dropped.
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	body, err := json.Marshal(v)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(body)
 }
 
-func writeAPINotFound(c *gin.Context) {
-	ctx := logs.GetContextFromGinContext(c)
-	c.JSON(http.StatusNotFound, gin.H{
-		"code":   http.StatusNotFound,
-		"msg":    "not found",
-		"log_id": logs.GetLogIDFromContext(ctx),
-	})
-}
-
-func (server *HTTPServer) RegisterRoutes(r *gin.Engine) {
-	r.Use(gzipMiddleware())
-	r.Use(apiLogContextMiddleware())
-
-	r.GET("/healthz", server.Healthz)
-	r.GET("/readyz", server.Readyz)
-	r.GET("/metrics", server.Metrics)
-
-	apiGroup := r.Group("/api")
-	{
-		apiGroup.GET("/get_data", server.GetData)
-	}
-
-	r.Use(static.Serve("/", EmbedFolder(f, "frontend/dist")))
-
-	r.NoRoute(func(c *gin.Context) {
-		path := c.Request.URL.Path
-		if isAPIPath(path) {
-			writeAPINotFound(c)
-			return
-		}
-		file, err := f.Open("frontend/dist/index.html")
-		if err != nil {
-			c.Status(http.StatusNotFound)
-			return
-		}
-		defer file.Close()
-		data, err := io.ReadAll(file)
-		if err != nil {
-			c.Status(http.StatusInternalServerError)
-			return
-		}
-		c.Data(http.StatusOK, "text/html; charset=utf-8", data)
-	})
-}
-
-// acceptsGzip implements Accept-Encoding negotiation for the gzip coding only.
-// It is case-insensitive, honors q-values, treats malformed tokens as rejected,
-// and allows gzip via "*" only when no explicit gzip token is present.
-func acceptsGzip(header string) bool {
-	header = strings.TrimSpace(header)
-	if header == "" {
-		return false
-	}
-
-	var (
-		gzipQ     float64
-		hasGzip   bool
-		starQ     float64
-		hasStar   bool
-		sawTokens bool
+// newGzipWrapper builds the production compression wrapper. It is shared with
+// the endpoint tests so test assemblies cannot drift from production gzip
+// behavior. Contract: content-type allowlist + 1KB minimum size +
+// single-layer compression (responses that already carry Content-Encoding
+// pass through untouched).
+func newGzipWrapper() func(http.Handler) http.HandlerFunc {
+	wrapper, err := gzhttp.NewWrapper(
+		// Keep the gzip-only behavior surface for now; delete this line to
+		// enable zstd later as an independent change.
+		gzhttp.EnableZstd(false),
+		// Explicit allowlist: no image/png, font/woff2, or
+		// application/octet-stream, so already-compressed static assets are
+		// never re-compressed.
+		gzhttp.ContentTypes([]string{
+			"application/json",
+			"text/html",
+			"text/plain", // /metrics exposition: text/plain; version=0.0.4 (parameterless entries match any parameters)
+			"text/css",
+			"text/javascript",
+			"application/javascript",
+			"image/svg+xml",
+			"application/xml",
+			"application/wasm",
+		}),
+		gzhttp.MinSize(gzhttp.DefaultMinSize), // 1024; explicit as documentation
 	)
-
-	for _, part := range strings.Split(header, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		sawTokens = true
-		coding, params, _ := strings.Cut(part, ";")
-		coding = strings.ToLower(strings.TrimSpace(coding))
-		if coding == "" {
-			continue
-		}
-
-		q := 1.0
-		for _, param := range strings.Split(params, ";") {
-			param = strings.TrimSpace(param)
-			if param == "" {
-				continue
-			}
-			key, value, ok := strings.Cut(param, "=")
-			if !ok {
-				q = 0
-				break
-			}
-			if strings.ToLower(strings.TrimSpace(key)) != "q" {
-				continue
-			}
-			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-			if err != nil || parsed < 0 || parsed > 1 {
-				q = 0
-				break
-			}
-			q = parsed
-		}
-
-		switch coding {
-		case "gzip":
-			hasGzip = true
-			gzipQ = q
-		case "*":
-			hasStar = true
-			starQ = q
-		}
+	if err != nil {
+		// Unreachable: all options above are statically valid.
+		panic(fmt.Sprintf("gzhttp.NewWrapper: %v", err))
 	}
-
-	if !sawTokens {
-		return false
-	}
-	if hasGzip {
-		return gzipQ > 0
-	}
-	return hasStar && starQ > 0
+	return wrapper
 }
 
-func appendVaryAcceptEncoding(header http.Header) {
-	const token = "Accept-Encoding"
-	existing := header.Values("Vary")
-	for _, value := range existing {
-		for _, part := range strings.Split(value, ",") {
-			if strings.EqualFold(strings.TrimSpace(part), token) {
+// gzipSkipProbes routes /healthz and /readyz around the gzhttp wrapper so
+// probe responses are never compressed and never carry a Vary header,
+// preserving the previous hard-coded path exemption byte for byte.
+func gzipSkipProbes(compressed, uncompressed http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
+			uncompressed.ServeHTTP(w, r)
+			return
+		}
+		compressed.ServeHTTP(w, r)
+	})
+}
+
+// apiLogContext attaches exactly one request log_id for /api paths, including
+// unknown /api routes handled by the fallback. Non-API traffic is left alone
+// and must not carry an X-Log-Id header.
+func apiLogContext(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) {
+			ctx := logs.GenNewContext(r.Context())
+			w.Header().Set("X-Log-Id", logs.GetLogIDFromContext(ctx))
+			r = r.WithContext(ctx)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// recoveryResponseWriter tracks whether the wrapped writer has produced any
+// response bytes so the recovery middleware can decide whether a clean 500 is
+// still possible after a panic.
+type recoveryResponseWriter struct {
+	http.ResponseWriter
+	wroteHeader bool
+}
+
+func (w *recoveryResponseWriter) WriteHeader(status int) {
+	w.wroteHeader = true
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *recoveryResponseWriter) Write(data []byte) (int, error) {
+	w.wroteHeader = true
+	return w.ResponseWriter.Write(data)
+}
+
+func (w *recoveryResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// recovery is the innermost middleware: panics are converted into a clean 500
+// before anything reaches the gzhttp writer, so a panic can never emit a
+// truncated gzip stream. The panic value and stack go to slog with the
+// request log_id; no panic detail leaks to the client.
+func recovery(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rw := &recoveryResponseWriter{ResponseWriter: w}
+		defer func() {
+			if v := recover(); v != nil {
+				slog.ErrorContext(r.Context(), "handler panic",
+					"panic", fmt.Sprint(v),
+					"stack", string(debug.Stack()),
+				)
+				if !rw.wroteHeader {
+					rw.WriteHeader(http.StatusInternalServerError)
+				}
+			}
+		}()
+		next.ServeHTTP(rw, r)
+	})
+}
+
+// immutableCache marks hashed /assets/* responses as immutable: the content
+// hash in the filename is the version, so clients may cache for a year.
+// Directory paths get a plain 404 instead: listings have no content hash and
+// must never be served with (or without) the immutable header.
+func immutableCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Routes assembles the complete HTTP handler chain (outer to inner):
+// gzipSkipProbes -> gzhttp wrapper -> apiLogContext -> recovery -> mux.
+func (server *HTTPServer) Routes() http.Handler {
+	distFS, _ := web.Dist()
+
+	// Read index.html once at assembly time. Both the embedded tree and the
+	// placeholder FS guarantee its presence.
+	indexHTML, err := fs.ReadFile(distFS, "index.html")
+	if err != nil {
+		panic(fmt.Sprintf("frontend assets missing index.html: %v", err))
+	}
+	sum := sha256.Sum256(indexHTML)
+	// Weak ETag: gzhttp keeps the original ETag on compressed variants, and a
+	// weak validator legitimately covers encoding-equivalent representations.
+	// http.ServeContent uses weak comparison for If-None-Match, so 304 works.
+	indexETag := `W/"` + hex.EncodeToString(sum[:8]) + `"`
+
+	serveIndex := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("ETag", indexETag)
+		// Zero modtime disables the If-Modified-Since branch; conditional
+		// requests go purely through If-None-Match -> 304.
+		http.ServeContent(w, r, "index.html", time.Time{}, bytes.NewReader(indexHTML))
+	}
+
+	staticFiles := http.FileServerFS(distFS)
+
+	// fallback merges the previous NoRoute + static.Serve semantics:
+	// unknown /api paths get the JSON 404 envelope, real files at the dist
+	// root (favicon.ico) are served with no-cache, everything else is the SPA
+	// fallback to index.html.
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isAPIPath(r.URL.Path) {
+			writeJSON(w, http.StatusNotFound, map[string]any{
+				"code":   http.StatusNotFound,
+				"msg":    "not found",
+				"log_id": logs.GetLogIDFromContext(r.Context()),
+			})
+			return
+		}
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if name != "" && name != "index.html" {
+			if info, statErr := fs.Stat(distFS, name); statErr == nil && !info.IsDir() {
+				// Root-level files (favicon.ico) come from frontend/public
+				// without a content hash, so they must not be immutable.
+				w.Header().Set("Cache-Control", "no-cache")
+				staticFiles.ServeHTTP(w, r)
 				return
 			}
 		}
-	}
-	header.Add("Vary", token)
-}
+		serveIndex(w, r)
+	})
 
-type gzipResponseWriter struct {
-	gin.ResponseWriter
-	writer *gzip.Writer
-}
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", server.Healthz)
+	mux.HandleFunc("GET /readyz", server.Readyz)
+	mux.HandleFunc("GET /metrics", server.Metrics)
+	mux.HandleFunc("GET /api/get_data", server.GetData)
+	mux.Handle("GET /assets/", immutableCache(staticFiles))
+	// Method-independent catch-all: the ServeMux can never answer 405, so
+	// e.g. POST /api/get_data lands here and yields the JSON 404 envelope.
+	mux.Handle("/", fallback)
 
-func (w gzipResponseWriter) Write(data []byte) (int, error) {
-	w.Header().Del("Content-Length")
-	return w.writer.Write(data)
-}
-
-func (w gzipResponseWriter) WriteString(data string) (int, error) {
-	w.Header().Del("Content-Length")
-	return w.writer.Write([]byte(data))
-}
-
-func gzipMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if c.Request.URL.Path == "/healthz" || c.Request.URL.Path == "/readyz" {
-			c.Next()
-			return
-		}
-		if !acceptsGzip(c.GetHeader("Accept-Encoding")) {
-			c.Next()
-			return
-		}
-
-		gz := gzip.NewWriter(c.Writer)
-		defer gz.Close()
-
-		c.Header("Content-Encoding", "gzip")
-		appendVaryAcceptEncoding(c.Writer.Header())
-		c.Writer.Header().Del("Content-Length")
-		c.Writer = gzipResponseWriter{ResponseWriter: c.Writer, writer: gz}
-		c.Next()
-	}
+	inner := apiLogContext(recovery(mux))
+	return gzipSkipProbes(newGzipWrapper()(inner), inner)
 }

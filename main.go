@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,8 +16,8 @@ import (
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
 	"BUPT_EC/utils"
+	"BUPT_EC/web"
 
-	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -37,7 +38,6 @@ func Init() (*application, error) {
 		return nil, fmt.Errorf("load runtime config: %w", err)
 	}
 
-	gin.SetMode(runtimeConfig.GinMode)
 	if err := logs.Init(true, runtimeConfig.LogCaller); err != nil {
 		return nil, fmt.Errorf("init logging: %w", err)
 	}
@@ -59,8 +59,9 @@ func Init() (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create classroom service: %w", err)
 	}
-	// DisableCompression: router gzipMiddleware is the sole Accept-Encoding owner.
-	// Leaving promhttp compression on double-gzips responses and breaks scrapers.
+	// DisableCompression: the gzhttp wrapper in Routes is the sole
+	// Accept-Encoding owner. Leaving promhttp compression on double-gzips
+	// responses and breaks scrapers.
 	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{
 		DisableCompression: true,
 	})
@@ -94,15 +95,15 @@ func main() {
 
 	appCtx, stopBackground := context.WithCancel(context.Background())
 	defer stopBackground()
-	r := gin.New()
-	r.Use(gin.Recovery())
-	app.httpServer.RegisterRoutes(r)
+	if _, embedded := web.Dist(); !embedded {
+		slog.Warn("serving placeholder frontend (built without embed_assets)")
+	}
 	app.classroomService.StartWarmup(appCtx)
 	addr := app.runtimeConfig.AppAddr
 
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           r,
+		Handler:           app.httpServer.Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		// Must exceed service.ClassroomRefreshLimit: cold /api/get_data waits for a

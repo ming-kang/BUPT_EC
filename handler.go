@@ -9,8 +9,6 @@ import (
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
 	"BUPT_EC/service/model"
-
-	"github.com/gin-gonic/gin"
 )
 
 type classroomDataService interface {
@@ -39,13 +37,13 @@ func NewHTTPServer(classroomService classroomDataService, hasJWCredentials bool,
 	}, nil
 }
 
-func (server *HTTPServer) GetData(c *gin.Context) {
-	ctx := logs.GetContextFromGinContext(c)
+func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	slog.InfoContext(ctx, "GetData")
 
 	todayData, err := server.classroomService.GetTodayClassrooms(ctx)
 	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{
+		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"code":   http.StatusServiceUnavailable,
 			"msg":    service.SafeErrorMessage(err),
 			"log_id": logs.GetLogIDFromContext(ctx),
@@ -54,17 +52,17 @@ func (server *HTTPServer) GetData(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0,
 		"data": todayData,
 	})
 }
 
-func (server *HTTPServer) Healthz(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+func (server *HTTPServer) Healthz(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok"})
 }
 
-func (server *HTTPServer) Readyz(c *gin.Context) {
+func (server *HTTPServer) Readyz(w http.ResponseWriter, _ *http.Request) {
 	status := server.classroomService.GetRuntimeStatus()
 	configured := server.hasJWCredentials
 	ready := configured && server.classroomService.HasUsableTodayCache()
@@ -73,7 +71,7 @@ func (server *HTTPServer) Readyz(c *gin.Context) {
 		code = http.StatusServiceUnavailable
 	}
 
-	c.JSON(code, gin.H{
+	writeJSON(w, code, map[string]any{
 		"status":                    http.StatusText(code),
 		"jw_credentials_configured": configured,
 		"runtime":                   status,
@@ -81,10 +79,10 @@ func (server *HTTPServer) Readyz(c *gin.Context) {
 	})
 }
 
-func (server *HTTPServer) Metrics(c *gin.Context) {
+func (server *HTTPServer) Metrics(w http.ResponseWriter, r *http.Request) {
 	if server.metricsHandler == nil {
-		c.Status(http.StatusNotFound)
+		w.WriteHeader(http.StatusNotFound)
 		return
 	}
-	server.metricsHandler.ServeHTTP(c.Writer, c.Request)
+	server.metricsHandler.ServeHTTP(w, r)
 }
