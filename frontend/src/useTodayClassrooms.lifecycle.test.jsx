@@ -56,6 +56,7 @@ function HookProbe() {
         {Array.isArray(resp.data?.campuses) ? resp.data.campuses.length : 0}
       </div>
       <div data-testid="stale">{String(Boolean(resp.data?.stale))}</div>
+      <div data-testid="log-id">{resp.logId || ""}</div>
       <button type="button" onClick={retry}>
         retry
       </button>
@@ -246,6 +247,46 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("msg").textContent).toBe(
       CLIENT_FETCH_TIMEOUT_MESSAGE
     );
+  });
+
+  it("keeps the real HTTP status and body log_id in the error envelope", async () => {
+    fetch.mockImplementation(async () => ({
+      ok: false,
+      status: 404,
+      headers: { get: (name) => (name === "X-Log-Id" ? "header-log-id" : null) },
+      json: async () => ({
+        code: 404,
+        msg: "接口不存在",
+        log_id: "body-log-id",
+        data: null,
+      }),
+    }));
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    // errorEnvelope carries the real status, not a guessed 500.
+    expect(screen.getByTestId("code").textContent).toBe("404");
+    expect(screen.getByTestId("msg").textContent).toBe("接口不存在");
+    expect(screen.getByTestId("log-id").textContent).toBe("body-log-id");
+  });
+
+  it("falls back to the X-Log-Id header when the error body has no log_id", async () => {
+    fetch.mockImplementation(async () => ({
+      ok: false,
+      status: 502,
+      headers: { get: (name) => (name === "X-Log-Id" ? "header-log-id" : null) },
+      json: async () => null,
+    }));
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("code").textContent).toBe("502");
+    expect(screen.getByTestId("msg").textContent).toBe("请求失败 (502)");
+    expect(screen.getByTestId("log-id").textContent).toBe("header-log-id");
   });
 
   it("does not schedule background reloads while the page is hidden", async () => {

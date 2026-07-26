@@ -6,6 +6,14 @@
     padding: 32px 16px;
 }
 
+/* Inherits the antd description color, so it stays readable in dark mode. */
+.global-empty__log-id {
+    margin-top: 8px;
+    font-size: 12px;
+    opacity: 0.65;
+    word-break: break-all;
+}
+
 @media (max-width: 767px) {
     .global-empty .ant-empty-description {
         font-size: 0.9em;

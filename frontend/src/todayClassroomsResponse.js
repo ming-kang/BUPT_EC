@@ -40,37 +40,49 @@ export function extractMessage(payload) {
     : "";
 }
 
+/**
+ * Discriminated result, no throw-as-control-flow: `{ ok: true, resp }` for a
+ * safe envelope (including legitimate non-zero service envelopes), or
+ * `{ ok: false, reason }` for malformed payloads. Throwing is the caller's
+ * (fetch boundary) decision, not this parser's.
+ */
 export function normalizeResponse(payload) {
   if (!payload || typeof payload !== "object") {
-    throw new Error("服务返回格式异常");
+    return { ok: false, reason: "服务返回格式异常" };
   }
 
   const code = Number(payload.code);
   if (!Number.isFinite(code)) {
-    throw new Error("服务返回状态异常");
+    return { ok: false, reason: "服务返回状态异常" };
   }
 
   if (code !== 0) {
     return {
-      code,
-      msg: extractMessage(payload) || fallbackErrorMessage,
-      data: null,
+      ok: true,
+      resp: {
+        code,
+        msg: extractMessage(payload) || fallbackErrorMessage,
+        data: null,
+      },
     };
   }
 
   if (!payload.data || typeof payload.data !== "object") {
-    throw new Error("服务返回数据格式异常");
+    return { ok: false, reason: "服务返回数据格式异常" };
   }
   if (!Array.isArray(payload.data.campuses)) {
-    throw new Error("服务返回校区数据异常");
+    return { ok: false, reason: "服务返回校区数据异常" };
   }
 
   return {
-    code: 0,
-    msg: extractMessage(payload),
-    data: {
-      ...payload.data,
-      campuses: payload.data.campuses,
+    ok: true,
+    resp: {
+      code: 0,
+      msg: extractMessage(payload),
+      data: {
+        ...payload.data,
+        campuses: payload.data.campuses,
+      },
     },
   };
 }

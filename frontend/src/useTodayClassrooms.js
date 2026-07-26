@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "./apiError";
 import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
 import { nextReloadDelay } from "./reloadSchedule";
 import {
@@ -78,11 +79,12 @@ export function mergeFetchResult(prev, next, nowMs = Date.now()) {
   };
 }
 
-function errorEnvelope(message, code = 500) {
+function errorEnvelope(message, code = 500, logId = "") {
   return {
     code,
     msg: message || fallbackErrorMessage,
     data: null,
+    logId,
   };
 }
 
@@ -145,19 +147,32 @@ export default function useTodayClassrooms() {
           headers: { Accept: "application/json" },
         });
         const payload = await readJson(response);
+        const logId =
+          payload?.log_id || response.headers?.get("X-Log-Id") || "";
+        const businessCode = Number(payload?.code);
+        const apiErrorDetails = {
+          status: response.status,
+          code: Number.isFinite(businessCode) ? businessCode : undefined,
+          logId,
+        };
 
         if (!response.ok) {
-          throw new Error(
-            extractMessage(payload) || `请求失败 (${response.status})`
+          throw new ApiError(
+            extractMessage(payload) || `请求失败 (${response.status})`,
+            apiErrorDetails
           );
         }
 
         const normalized = normalizeResponse(payload);
+        if (!normalized.ok) {
+          throw new ApiError(normalized.reason, apiErrorDetails);
+        }
+
         const nowMs = Date.now();
-        const succeeded = hasUsableClassroomData(normalized, nowMs);
+        const succeeded = hasUsableClassroomData(normalized.resp, nowMs);
         setFailureCount((current) => nextFailureCount(current, succeeded));
         setResp((current) => {
-          const merged = mergeFetchResult(current, normalized, nowMs);
+          const merged = mergeFetchResult(current, normalized.resp, nowMs);
           respRef.current = merged;
           return merged;
         });
@@ -165,19 +180,31 @@ export default function useTodayClassrooms() {
         if (controller.signal.aborted && !timedOut) {
           return;
         }
-        const failed = errorEnvelope(
-          timedOut
-            ? CLIENT_FETCH_TIMEOUT_MESSAGE
-            : error instanceof Error
-              ? error.message
-              : fallbackErrorMessage
-        );
+        // ApiError keeps the real HTTP status and log_id; anything else stays
+        // on the existing safe-message path with the generic 500 code.
+        const failed =
+          !timedOut && error instanceof ApiError
+            ? errorEnvelope(error.message, error.status, error.logId)
+            : errorEnvelope(
+                timedOut
+                  ? CLIENT_FETCH_TIMEOUT_MESSAGE
+                  : error instanceof Error
+                    ? error.message
+                    : fallbackErrorMessage
+              );
         const nowMs = Date.now();
         setFailureCount((current) => nextFailureCount(current, false));
         setResp((current) => {
           const merged = mergeFetchResult(current, failed, nowMs);
-          respRef.current = merged;
-          return merged;
+          // mergeFetchResult rebuilds hard-empty envelopes without logId;
+          // re-attach it so the error UI can surface it (stale-snapshot
+          // merges keep code 0 and never show the hard error card).
+          const next =
+            merged.code !== 0 && failed.logId
+              ? { ...merged, logId: failed.logId }
+              : merged;
+          respRef.current = next;
+          return next;
         });
       } finally {
         clearTimeout(timeoutId);
