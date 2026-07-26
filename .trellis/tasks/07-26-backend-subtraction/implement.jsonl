@@ -1,1 +1,6 @@
 {"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/07-26-backend-subtraction/research/cache-removal-map.md", "reason": "R1 全部使用点与等价性依据"}
+{"file": ".trellis/tasks/07-26-backend-subtraction/research/metrics-deadcode-map.md", "reason": "R2/R3 判空清单、死代码调用图与 caveat"}
+{"file": ".trellis/tasks/07-26-backend-subtraction/research/test-coupling-map.md", "reason": "R8 种子函数签名与白盒访问全景"}
+{"file": ".trellis/spec/backend/runtime-state-and-cache.md", "reason": "缓存/刷新/token 的现行约定"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "jw_error 改动需遵守的错误处理约定"}

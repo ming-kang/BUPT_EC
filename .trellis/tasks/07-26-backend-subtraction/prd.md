@@ -10,7 +10,7 @@
 
 ## Requirements
 
-- R1 删除 `cache/` 包与 `patrickmn/go-cache` 依赖：`service` 内改用 `atomic.Pointer[model.TodayClassrooms]`（含 UpdatedAt 判断），删除 `TodayClassroomCache` 接口（classroom_service.go:37-40）与 `cacheExpiration`（realtime_data.go:281-291）。**不做**过期模型收敛（Date/ExpiresAt/StaleUntil/Stale 字段与判断逻辑保持现状，属批次④）。
+- R1 删除 `cache/` 包与 `patrickmn/go-cache` 依赖：`service` 内改用 `atomic.Pointer[model.TodayClassrooms]`，跨天守卫保留现有的 `Date` 字符串比较（realtime_data.go:328；研究核实 UpdatedAt 在生产代码无读者，不引入新判断），删除 `TodayClassroomCache` 接口（classroom_service.go:37-40）与 `cacheExpiration`（realtime_data.go:281-291）。**不做**过期模型收敛（Date/ExpiresAt/StaleUntil/Stale 字段与判断逻辑保持现状，属批次④）。等价性依据与全部使用点清单见 `research/cache-removal-map.md`。
 - R2 Metrics 默认注入 `NoopMetrics`（NewClassroomService options 处理，与 Clock/BackoffRandom 风格一致），删除 20+ 处 `!= nil` 判空与 4 个 observeXxx 包装、PrometheusMetrics 各方法的 nil-receiver 检查。
 - R3 删除死代码与仅测试可达 API：`model.QueryResponse`、`logs.LogIDKey`、`jw_error.go:66-69` ctx 死分支、`forceRefresh`/`loginPerformed`/`ClassroomService.Login`（集成测试改直接调 JWClient）、`QueryOne`/`QueryAll` 改非导出或移入测试。
 - R4 删除 `errgroupNoCancel`（realtime_data.go:302-317）改 `sync.WaitGroup` 内联；全仓清理 Go 1.22 前的循环变量重绑定。
