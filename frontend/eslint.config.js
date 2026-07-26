@@ -24,7 +24,7 @@ export default [
       "react-refresh": reactRefresh,
     },
     settings: {
-      react: { version: "18.2" },
+      react: { version: "detect" },
     },
     rules: {
       ...js.configs.recommended.rules,
