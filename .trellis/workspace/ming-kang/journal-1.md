@@ -402,3 +402,31 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+
+## Session 13: 重构批次3：HTTP 层重写（去 Gin、gzhttp、embed 解耦、Taskfile）
+
+**Date**: 2026-07-27
+**Task**: 重构批次3：HTTP 层重写（去 Gin、gzhttp、embed 解耦、Taskfile）
+**Branch**: `main`
+
+### Summary
+
+去 Gin 换 net/http ServeMux：五路并行研究后按 4 步提交落地——web/ 构建标签双实现（裸克隆可编译）、HTTP 层重写一刀（gzhttp 压缩、X-Log-Id、静态缓存契约、recovery 最内层）、GIN_MODE 全仓清除（install.sh 位置参数重排）、Taskfile+CI embed 门禁+文档统一。module graph 76→40，净删 gin 及 ~30 传递模块。双镜头对抗验证裁决 15 条行为差异（B1-B15 入 design），真实二进制冒烟 11 项断言通过，spec 5 文档同步。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `01f97e2` | (see git log) |
+| `8dccb36` | (see git log) |
+| `d37eb09` | (see git log) |
+| `256a091` | (see git log) |
+| `35fb0cd` | (see git log) |
+| `3223e53` | (see git log) |
+| `85dea6e` | (see git log) |
+| `10f61de` | (see git log) |
+
+### Status
+
+[OK] **Completed**

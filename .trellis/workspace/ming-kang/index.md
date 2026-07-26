@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 12
-- **Last Active**: 2026-07-26
+- **Total Sessions**: 13
+- **Last Active**: 2026-07-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~404 | Active |
+| `journal-1.md` | ~432 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 13 | 2026-07-27 | 重构批次3：HTTP 层重写（去 Gin、gzhttp、embed 解耦、Taskfile） | `01f97e2`, `8dccb36`, `d37eb09`, `256a091`, `35fb0cd`, `3223e53`, `85dea6e`, `10f61de` | `main` |
 | 12 | 2026-07-26 | 重构批次2：后端减法（backend-subtraction） | `6f49267`, `2962903`, `4bc181f`, `a70d8ef`, `8d7687f`, `7b91a29`, `8f60ae6` | `main` |
 | 11 | 2026-07-26 | 重构批次1：工程卫生速赢（hygiene-quick-wins） | `da6fd95`, `01bfa3d`, `57aff63`, `9ad81ec`, `af371b8`, `6b14d10` | `main` |
 | 10 | 2026-07-10 | Dependency security refresh | `215d736`, `3c98705`, `2a66e93` | `main` |
