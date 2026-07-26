@@ -3,6 +3,7 @@ package main
 import (
 	"BUPT_EC/service"
 	"BUPT_EC/service/model"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"encoding/json"
@@ -372,5 +373,31 @@ func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	}
 	if vary := responseRecorder.Header().Get("Vary"); vary != "" {
 		t.Fatalf("healthz Vary = %q, want empty (probe bypasses the wrapper)", vary)
+	}
+}
+
+// TestGzipWrapperSkipsAlreadyCompressedAssetTypes locks the acceptance
+// criterion that png/woff2 (and other binary types outside the allowlist) are
+// never re-compressed, even for large bodies from clients that accept gzip.
+// It uses the production newGzipWrapper so the allowlist cannot drift
+// (gzhttp's *default* content-type filter would compress png and woff2).
+func TestGzipWrapperSkipsAlreadyCompressedAssetTypes(t *testing.T) {
+	payload := bytes.Repeat([]byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}, 512) // 4KB > MinSize
+	for _, contentType := range []string{"image/png", "font/woff2", "application/octet-stream"} {
+		handler := newGzipWrapper()(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", contentType)
+			_, _ = w.Write(payload)
+		}))
+
+		responseRecorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/assets/asset.bin", nil)
+		request.Header.Set("Accept-Encoding", "gzip")
+		handler.ServeHTTP(responseRecorder, request)
+		if encoding := responseRecorder.Header().Get("Content-Encoding"); encoding != "" {
+			t.Fatalf("%s Content-Encoding = %q, want empty (must not re-compress)", contentType, encoding)
+		}
+		if !bytes.Equal(responseRecorder.Body.Bytes(), payload) {
+			t.Fatalf("%s body was altered by the wrapper", contentType)
+		}
 	}
 }
