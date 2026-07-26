@@ -14,18 +14,18 @@
 
 去 Gin：
 - R1 `gin` / `gin-contrib/static` 全部移除：路由改 `http.ServeMux`（`GET /api/get_data` 等方法+模式）；`c.JSON` → `writeJSON` helper；`gin.Recovery()` → 自写 recovery 中间件（注意与 gzip 的包装顺序：recovery 在最内层，避免 panic 时向已 Close 的 gzip writer 写入）。
-- R2 `logs` 包解除 gin 依赖（log_util.go:15,62-66,102-112）：删除两个 gin 适配函数，log_id 改经 `r.WithContext` 传递；响应头改 `X-Log-Id`。
+- R2 `logs` 包解除 gin 依赖（log_util.go:15,58-62,98-108）：删除两个 gin 适配函数，log_id 改经 `r.WithContext` 传递；响应头改 `X-Log-Id`。
 - R3 删除 `GIN_MODE` 配置项（config.go:19,81-83,98-100）及 .env.example / 文档 / install.sh 对应项；CHANGELOG 记录该配置移除（用户可见变更）。
 
 gzip：
-- R4 手写 gzipMiddleware + acceptsGzip（router.go:106-221，约 180 行）替换为 `klauspost/compress/gzhttp`（含 Vary、Content-Type 白名单、最小长度、Range 语义）。/healthz、/readyz、/metrics 维持现有压缩行为（metrics 的 DisableCompression 不变）。
+- R4 手写 gzipMiddleware + acceptsGzip（router.go:106-221，约 180 行）替换为 `klauspost/compress/gzhttp`。注意：Vary 全量、Content-Type 白名单、最小长度、Range/HEAD/空体语义均为 gzhttp **新增能力**（现状是无条件全量压缩），属行为修复而非等价替换，差异清单见 design.md §3。/healthz、/readyz 维持永不压缩（路径绕过），/metrics 维持外层单层压缩（promhttp DisableCompression 不变）。
 
 静态服务与 embed：
 - R5 静态文件改 `http.FileServerFS(fs.Sub(...))`；SPA fallback 的 index.html 启动时读取一次，带 ETag 与 `Cache-Control: no-cache`；带 hash 的 `/assets/*` 加 `Cache-Control: public, max-age=31536000, immutable`。
 - R6 embed 解耦：嵌入下沉到独立包（如 `web/`），构建标签双实现——默认构建返回"frontend not built"提示页的空 FS，`-tags embed_assets` 才真正 `//go:embed dist`。目标：裸克隆 `go vet ./...`、`go test ./...` 可直接运行。release 构建加 `-tags embed_assets`。
 
 构建编排：
-- R7 新增 `Taskfile.yml`（Windows 开发友好）：`frontend:build` / `build`（依赖 frontend:build，带 embed_assets tag 与版本注入）/ `test` / `check`（gofmt、vet、lint、audit）。quality.yml 与 README/AGENTS.md/docs 的构建命令统一指向 task。
+- R7 新增 `Taskfile.yml`（Windows 开发友好）：`frontend:build` / `build`（依赖 frontend:build，带 embed_assets tag 与版本注入）/ `test` / `check`（gofmt、vet、lint、audit）。README/AGENTS.md/docs 的构建命令统一指向 task；**CI 保留原生命令**（分步日志与 SHA 钉扎惯例优先，靠 quality.yml 注释锚点防漂移——决策依据 design.md D6，修订自初稿"CI 也统一指向 task"）。
 - R8 根包 HTTP 层文件（router.go/handler.go 及其测试）随本次重写评估移入 `internal/httpapi/`（若改动成本可控；否则保持平铺并在 design.md 说明）。
 
 ## Out of Scope

@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "核对项 1：4 条路由 + SPA fallback + API 404 的状态码/信封/头与 spec 逐条一致（允许 design.md §3 列明的 B1-B12 差异）"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/gzip-matrix.md", "reason": "核对项 2：§2 契约级断言清单必须全部存活；实现级断言允许随中间件更换调整；metrics 单层压缩回归护栏最重要"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/http-surface.md", "reason": "核对项 3：§3 响应契约表逐路由比对；§5 测试对照表确认无测试静默丢失"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对项 4：CI 改动符合 Workflow Editing Rules（SHA 钉扎、artifact 路径、timeout 约定）；质量门命令与 Taskfile/docs 三方一致"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "核对项 5：log_id 全链路（生成→ctx→响应头→信封→slog）在去 gin 后语义不变；SPA fallback 无 X-Log-Id 头"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "核对项 6：错误信封仍走 SafeErrorMessage，无原始上游错误泄漏；recovery 500 响应体不含 panic 细节"}

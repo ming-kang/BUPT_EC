@@ -1,1 +1,9 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/http-surface.md", "reason": "gin→net/http 迁移映射全表：路由/中间件链/gin API 使用点 file:line、响应契约表、ServeMux 语义差异决策、测试装配对照表（Step 2 主依据）"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/logs-decoupling.md", "reason": "logs 包 gin 耦合点、log_id 生命周期、X-Log-Id 影响面与解耦改动清单（Step 2 的 logs/中间件部分）"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/gzip-matrix.md", "reason": "手写 gzip 行为矩阵、gzhttp v1.19.1 选项与默认值、NewWrapper 配置草案、契约级/实现级测试断言分级（Step 2 的 gzip 部分）"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/embed-static.md", "reason": "web/ 包三文件代码草案、FileServerFS+ETag 接线草案、dist 拷贝方案 B、CI 构建标签清单（Step 1/2/4）"}
+{"file": ".trellis/tasks/07-26-degin-http-rewrite/research/config-docs-taskfile.md", "reason": "GIN_MODE 全仓清除清单（含 install.sh 位置参数陷阱）、构建命令文档同步清单、Taskfile.yml 草案、CHANGELOG 条目草案（Step 3/4）"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "对外契约红线：路由表、信封结构、TodayClassrooms JSON、/readyz version 注入 gotcha（go test 中 ldflags 静默 no-op）"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "log_id 传播与安全日志约定；本任务删除其中引用的两个 gin 适配函数，实现时勿按旧文档回写"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CI Workflow Editing Rules（action 钉 SHA、frontend-dist artifact 约定）与质量门清单，Step 4 改 CI 必读"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "SafeErrorMessage 红线：不得向客户端暴露原始 JW 错误/凭据/上游响应体，重写 handler 时保持"}

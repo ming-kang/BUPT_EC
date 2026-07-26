@@ -3,7 +3,7 @@
   "name": "degin-http-rewrite",
   "title": "HTTP 层重写：去 Gin、gzhttp、embed 解耦、Taskfile",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
