@@ -21,7 +21,6 @@ func TestLoadDotenvAndEnvironmentPrecedence(t *testing.T) {
 			want: RuntimeConfig{
 				JW:        JWCredentials{Token: "runtime-token"},
 				AppAddr:   DefaultAppAddr,
-				GinMode:   DefaultGinMode,
 				LogCaller: false,
 				Campuses:  defaultCampusesForTest(),
 			},
@@ -32,13 +31,11 @@ func TestLoadDotenvAndEnvironmentPrecedence(t *testing.T) {
 				"JW_USERNAME=dotenv-user",
 				"JW_PASSWORD=dotenv-password",
 				"APP_ADDR=localhost:9090",
-				"GIN_MODE=release",
 				"LOG_CALLER=TrUe",
 			}, "\n"),
 			want: RuntimeConfig{
 				JW:        JWCredentials{Username: "dotenv-user", Password: "dotenv-password"},
 				AppAddr:   "localhost:9090",
-				GinMode:   "release",
 				LogCaller: true,
 				Campuses:  defaultCampusesForTest(),
 			},
@@ -48,19 +45,16 @@ func TestLoadDotenvAndEnvironmentPrecedence(t *testing.T) {
 			dotenv: strings.Join([]string{
 				"JW_TOKEN=dotenv-token",
 				"APP_ADDR=localhost:9090",
-				"GIN_MODE=release",
 				"LOG_CALLER=true",
 			}, "\n"),
 			environment: map[string]string{
 				JWTokenKey:   "runtime-token",
 				AppAddrKey:   "",
-				GinModeKey:   "test",
 				LogCallerKey: "0",
 			},
 			want: RuntimeConfig{
 				JW:        JWCredentials{Token: "runtime-token"},
 				AppAddr:   DefaultAppAddr,
-				GinMode:   "test",
 				LogCaller: false,
 				Campuses:  defaultCampusesForTest(),
 			},
@@ -194,40 +188,29 @@ func TestLoadAppAddrValidation(t *testing.T) {
 	}
 }
 
-func TestLoadGinModeAndLogCaller(t *testing.T) {
+func TestLoadLogCaller(t *testing.T) {
 	tests := []struct {
 		name          string
-		ginMode       string
 		logCaller     string
-		wantMode      string
 		wantLogCaller bool
-		wantErr       bool
 	}{
-		{name: "defaults", wantMode: DefaultGinMode},
-		{name: "debug and one", ginMode: "debug", logCaller: "1", wantMode: "debug", wantLogCaller: true},
-		{name: "release and mixed true", ginMode: "release", logCaller: "TrUe", wantMode: "release", wantLogCaller: true},
-		{name: "test and false", ginMode: "test", logCaller: "false", wantMode: "test"},
-		{name: "invalid mode", ginMode: "production", wantErr: true},
+		{name: "defaults"},
+		{name: "one", logCaller: "1", wantLogCaller: true},
+		{name: "mixed true", logCaller: "TrUe", wantLogCaller: true},
+		{name: "false", logCaller: "false"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(map[string]string{
 				JWTokenKey:   "token",
-				GinModeKey:   tt.ginMode,
 				LogCallerKey: tt.logCaller,
 			}))
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("Load() expected GIN_MODE error")
-				}
-				return
-			}
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			if cfg.GinMode != tt.wantMode || cfg.LogCaller != tt.wantLogCaller {
-				t.Fatalf("mode/log caller = %q/%v, want %q/%v", cfg.GinMode, cfg.LogCaller, tt.wantMode, tt.wantLogCaller)
+			if cfg.LogCaller != tt.wantLogCaller {
+				t.Fatalf("log caller = %v, want %v", cfg.LogCaller, tt.wantLogCaller)
 			}
 		})
 	}

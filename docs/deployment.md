@@ -82,7 +82,6 @@ The script asks interactively for:
 - SSL certificate and private key paths (defaults follow the Let's Encrypt layout)
 - BUPT teaching affairs username and password, or an optional token override
 - backend listen address (default `127.0.0.1:8080`)
-- Gin mode (default `release`)
 
 Environment variables can pre-seed or override choices, for example:
 
@@ -161,7 +160,6 @@ Download and unpack a release from [GitHub Releases](https://github.com/ming-kan
 JW_USERNAME=your_username
 JW_PASSWORD=your_password
 APP_ADDR=127.0.0.1:8080
-GIN_MODE=release
 ```
 
 Example systemd unit (`/etc/systemd/system/bupt-ec.service`):

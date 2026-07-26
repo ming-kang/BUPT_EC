@@ -396,7 +396,7 @@ make_staging() {
   render_env_file "${staging_dir}/bupt-ec.env" \
     "ming-kang/BUPT_EC" "v9.9.9" "classroom.example.com" \
     "/etc/tls/fullchain.pem" "/etc/tls/privkey.pem" \
-    "test-user" "test-password" "" "127.0.0.1:8080" "release" ""
+    "test-user" "test-password" "" "127.0.0.1:8080" ""
   render_systemd_service "${staging_dir}/${SERVICE_NAME}.service"
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" \
     "classroom.example.com" "/etc/tls/fullchain.pem" "/etc/tls/privkey.pem" "127.0.0.1:8080"
@@ -702,7 +702,7 @@ test_staging_failures_preserve_targets() {
   set +e
   prepare_staging "${MISSING_BINARY_ARCHIVE}" "${work_dir}" "${staging_dir}" \
     "ming-kang/BUPT_EC" nightly classroom.example.com /cert /key user password "" \
-    "127.0.0.1:8080" release "" > "${output}" 2>&1
+    "127.0.0.1:8080" "" > "${output}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -724,7 +724,7 @@ test_staging_failures_preserve_targets() {
   set +e
   prepare_staging "${VALID_ARCHIVE}" "${work_dir}" "${staging_dir}" \
     "ming-kang/BUPT_EC" nightly classroom.example.com /cert /key user password "" \
-    "127.0.0.1:8080" release "" > "${output}" 2>&1
+    "127.0.0.1:8080" "" > "${output}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then

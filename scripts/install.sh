@@ -14,7 +14,6 @@ NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 APP_USER="bupt-ec"
 APP_GROUP="bupt-ec"
 DEFAULT_APP_ADDR="127.0.0.1:8080"
-DEFAULT_GIN_MODE="release"
 TTY="/dev/tty"
 
 CURRENT_RELEASE_REPO=""
@@ -26,7 +25,6 @@ CURRENT_JW_USERNAME=""
 CURRENT_JW_PASSWORD=""
 CURRENT_JW_TOKEN=""
 CURRENT_APP_ADDR=""
-CURRENT_GIN_MODE=""
 CURRENT_DOWNLOAD_BASE_URL=""
 
 INSTALLER_TMP_DIR=""
@@ -96,7 +94,6 @@ load_current_config() {
   CURRENT_JW_PASSWORD="${JW_PASSWORD:-}"
   CURRENT_JW_TOKEN="${JW_TOKEN:-}"
   CURRENT_APP_ADDR="${APP_ADDR:-}"
-  CURRENT_GIN_MODE="${GIN_MODE:-}"
   CURRENT_DOWNLOAD_BASE_URL="${DOWNLOAD_BASE_URL:-}"
 }
 
@@ -218,14 +215,6 @@ validate_absolute_path() {
   fi
   if [[ "${path}" == *";"* || "${path}" =~ [[:space:]] ]]; then
     echo "${label} must not contain whitespace or semicolons: ${path}" >&2
-    exit 1
-  fi
-}
-
-validate_gin_mode() {
-  local mode="$1"
-  if [[ "${mode}" != "release" && "${mode}" != "debug" && "${mode}" != "test" ]]; then
-    echo "GIN_MODE must be release, debug, or test: ${mode}" >&2
     exit 1
   fi
 }
@@ -626,8 +615,7 @@ render_env_file() {
   local password="$8"
   local token="$9"
   local app_addr="${10}"
-  local gin_mode="${11}"
-  local download_base_url="${12}"
+  local download_base_url="${11}"
 
   (umask 077; cat > "${destination}" <<EOF
 RELEASE_REPO=$(shell_quote "${repo}")
@@ -639,7 +627,6 @@ JW_USERNAME=$(shell_quote "${username}")
 JW_PASSWORD=$(shell_quote "${password}")
 JW_TOKEN=$(shell_quote "${token}")
 APP_ADDR=$(shell_quote "${app_addr}")
-GIN_MODE=$(shell_quote "${gin_mode}")
 DOWNLOAD_BASE_URL=$(shell_quote "${download_base_url}")
 EOF
   ) || return
@@ -772,13 +759,12 @@ prepare_staging() {
   local password="${10}"
   local token="${11}"
   local app_addr="${12}"
-  local gin_mode="${13}"
-  local download_base_url="${14}"
+  local download_base_url="${13}"
 
   stage_release "${archive}" "${work_dir}" "${staging_dir}" || return
   render_env_file "${staging_dir}/bupt-ec.env" \
     "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" \
-    "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}" || return
+    "${username}" "${password}" "${token}" "${app_addr}" "${download_base_url}" || return
   render_systemd_service "${staging_dir}/${SERVICE_NAME}.service" || return
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" \
     "${domain}" "${ssl_cert}" "${ssl_key}" "${app_addr}" || return
@@ -1125,7 +1111,7 @@ initialize_installer_session() {
 }
 
 main() {
-  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr gin_mode download_base_url
+  local repo version arch domain ssl_cert ssl_key username password_input password token app_addr download_base_url
   local tmp_dir archive staging_dir backup_dir
   local has_password has_token
 
@@ -1178,7 +1164,6 @@ main() {
     exit 1
   fi
   app_addr="$(prompt_required "Backend listen address" "${APP_ADDR:-${CURRENT_APP_ADDR:-${DEFAULT_APP_ADDR}}}")"
-  gin_mode="$(prompt_required "Gin mode" "${GIN_MODE:-${CURRENT_GIN_MODE:-${DEFAULT_GIN_MODE}}}")"
   download_base_url="${DOWNLOAD_BASE_URL:-${CURRENT_DOWNLOAD_BASE_URL}}"
 
   validate_repo "${repo}"
@@ -1187,7 +1172,6 @@ main() {
   validate_absolute_path "SSL certificate path" "${ssl_cert}"
   validate_absolute_path "SSL private key path" "${ssl_key}"
   validate_app_addr "${app_addr}"
-  validate_gin_mode "${gin_mode}"
   VALIDATED_DOWNLOAD_BASE_URL=""
   validate_download_base_url "${download_base_url}"
   # Persist and download only the normalized form (no userinfo/query/fragment).
@@ -1215,7 +1199,7 @@ main() {
   archive="${tmp_dir}/bupt-ec-linux-${arch}.tar.gz"
   prepare_staging "${archive}" "${tmp_dir}" "${staging_dir}" \
     "${repo}" "${version}" "${domain}" "${ssl_cert}" "${ssl_key}" \
-    "${username}" "${password}" "${token}" "${app_addr}" "${gin_mode}" "${download_base_url}"
+    "${username}" "${password}" "${token}" "${app_addr}" "${download_base_url}"
   perform_install_transaction "${staging_dir}" "${backup_dir}" "${app_addr}"
 
   echo

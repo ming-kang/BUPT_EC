@@ -20,13 +20,11 @@ JW_PASSWORD=your_password
 JW_TOKEN=
 # Optional listen address (default 127.0.0.1:8080 when unset).
 APP_ADDR=127.0.0.1:8080
-# Gin runtime mode. Use release in production.
-GIN_MODE=debug
 # Optional: include caller source in structured logs.
 # LOG_CALLER=1
 ```
 
-Startup reads configuration once. Process environment values override `.env`; a missing `.env` is allowed, while a present malformed or unreadable file fails safely without printing its contents. Startup validates credentials, `GIN_MODE`, and `APP_ADDR`, then applies Gin/log settings before constructing dependencies. Changes require a process restart. Never commit real credentials.
+Startup reads configuration once. Process environment values override `.env`; a missing `.env` is allowed, while a present malformed or unreadable file fails safely without printing its contents. Startup validates credentials and `APP_ADDR`, then applies `APP_ADDR` and the log settings before constructing dependencies. Changes require a process restart. Never commit real credentials.
 
 ## Run locally
 

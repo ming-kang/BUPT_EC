@@ -15,11 +15,9 @@ const (
 	JWPasswordKey = "JW_PASSWORD"
 	JWTokenKey    = "JW_TOKEN"
 	AppAddrKey    = "APP_ADDR"
-	GinModeKey    = "GIN_MODE"
 	LogCallerKey  = "LOG_CALLER"
 
 	DefaultAppAddr = "127.0.0.1:8080"
-	DefaultGinMode = "debug"
 )
 
 var errInvalidAppAddr = errors.New("APP_ADDR must be a valid host:port with port 1-65535")
@@ -38,7 +36,6 @@ type JWCredentials struct {
 type RuntimeConfig struct {
 	JW        JWCredentials
 	AppAddr   string
-	GinMode   string
 	LogCaller bool
 	Campuses  []CampusConfig
 }
@@ -68,7 +65,6 @@ func Load(dotenvPath string, lookup LookupEnv) (RuntimeConfig, error) {
 			Token:    resolve(JWTokenKey),
 		},
 		AppAddr:   resolve(AppAddrKey),
-		GinMode:   resolve(GinModeKey),
 		LogCaller: parseLogCaller(resolve(LogCallerKey)),
 		Campuses: []CampusConfig{
 			{ID: "01", Name: "西土城"},
@@ -77,9 +73,6 @@ func Load(dotenvPath string, lookup LookupEnv) (RuntimeConfig, error) {
 	}
 	if cfg.AppAddr == "" {
 		cfg.AppAddr = DefaultAppAddr
-	}
-	if cfg.GinMode == "" {
-		cfg.GinMode = DefaultGinMode
 	}
 	if err := cfg.validate(); err != nil {
 		return RuntimeConfig{}, err
@@ -94,9 +87,6 @@ func (c RuntimeConfig) HasJWCredentials() bool {
 func (c RuntimeConfig) validate() error {
 	if !c.HasJWCredentials() {
 		return errors.New("JW_TOKEN or JW_USERNAME/JW_PASSWORD is required")
-	}
-	if c.GinMode != "debug" && c.GinMode != "release" && c.GinMode != "test" {
-		return errors.New("GIN_MODE must be debug, release, or test")
 	}
 	if err := validateAppAddr(c.AppAddr); err != nil {
 		return err
