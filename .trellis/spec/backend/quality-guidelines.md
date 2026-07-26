@@ -20,10 +20,12 @@ Primary references:
 
 - Format all Go code with `gofmt`. CI expects `gofmt -l .` to print nothing.
 - Keep service dependencies injectable. `NewClassroomService` accepts explicit
-  `ClassroomServiceOptions`, a `TodayClassroomCache`, and a `JWClient`; tests
-  create isolated services with `newTestService` / `newTestServiceWithOptions`,
-  injecting a thread-safe fake `Clock` and fixed `BackoffRandom` when asserting
-  time or backoff deadlines, plus a fresh `cache.TodayClassroomsStore`.
+  `ClassroomServiceOptions` and a `JWClient`; tests create isolated services
+  with `newTestService` / `newTestServiceWithOptions`
+  (`service/testsupport_test.go`), injecting a thread-safe fake `Clock` and
+  fixed `BackoffRandom` when asserting time or backoff deadlines, and seed the
+  service's internal day cache through the `service/export_test.go` seams
+  (`seedCache`) instead of injecting a store.
 - Keep runtime environment access in `config.Load` plus the `main.go`
   composition root. Tests pass map-backed lookups and constructor values rather
   than mutating config/cache globals.
@@ -50,7 +52,7 @@ Add or update focused tests when changing behavior, especially for:
 
 Local test patterns:
 
-- `service/realtime_data_test.go` defines `mockJWClient` and `newTestService`.
+- `service/testsupport_test.go` defines `mockJWClient` and `newTestService`.
   Follow this pattern for service tests so unit tests do not touch the network.
 - Backoff/jitter tests live in `service/refresh_backoff_test.go` and must use
   `options.Clock` + fixed unit samples (no `sleep` for core deadline state, no
@@ -61,9 +63,11 @@ Local test patterns:
 - `service/crypto_test.go` pins AES known vectors with independently generated
   expected ciphertexts; do not derive expected values by calling
   `encryptJWPassword` in the test.
-- `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; query integration tests may
-  use that pair or `JW_TOKEN`. All must skip cleanly when their required
-  credentials are missing.
+- Real-network tests live in `service/integration_test.go` behind
+  `//go:build integration` (`go test -tags integration ./service`). `TestLogin`
+  requires `JW_USERNAME`/`JW_PASSWORD`; query integration tests may use that
+  pair or `JW_TOKEN`. All must skip cleanly when their required credentials are
+  missing.
 - Handler tests should inject deterministic fakes through `NewHTTPServer` and
   use `httptest` plus `gin.New()` or `HTTPServer.RegisterRoutes` when route
   middleware such as `/api` `log_id` correlation matters.

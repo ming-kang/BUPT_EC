@@ -16,8 +16,7 @@ deployment/release tooling in `scripts/` and `docs/`.
 ├── handler.go                 # HTTPServer boundary delegating to injected ClassroomService
 ├── config/                    # environment loading and campus config
 ├── logs/                      # slog setup and per-request log_id context
-├── cache/                     # process-local go-cache adapter
-├── service/                   # JW client, token, refresh, cache, builder logic
+├── service/                   # JW client, token, refresh, day-cache, builder logic
 │   └── model/                 # JW and public API JSON structs
 ├── utils/                     # shared small helpers
 ├── frontend/                  # React/Vite application and built dist assets
@@ -32,9 +31,9 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
 
 - `main.go` owns process lifetime and is the only production composition root.
   Its `Init()` loads one `config.RuntimeConfig`, applies Gin/log settings,
-  constructs `cache.New()`, `utils.NewHTTPClient()`, `service.NewJWClient`, and
+  constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and
   `service.NewClassroomService`, then injects the service plus the immutable
-  credential predicate into `NewHTTPServer`. `main()` starts background warmup
+  credential predicate result into `NewHTTPServer`. `main()` starts background warmup
   with an application context, cancels it before HTTP shutdown, and drains work
   with `ClassroomService.WaitBackground` after handlers exit.
 - `router.go` owns `HTTPServer.RegisterRoutes`, gzip handling, static frontend
@@ -54,7 +53,7 @@ handlers.
 ### 1. Scope / Trigger
 
 Apply this contract whenever an environment key, dotenv behavior, startup
-validation, cache/HTTP/JW constructor, Gin/log initialization, or production
+validation, HTTP/JW constructor, Gin/log initialization, or production
 dependency wiring changes. The purpose is to keep environment access at one
 boundary and make every production dependency traceable from `main.go`.
 
@@ -66,12 +65,10 @@ type LookupEnv func(string) (string, bool)
 func config.Load(dotenvPath string, lookup config.LookupEnv) (config.RuntimeConfig, error)
 func (c config.RuntimeConfig) HasJWCredentials() bool
 
-func cache.New() *cache.TodayClassroomsStore
 func utils.NewHTTPClient() *http.Client
 func service.NewJWClient(username, password string, client utils.HTTPDoer) (service.JWClient, error)
 func service.NewClassroomService(
     options service.ClassroomServiceOptions,
-    store service.TodayClassroomCache,
     client service.JWClient,
 ) (*service.ClassroomService, error)
 ```
@@ -86,10 +83,10 @@ func service.NewClassroomService(
 - The snapshot owns `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, `APP_ADDR`,
   `GIN_MODE`, `LOG_CALLER`, and fixed campuses `01/西土城`, `04/沙河`.
 - `main.go` applies `gin.SetMode` and `logs.Init` after loading the snapshot,
-  then constructs cache → HTTP client → JW client → classroom service → HTTP
-  boundary in visible order.
-- `JWClient`, `TokenManager`, `ClassroomService`, cache, HTTP helpers, and logs
-  do not read runtime environment values after construction.
+  then constructs HTTP client → JW client → classroom service → HTTP boundary
+  in visible order.
+- `JWClient`, `TokenManager`, `ClassroomService`, HTTP helpers, and logs do not
+  read runtime environment values after construction.
 - Slice inputs such as campuses are copied by the receiving constructor.
   Missing required dependencies return constructor errors before any request;
   errors identify only the dependency category and never format secrets.
@@ -110,7 +107,7 @@ func service.NewClassroomService(
 | empty `APP_ADDR` | `127.0.0.1:8080` |
 | malformed address or port outside 1–65535 | startup error |
 | `GIN_MODE` not `debug`, `release`, or `test` | startup error |
-| nil/typed-nil HTTP doer, cache store, or JW client | constructor error |
+| nil HTTP doer or JW client | constructor error |
 
 ### 5. Good/Base/Bad Cases
 
@@ -118,7 +115,7 @@ func service.NewClassroomService(
   `.env` exists, and `main.go` constructs the full graph from that snapshot.
 - Base: local `.env` supplies username/password and defaults the listen address
   to loopback; tests pass a map lookup without mutating process environment.
-- Bad: `service.Login`, `TokenManager.EnsureToken`, or `logs.Init` calls
+- Bad: `TokenManager.EnsureToken` or `logs.Init` calls
   `os.Getenv`, so changing global environment during a test silently changes a
   previously constructed application's behavior.
 
@@ -127,10 +124,11 @@ func service.NewClassroomService(
 - Config table tests cover missing/valid/malformed/unreadable dotenv, process
   precedence, credential combinations, address/Gin/log parsing, and secret-safe
   errors.
-- Cache tests prove `cache.New()` returns isolated instances with the expected
-  default expiration.
+- Cache policy tests (`service/cache_policy_test.go`) prove the service's
+  internal day-cache slot rejects cross-day reuse and stamps entries at refresh
+  completion.
 - HTTP/JW tests prove the supplied doer and injected credentials are used,
-  redirect/body limits remain intact, and nil/typed-nil dependencies fail at
+  redirect/body limits remain intact, and nil dependencies fail at
   construction.
 - Service tests inject token overrides directly and assert rejected overrides
   remain invalidated until process reconstruction.
@@ -143,30 +141,28 @@ func service.NewClassroomService(
 
 ```go
 config.InitConfig()
-cache.InitCache()
 client := &defaultJWClient{} // reads credentials and a package HTTP client later
-service := service.NewClassroomService(config.GetConfig(), cache.GlobalCache)
+service := service.NewClassroomService(config.GetConfig(), client)
 ```
 
 #### Correct
 
 ```go
 cfg, err := config.Load(".env", os.LookupEnv)
-store := cache.New()
 httpClient := utils.NewHTTPClient()
 jwClient, err := service.NewJWClient(cfg.JW.Username, cfg.JW.Password, httpClient)
 classroomService, err := service.NewClassroomService(service.ClassroomServiceOptions{
     Campuses: cfg.Campuses, TokenOverride: cfg.JW.Token,
-}, store, jwClient)
+}, jwClient)
 ```
 
 ## Service Package Ownership
 
 `service/` is split by runtime responsibility:
 
-- `classroom_service.go` defines `ClassroomService`, `TodayClassroomCache`,
-  optional `Clock` / `BackoffRandom`, constructor options, and service
-  construction. All mutable classroom-query runtime state belongs on this struct.
+- `classroom_service.go` defines `ClassroomService` (including the
+  `todayCache atomic.Pointer` day store), optional `Clock` / `BackoffRandom` /
+  `WarmupJitter`, constructor options, and service construction. All mutable classroom-query runtime state belongs on this struct.
 - `realtime_data.go` exposes the public classroom query methods and owns the
   same-day cache read/write flow.
 - `refresh_coordinator.go` owns single-flight refresh state, backoff, and
@@ -192,8 +188,8 @@ use mocks instead of network calls.
 `service/model/realtime_data.go` is the source of truth for serialized JW and
 API shapes:
 
-- JW upstream structs: `ServerConfigResponse`, `LoginResponse`, `JWClassInfo`,
-  and `QueryResponse`.
+- JW upstream structs: `ServerConfigResponse`, `LoginResponse`, and
+  `JWClassInfo`.
 - Public API structs: `TodayClassrooms`, `CampusInfo`, `BuildingInfo`,
   `RoomInfo`, `NodeInfo`, `FreeTime`, and `APIError`.
 
@@ -205,7 +201,7 @@ components, tests, docs, and `CHANGELOG.md` if the behavior is user-visible.
 ## Naming Conventions
 
 - Keep Go package names short and lowercase (`service`, `config`, `logs`,
-  `cache`, `model`).
+  `model`).
 - Use exported names only for cross-package APIs such as
   `service.NewClassroomService`, `service.SafeErrorMessage`, and `config.Load`.
 - Prefer focused files named after their runtime role (`token_manager.go`,

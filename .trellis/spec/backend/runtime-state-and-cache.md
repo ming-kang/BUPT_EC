@@ -8,12 +8,15 @@ and stores one process-local cache entry for the current day.
 
 Reference files:
 
-- `service/classroom_service.go`: `ClassroomService` and `TodayClassroomCache`.
-- `service/realtime_data.go`: `GetTodayClassrooms`, `QueryAll`, cache TTLs, and
-  `TodayCacheKey`.
-- `cache/cache.go`: typed `TodayClassroomsStore` via `cache.New()`, backed by
-  `github.com/patrickmn/go-cache`.
+- `service/classroom_service.go`: `ClassroomService`, including the
+  `todayCache atomic.Pointer[model.TodayClassrooms]` single-value store.
+- `service/realtime_data.go`: `GetTodayClassrooms`, the unexported `queryAll`,
+  and cache TTLs.
 - `service/runtime_status.go`: readiness and runtime diagnostics.
+
+There is no cache package and no third-party cache library. The day cache is
+one atomic pointer; expiry is decided entirely by the `Date` / `ExpiresAt` /
+`StaleUntil` fields on the cached value, never by a store-level TTL.
 
 Do not add ORM, migration, repository, or table abstractions unless a task
 explicitly changes the product architecture. If you need durable operational
@@ -24,7 +27,8 @@ data, stop and ask for a design decision instead of quietly adding persistence.
 All mutable runtime state for classroom queries is on `ClassroomService`:
 
 - token and API URL state through `TokenManager`;
-- the `TodayClassroomCache` implementation (production: `*cache.TodayClassroomsStore`);
+- the `todayCache atomic.Pointer[model.TodayClassrooms]` store (values are
+  treated as immutable once stored; copy-on-write before mutating a response);
 - configured campuses copied from `service.ClassroomServiceOptions`;
 - the injected `JWClient`;
 - refresh coordination fields guarded by `refreshMu`;
@@ -40,8 +44,9 @@ mocking.
 
 `service/realtime_data.go` defines the cache contract:
 
-- Key: `TODAY_CLASSROOMS_CACHE` (`TodayCacheKey`).
-- Value: `*model.TodayClassrooms`.
+- Storage: one `atomic.Pointer[model.TodayClassrooms]` on `ClassroomService`
+  (no key, no TTL; the pointer is replaced wholesale on every refresh).
+- Value: `*model.TodayClassrooms`, immutable once stored.
 - Fresh window: about five minutes (`classroomFreshTTL`).
 - Stale window: until local end of day (`StaleUntil` from `endOfDay`).
 - Cross-day protection: `getCachedTodayClassrooms` rejects entries whose `Date`
@@ -69,8 +74,10 @@ same public payload unless the API contract changes.
   without escalating `consecutiveTotalFailures` or applying total-failure jitter.
 - Total failures increment `consecutiveTotalFailures`, take **one** unit sample
   from optional `BackoffRandom` (nil → production random), and set
-  `nextRefreshAllowed` to `now + jitteredBackoff(totalFailureBackoffBase(n), sample)`.
-  Base ladder is 30s → 1m → 2m → 5m (cap). Jitter is symmetric
+  `nextRefreshAllowed` to `now + jitteredBackoff(backoffLadder(n), sample)`.
+  `backoffLadder` (30s → 1m → 2m → 5m cap) is shared with the warmup
+  scheduler; the coordinator adds jitter, warmup consumes it as a plain
+  relative delay. Jitter is symmetric
   ±min(10% of base, 5s); NaN/Inf/out-of-range samples clamp or fall back to 0.5.
 - Full success clears the failure count and `nextRefreshAllowed`.
 - Suppressed starts (before `nextRefreshAllowed`) do not create a worker and
@@ -208,11 +215,12 @@ type classroomRefreshResult struct {
 }
 ```
 
-Public methods remain compatible:
+The public surface is `GetTodayClassrooms` only; `queryAll` / `queryOne` are
+unexported synchronous entry points kept for white-box tests:
 
 ```go
-QueryAll(context.Context) (*model.TodayClassrooms, error)
 GetTodayClassrooms(context.Context) (*model.TodayClassrooms, error)
+queryAll(context.Context) (*model.TodayClassrooms, error) // test seam
 ```
 
 ### 3. Contracts
@@ -281,7 +289,7 @@ from deleting a newer token or starting mutually invalidating logins.
 ```go
 type tokenSource int // none, override, login
 
-func (m *TokenManager) EnsureToken(ctx context.Context, forceRefresh bool) (string, error)
+func (m *TokenManager) EnsureToken(ctx context.Context) (string, error)
 func (m *TokenManager) RefreshAfterAuthFailure(ctx context.Context, failedToken string) (string, error)
 func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 ```
@@ -303,20 +311,22 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
   waiter cannot cancel the operation for others.
 - Each caller selects the shared result against its own `ctx.Done()` and may
   return early.
-- `EnsureToken(ctx, true)` still guarantees a real login even if it first joins
-  an operation that only reused or installed a token.
+- There is no force-refresh path: `EnsureToken(ctx)` serves the cached token or
+  performs one shared login. Auth recovery goes through
+  `RefreshAfterAuthFailure` exclusively.
 - `TokenManager` never re-reads the process environment. Changing credentials
   requires constructing a new application/process.
 - Never log token values, credentials, request headers, or upstream bodies.
-- `TokenManager` receives the same optional `RuntimeMetrics` as
-  `ClassroomService`. Shared network logins call `ObserveLogin` exactly once
+- `TokenManager` receives the same `RuntimeMetrics` as `ClassroomService`.
+  `NewClassroomService` defaults a nil `Options.Metrics` to `NoopMetrics{}`, so
+  metrics sinks are always non-nil and call sites must not add nil guards.
+  Shared network logins call `ObserveLogin` exactly once
   inside `loginAndStore` (success or failed). Override install, cache hits,
   singleflight waiters, and delayed replacement reuse must not emit samples.
 - Login metric `source` is `override` when recovery clears a rejected
   `tokenSourceOverride` token; otherwise `login`. Capture provenance before
   clearing the rejected token. Labels stay low-cardinality enums only.
 - Login duration uses the injected `Clock`; clamp negative durations to zero.
-  Nil metrics remain safe and must not change login outcome.
 
 ### 4. Validation & Error Matrix
 
@@ -350,7 +360,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
   outcomes and one underlying operation.
 - Login metric tests cover first login, override/login recovery sources,
   concurrent singleflight observation count, delayed reuse without observation,
-  API URL failure as failed outcome, and nil-metrics safety.
+  and API URL failure as failed outcome.
 - Run `go test -race ./service`; integration tests must still skip without
   credentials.
 
@@ -360,7 +370,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
 
 ```go
 m.clearTokenIfCurrent(failedToken)
-token, err := m.EnsureToken(ctx, true)
+token, err := m.EnsureToken(ctx)
 ```
 
 #### Correct

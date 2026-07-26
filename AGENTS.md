@@ -2,7 +2,7 @@
 
 ## Project Structure & Architecture
 
-This repository is a Go 1.25.12+ service with a React/Vite frontend for BUPT empty-classroom queries. `main.go` composes configuration, HTTP, cache, and JW clients. HTTP routes and handlers live in `router.go` and `handler.go`; core query, refresh, token, and normalization logic lives in `service/`, with API models in `service/model/`. Shared packages are `cache/`, `config/`, `logs/`, and `utils/`.
+This repository is a Go 1.25.12+ service with a React/Vite frontend for BUPT empty-classroom queries. `main.go` composes configuration, HTTP, and JW clients. HTTP routes and handlers live in `router.go` and `handler.go`; core query, refresh, token, caching, and normalization logic lives in `service/`, with API models in `service/model/`. Shared packages are `config/`, `logs/`, and `utils/`.
 
 The frontend is in `frontend/src/`; put reusable UI in `components/` and colocate component CSS. Deployment and release scripts are in `scripts/`; user-facing operational documentation is under `docs/`.
 
@@ -23,7 +23,7 @@ For frontend work, use `pnpm dev`, `pnpm build`, `pnpm lint`, and `pnpm test` fr
 
 Follow `gofmt`; use short lowercase Go package names, imports rooted at `BUPT_EC/...`, and export APIs only when another package needs them. Keep mutable runtime state on `ClassroomService`; do not introduce package-level state. React components use PascalCase filenames (for example, `BuildingPicker.jsx`), hooks and ES modules, and two-space indentation. Component files should export components only.
 
-Add focused Go tests beside implementation as `*_test.go`. Use injected fakes (`mockJWClient`, fresh caches, test clocks) rather than shared state or real JW requests. Frontend tests use Vitest and should cover behavior changes, especially response handling and selection state.
+Add focused Go tests beside implementation as `*_test.go`. Use injected fakes (`mockJWClient`, test clocks) and the white-box seams in `service/export_test.go` rather than shared state or real JW requests. Frontend tests use Vitest and should cover behavior changes, especially response handling and selection state.
 
 ## Commits, PRs, and Configuration
 

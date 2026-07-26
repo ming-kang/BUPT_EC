@@ -55,7 +55,7 @@ Gin into `service/`.
 
 `service/realtime_data.go::queryCampus` has the only token-retry flow:
 
-- call `TokenManager.EnsureToken(ctx, false)`;
+- call `TokenManager.EnsureToken(ctx)`;
 - query the campus;
 - if the error is not `jwErrorAuth`, return it;
 - if it is `jwErrorAuth`, call
