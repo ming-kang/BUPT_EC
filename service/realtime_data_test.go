@@ -251,7 +251,7 @@ func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
 		t.Fatal("EnsureToken(false) did not return the injected override")
 	}
 
-	svc.tokenManager.setAPIURL(DefaultAPIURL)
+	installAPIURL(svc, DefaultAPIURL)
 	token, err = svc.tokenManager.EnsureToken(context.Background(), true)
 	if err == nil {
 		t.Fatal("EnsureToken(true) expected configuration error")
@@ -267,22 +267,22 @@ func TestEnsureTokenUsesOverrideOnlyWithoutForceRefresh(t *testing.T) {
 func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	svc := newTestService(t, &mockJWClient{})
 	yesterday := time.Now().Add(-24 * time.Hour)
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       yesterday.Format("2006-01-02"),
 		ExpiresAt:  yesterday.Add(time.Hour),
 		StaleUntil: yesterday.Add(time.Hour),
-	}, time.Minute)
+	})
 
 	if cached, ok := svc.getCachedTodayClassrooms(); ok {
 		t.Fatalf("expected cross-day cache miss, got %#v", cached)
 	}
 
 	now := time.Now()
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Hour),
 		StaleUntil: endOfDay(now),
-	}, time.Minute)
+	})
 
 	if cached, ok := svc.getCachedTodayClassrooms(); !ok || cached.Date != now.Format("2006-01-02") {
 		t.Fatalf("expected same-day cache hit, got %#v ok=%t", cached, ok)
@@ -379,7 +379,7 @@ func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 	classroomServiceUnderTest := newTestService(t, client)
 
 	now := time.Now()
-	classroomServiceUnderTest.cache.Store(&model.TodayClassrooms{
+	seedCache(t, classroomServiceUnderTest, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
 		ExpiresAt:  now.Add(time.Minute),
@@ -387,7 +387,7 @@ func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 		Campuses: []model.CampusInfo{
 			{ID: "cached", Name: "cached campus"},
 		},
-	}, time.Hour)
+	})
 
 	response, err := classroomServiceUnderTest.GetTodayClassrooms(context.Background())
 	if err != nil {
@@ -583,7 +583,7 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 	svc := newTestService(t, client)
 
 	now := time.Now()
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
@@ -591,7 +591,7 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 		Campuses: []model.CampusInfo{
 			{ID: "cached", Name: "cached"},
 		},
-	}, time.Hour)
+	})
 
 	start := time.Now()
 	resp, err := svc.GetTodayClassrooms(context.Background())
@@ -743,13 +743,13 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 	svc := newTestService(t, client)
 
 	now := time.Now()
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
 		ExpiresAt:  now.Add(-time.Minute),
 		StaleUntil: endOfDay(now),
 		Campuses:   []model.CampusInfo{{ID: "cached", Name: "cached"}},
-	}, time.Hour)
+	})
 
 	resp, err := svc.GetTodayClassrooms(context.Background())
 	if err != nil {
@@ -823,7 +823,7 @@ func TestQueryCampusRefreshesTokenAfterAuthFailure(t *testing.T) {
 		},
 	}
 	svc := newTestService(t, client)
-	svc.tokenManager.setToken("old-token", tokenSourceLogin)
+	installToken(svc, "old-token")
 
 	rows, err := svc.queryCampus(context.Background(), "01")
 	if err != nil {
@@ -1021,51 +1021,45 @@ func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
 		BackoffRandom: func() float64 { return 0.5 },
 	})
 
-	partialAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = partialAttempt
-	svc.finishClassroomRefresh(partialAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind:  refreshPartial,
 		value: &model.TodayClassrooms{Error: &model.APIError{Message: partialCampusErrorMessage}},
 	})
-	if want := fixed.Add(staleRefreshBackoff); !svc.nextRefreshAllowed.Equal(want) {
-		t.Fatalf("partial nextRefreshAllowed = %v, want %v", svc.nextRefreshAllowed, want)
+	next, consecutive, lastErr := backoffState(svc)
+	if want := fixed.Add(staleRefreshBackoff); !next.Equal(want) {
+		t.Fatalf("partial nextRefreshAllowed = %v, want %v", next, want)
 	}
-	if svc.lastRefreshErr != nil {
-		t.Fatalf("partial lastRefreshErr = %v, want nil", svc.lastRefreshErr)
+	if lastErr != nil {
+		t.Fatalf("partial lastRefreshErr = %v, want nil", lastErr)
 	}
-	if svc.consecutiveTotalFailures != 0 {
-		t.Fatalf("partial consecutiveTotalFailures = %d, want 0", svc.consecutiveTotalFailures)
+	if consecutive != 0 {
+		t.Fatalf("partial consecutiveTotalFailures = %d, want 0", consecutive)
 	}
 
-	fullAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = fullAttempt
-	svc.finishClassroomRefresh(fullAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind:  refreshFull,
 		value: &model.TodayClassrooms{},
 	})
-	if !svc.nextRefreshAllowed.IsZero() || svc.lastRefreshErr != nil {
-		t.Fatalf("full outcome did not clear coordinator state: next=%v err=%v", svc.nextRefreshAllowed, svc.lastRefreshErr)
+	next, _, lastErr = backoffState(svc)
+	if !next.IsZero() || lastErr != nil {
+		t.Fatalf("full outcome did not clear coordinator state: next=%v err=%v", next, lastErr)
 	}
 
-	failedAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = failedAttempt
 	failure := newJWError(jwErrorQuery, "jw query", nil, "down")
-	svc.finishClassroomRefresh(failedAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind: refreshFailed,
 		err:  failure,
 	})
 	// sample=0.5 → base ladder step only (first total failure = 30s).
-	if want := fixed.Add(totalFailureBackoffBase(1)); !svc.nextRefreshAllowed.Equal(want) {
-		t.Fatalf("failed nextRefreshAllowed = %v, want %v", svc.nextRefreshAllowed, want)
+	next, consecutive, lastErr = backoffState(svc)
+	if want := fixed.Add(totalFailureBackoffBase(1)); !next.Equal(want) {
+		t.Fatalf("failed nextRefreshAllowed = %v, want %v", next, want)
 	}
-	if !errors.Is(svc.lastRefreshErr, failure) {
-		t.Fatalf("failed lastRefreshErr = %v, want %v", svc.lastRefreshErr, failure)
+	if !errors.Is(lastErr, failure) {
+		t.Fatalf("failed lastRefreshErr = %v, want %v", lastErr, failure)
 	}
-	if svc.consecutiveTotalFailures != 1 {
-		t.Fatalf("failed consecutiveTotalFailures = %d, want 1", svc.consecutiveTotalFailures)
+	if consecutive != 1 {
+		t.Fatalf("failed consecutiveTotalFailures = %d, want 1", consecutive)
 	}
 }
 
@@ -1084,7 +1078,7 @@ func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
 	}
 	svc := newTestServiceWithOverride(t, client, "token")
 	now := svc.now()
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Minute),
 		StaleUntil: endOfDay(now),
@@ -1098,7 +1092,7 @@ func TestDoRefreshPartialCampusMergesPreviousCache(t *testing.T) {
 				},
 			},
 		},
-	}, time.Hour)
+	})
 
 	resp, err := svc.QueryAll(context.Background())
 	if err != nil {
@@ -1143,7 +1137,7 @@ func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
 		TokenOverride: "token",
 		Clock:         clock,
 	})
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:            fixed.Format("2006-01-02"),
 		UpdatedAt:       fixed.Add(-time.Hour),
 		ExpiresAt:       fixed.Add(-time.Minute),
@@ -1154,7 +1148,7 @@ func TestStalePartialCacheUsesLatestTotalRefreshFailure(t *testing.T) {
 			Type:    string(jwErrorQuery),
 			Message: partialCampusErrorMessage,
 		},
-	}, time.Hour)
+	})
 
 	resp, err := svc.GetTodayClassrooms(context.Background())
 	if err != nil {
@@ -1211,7 +1205,7 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 		Clock:         clock,
 	})
 
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		UpdatedAt:  fixed.Add(-time.Minute),
 		ExpiresAt:  fixed.Add(4 * time.Minute), // still inside full fresh TTL
@@ -1224,7 +1218,7 @@ func TestGetTodayClassroomsRetriesPartialErrorWithinFreshTTL(t *testing.T) {
 			Type:    string(jwErrorQuery),
 			Message: partialCampusErrorMessage,
 		},
-	}, time.Hour)
+	})
 
 	resp, err := svc.GetTodayClassrooms(context.Background())
 	if err != nil {
@@ -1296,7 +1290,7 @@ func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.
 		Clock:         clock,
 	})
 
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		UpdatedAt:  fixed.Add(-time.Minute),
 		ExpiresAt:  fixed.Add(classroomFreshTTL),
@@ -1309,7 +1303,7 @@ func TestGetTodayClassroomsPartialErrorRefreshCanRecoverFailedCampus(t *testing.
 			Type:    string(jwErrorQuery),
 			Message: partialCampusErrorMessage,
 		},
-	}, time.Hour)
+	})
 
 	resp, err := svc.GetTodayClassrooms(context.Background())
 	if err != nil {
@@ -1356,22 +1350,22 @@ func TestRuntimeStatusCacheStaleOnlyWhenPastFreshTTL(t *testing.T) {
 	clock := newFakeClock(fixed)
 	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
 
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		ExpiresAt:  fixed.Add(time.Minute),
 		StaleUntil: endOfDay(fixed),
-	}, time.Hour)
+	})
 
 	status := svc.GetRuntimeStatus()
 	if !status.CacheAvailable || !status.CacheFresh || status.CacheStale {
 		t.Fatalf("fresh cache status = %#v, want fresh and not stale", status)
 	}
 
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       fixed.Format("2006-01-02"),
 		ExpiresAt:  fixed.Add(-time.Minute),
 		StaleUntil: endOfDay(fixed),
-	}, time.Hour)
+	})
 
 	status = svc.GetRuntimeStatus()
 	if !status.CacheAvailable || status.CacheFresh || !status.CacheStale {

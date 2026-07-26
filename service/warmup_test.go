@@ -88,8 +88,9 @@ func TestStartWarmupRunsImmediatelyAndStopsOnCancel(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := newTestService(t, client)
-	svc.warmupJitter = func() time.Duration { return 0 }
+	svc := newTestServiceWithOptions(t, client, ClassroomServiceOptions{
+		WarmupJitter: func() time.Duration { return 0 },
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	svc.StartWarmup(ctx)
 
@@ -165,13 +166,9 @@ func TestStartWarmupSecondCallIsNoOp(t *testing.T) {
 		t.Fatal("warmup did not start")
 	}
 
-	svc.backgroundMu.Lock()
-	firstDone := svc.warmupDone
-	svc.backgroundMu.Unlock()
+	firstDone := warmupSchedulerDone(svc)
 	svc.StartWarmup(context.Background())
-	svc.backgroundMu.Lock()
-	secondDone := svc.warmupDone
-	svc.backgroundMu.Unlock()
+	secondDone := warmupSchedulerDone(svc)
 	if firstDone != secondDone {
 		t.Fatal("second StartWarmup call created another scheduler")
 	}
@@ -212,10 +209,7 @@ func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		svc.backgroundMu.Lock()
-		stopping := svc.backgroundStopping
-		svc.backgroundMu.Unlock()
-		if stopping {
+		if isBackgroundStopping(svc) {
 			break
 		}
 		if time.Now().After(deadline) {

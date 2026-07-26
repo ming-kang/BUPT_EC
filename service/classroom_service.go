@@ -87,6 +87,9 @@ type ClassroomServiceOptions struct {
 	// BackoffRandom is optional; nil uses a concurrent-safe production source.
 	// Only unit samples are accepted — the jitter policy clamps and bounds them.
 	BackoffRandom RandomSample
+	// WarmupJitter is optional; nil uses the randomized production jitter added
+	// to the warmup midnight rollover wait (randomWarmupJitter).
+	WarmupJitter func() time.Duration
 }
 
 func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCache, client JWClient) (*ClassroomService, error) {
@@ -108,13 +111,17 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 	if backoffRandom == nil {
 		backoffRandom = productionBackoffRandom
 	}
+	warmupJitter := options.WarmupJitter
+	if warmupJitter == nil {
+		warmupJitter = randomWarmupJitter
+	}
 	s := &ClassroomService{
 		cache:         store,
 		campuses:      append([]config.CampusConfig(nil), options.Campuses...),
 		jwClient:      client,
 		clock:         clock,
 		backoffRandom: backoffRandom,
-		warmupJitter:  randomWarmupJitter,
+		warmupJitter:  warmupJitter,
 		metrics:       options.Metrics,
 	}
 	s.tokenManager = &TokenManager{

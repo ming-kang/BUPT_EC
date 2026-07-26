@@ -98,10 +98,7 @@ func TestFinishClassroomRefreshSamplesOnceAndAppliesJitter(t *testing.T) {
 		},
 	})
 
-	attempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = attempt
-	svc.finishClassroomRefresh(attempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind: refreshFailed,
 		err:  newJWError(jwErrorQuery, "jw query", nil, "down"),
 	})
@@ -109,8 +106,9 @@ func TestFinishClassroomRefreshSamplesOnceAndAppliesJitter(t *testing.T) {
 		t.Fatalf("random samples = %d, want 1", samples.Load())
 	}
 	want := fixed.Add(jitteredBackoff(totalFailureBackoffBase(1), 1))
-	if !svc.nextRefreshAllowed.Equal(want) {
-		t.Fatalf("nextRefreshAllowed = %v, want %v", svc.nextRefreshAllowed, want)
+	next, _, _ := backoffState(svc)
+	if !next.Equal(want) {
+		t.Fatalf("nextRefreshAllowed = %v, want %v", next, want)
 	}
 }
 
@@ -129,47 +127,41 @@ func TestTotalFailureLadderEscalatesAndFullResets(t *testing.T) {
 		5 * time.Minute,
 		5 * time.Minute,
 	} {
-		attempt := &classroomRefreshAttempt{done: make(chan struct{})}
-		svc.refreshInFlight = true
-		svc.refreshAttempt = attempt
-		svc.finishClassroomRefresh(attempt, classroomRefreshResult{
+		completeRefresh(svc, classroomRefreshResult{
 			kind: refreshFailed,
 			err:  newJWError(jwErrorQuery, "jw query", nil, "down"),
 		})
 		want := fixed.Add(wantBase)
-		if !svc.nextRefreshAllowed.Equal(want) {
-			t.Fatalf("failure %d next = %v, want %v", i+1, svc.nextRefreshAllowed, want)
+		next, _, _ := backoffState(svc)
+		if !next.Equal(want) {
+			t.Fatalf("failure %d next = %v, want %v", i+1, next, want)
 		}
 	}
-	if svc.consecutiveTotalFailures != 5 {
-		t.Fatalf("consecutive = %d, want 5", svc.consecutiveTotalFailures)
+	_, beforeConsecutive, _ := backoffState(svc)
+	if beforeConsecutive != 5 {
+		t.Fatalf("consecutive = %d, want 5", beforeConsecutive)
 	}
 
 	// Partial does not escalate ladder or use total jitter.
-	partialAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = partialAttempt
-	beforeConsecutive := svc.consecutiveTotalFailures
-	svc.finishClassroomRefresh(partialAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind:  refreshPartial,
 		value: &model.TodayClassrooms{},
 	})
-	if svc.consecutiveTotalFailures != beforeConsecutive {
-		t.Fatalf("partial changed consecutive from %d to %d", beforeConsecutive, svc.consecutiveTotalFailures)
+	next, consecutive, _ := backoffState(svc)
+	if consecutive != beforeConsecutive {
+		t.Fatalf("partial changed consecutive from %d to %d", beforeConsecutive, consecutive)
 	}
-	if want := fixed.Add(staleRefreshBackoff); !svc.nextRefreshAllowed.Equal(want) {
-		t.Fatalf("partial next = %v, want %v", svc.nextRefreshAllowed, want)
+	if want := fixed.Add(staleRefreshBackoff); !next.Equal(want) {
+		t.Fatalf("partial next = %v, want %v", next, want)
 	}
 
-	fullAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = fullAttempt
-	svc.finishClassroomRefresh(fullAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind:  refreshFull,
 		value: &model.TodayClassrooms{},
 	})
-	if svc.consecutiveTotalFailures != 0 || !svc.nextRefreshAllowed.IsZero() {
-		t.Fatalf("full did not reset: consecutive=%d next=%v", svc.consecutiveTotalFailures, svc.nextRefreshAllowed)
+	next, consecutive, _ = backoffState(svc)
+	if consecutive != 0 || !next.IsZero() {
+		t.Fatalf("full did not reset: consecutive=%d next=%v", consecutive, next)
 	}
 }
 
@@ -199,10 +191,7 @@ func TestRefreshSuppressedDoesNotStartWorkerAndCountsOncePerCall(t *testing.T) {
 	})
 
 	// Install a total-failure backoff window without starting a worker.
-	failAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = failAttempt
-	svc.finishClassroomRefresh(failAttempt, classroomRefreshResult{
+	completeRefresh(svc, classroomRefreshResult{
 		kind: refreshFailed,
 		err:  newJWError(jwErrorQuery, "jw query", nil, "down"),
 	})
@@ -245,14 +234,10 @@ func TestConcurrentCallersShareNextRefreshAllowed(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			attempt := &classroomRefreshAttempt{done: make(chan struct{})}
-			// Serialize state updates the same way production does (one finish per attempt).
-			// Concurrent finish on different attempts still must keep consistent ladder under lock.
-			svc.refreshMu.Lock()
-			svc.refreshInFlight = true
-			svc.refreshAttempt = attempt
-			svc.refreshMu.Unlock()
-			svc.finishClassroomRefresh(attempt, classroomRefreshResult{
+			// completeRefresh serializes state updates the same way production
+			// does (one finish per attempt) under refreshMu. Concurrent finish
+			// on different attempts still must keep a consistent ladder.
+			completeRefresh(svc, classroomRefreshResult{
 				kind: refreshFailed,
 				err:  newJWError(jwErrorQuery, "jw query", nil, "down"),
 			})
@@ -263,13 +248,14 @@ func TestConcurrentCallersShareNextRefreshAllowed(t *testing.T) {
 	if samples.Load() != 8 {
 		t.Fatalf("samples = %d, want 8 (one per completed failure)", samples.Load())
 	}
-	if svc.consecutiveTotalFailures != 8 {
-		t.Fatalf("consecutive = %d, want 8", svc.consecutiveTotalFailures)
+	next, consecutive, _ := backoffState(svc)
+	if consecutive != 8 {
+		t.Fatalf("consecutive = %d, want 8", consecutive)
 	}
 	// Cap base is 5m; sample 0 → 5m - 5s.
 	want := fixed.Add(jitteredBackoff(totalFailureBackoffBase(8), 0))
-	if !svc.nextRefreshAllowed.Equal(want) {
-		t.Fatalf("next = %v, want %v", svc.nextRefreshAllowed, want)
+	if !next.Equal(want) {
+		t.Fatalf("next = %v, want %v", next, want)
 	}
 
 	// All callers see the same coordinator deadline.
@@ -320,20 +306,17 @@ func TestBackoffCrossingMidnightRejectsOldCacheThenAllowsNewDayRefresh(t *testin
 	})
 
 	// Seed yesterday cache, then force a total failure so backoff spans midnight.
-	svc.cache.Store(&model.TodayClassrooms{
+	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       beforeMidnight.Format("2006-01-02"),
 		UpdatedAt:  beforeMidnight.Add(-time.Minute),
 		ExpiresAt:  beforeMidnight.Add(-time.Second),
 		StaleUntil: endOfDay(beforeMidnight),
 		Campuses:   []model.CampusInfo{{ID: "01", Name: "西土城"}, {ID: "04", Name: "沙河"}},
-	}, time.Hour)
+	})
 
 	// Prior failures already at ladder step 3 so this completion uses the 5m base.
-	svc.consecutiveTotalFailures = 3
-	failAttempt := &classroomRefreshAttempt{done: make(chan struct{})}
-	svc.refreshInFlight = true
-	svc.refreshAttempt = failAttempt
-	svc.finishClassroomRefresh(failAttempt, classroomRefreshResult{
+	forceFailureState(svc, 3, time.Time{})
+	completeRefresh(svc, classroomRefreshResult{
 		kind: refreshFailed,
 		err:  newJWError(jwErrorQuery, "jw query", nil, "jw outage"),
 	})
@@ -392,12 +375,7 @@ func TestFakeClockAndCoordinatorRace(t *testing.T) {
 			_ = clock.Now()
 			_ = svc.now()
 			_ = svc.nextRefreshAllowedAt()
-			attempt := &classroomRefreshAttempt{done: make(chan struct{})}
-			svc.refreshMu.Lock()
-			svc.refreshInFlight = true
-			svc.refreshAttempt = attempt
-			svc.refreshMu.Unlock()
-			svc.finishClassroomRefresh(attempt, classroomRefreshResult{
+			completeRefresh(svc, classroomRefreshResult{
 				kind:  refreshFull,
 				value: &model.TodayClassrooms{},
 			})

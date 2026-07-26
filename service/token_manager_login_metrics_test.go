@@ -67,15 +67,11 @@ func TestLoginMetricsFirstLoginSuccess(t *testing.T) {
 		start,
 		start.Add(120 * time.Millisecond),
 	}}
-	manager := &TokenManager{
-		metrics: metrics,
-		clock:   clock,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "login-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "login-token", nil
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics, clock: clock})
 
 	token, err := manager.EnsureToken(context.Background(), false)
 	if err != nil {
@@ -107,14 +103,11 @@ func TestLoginMetricsFirstLoginSuccess(t *testing.T) {
 
 func TestLoginMetricsFailureDoesNotLeakLabels(t *testing.T) {
 	metrics := &recordingLoginMetrics{}
-	manager := &TokenManager{
-		metrics: metrics,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "", newJWError(jwErrorLogin, "jw login", nil, "token=super-secret user=alice https://jw.example")
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "", newJWError(jwErrorLogin, "jw login", nil, "token=super-secret user=alice https://jw.example")
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics})
 
 	_, err := manager.EnsureToken(context.Background(), false)
 	if err == nil {
@@ -134,15 +127,11 @@ func TestLoginMetricsFailureDoesNotLeakLabels(t *testing.T) {
 
 func TestLoginMetricsOverrideRecoverySource(t *testing.T) {
 	metrics := &recordingLoginMetrics{}
-	manager := &TokenManager{
-		overrideToken: "override-token",
-		metrics:       metrics,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "login-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "login-token", nil
 		},
-	}
+	}, tokenManagerTestOptions{override: "override-token", metrics: metrics})
 
 	override, err := manager.EnsureToken(context.Background(), false)
 	if err != nil {
@@ -169,14 +158,11 @@ func TestLoginMetricsOverrideRecoverySource(t *testing.T) {
 
 func TestLoginMetricsLoginTokenRecoverySource(t *testing.T) {
 	metrics := &recordingLoginMetrics{}
-	manager := &TokenManager{
-		metrics: metrics,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "replacement-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "replacement-token", nil
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics})
 	manager.setToken("expired-login-token", tokenSourceLogin)
 
 	if _, err := manager.RefreshAfterAuthFailure(context.Background(), "expired-login-token"); err != nil {
@@ -197,21 +183,18 @@ func TestLoginMetricsConcurrentWaitersObserveOnce(t *testing.T) {
 	releaseLogin := make(chan struct{})
 	var once sync.Once
 	var loginCalls atomic.Int32
-	manager := &TokenManager{
-		metrics: metrics,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				loginCalls.Add(1)
-				once.Do(func() { close(loginStarted) })
-				select {
-				case <-releaseLogin:
-					return "shared-token", nil
-				case <-ctx.Done():
-					return "", ctx.Err()
-				}
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			loginCalls.Add(1)
+			once.Do(func() { close(loginStarted) })
+			select {
+			case <-releaseLogin:
+				return "shared-token", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics})
 
 	const waiters = 8
 	errCh := make(chan error, waiters)
@@ -250,14 +233,11 @@ func TestLoginMetricsConcurrentWaitersObserveOnce(t *testing.T) {
 
 func TestLoginMetricsDelayedFailureReusesReplacementWithoutObservation(t *testing.T) {
 	metrics := &recordingLoginMetrics{}
-	manager := &TokenManager{
-		metrics: metrics,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "fresh-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "fresh-token", nil
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics})
 	manager.setToken("expired-token", tokenSourceLogin)
 
 	if _, err := manager.RefreshAfterAuthFailure(context.Background(), "expired-token"); err != nil {
@@ -288,15 +268,11 @@ func TestLoginMetricsNegativeDurationClamped(t *testing.T) {
 		start,
 		start.Add(-5 * time.Second),
 	}}
-	manager := &TokenManager{
-		metrics: metrics,
-		clock:   clock,
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "token", nil
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics, clock: clock})
 	if _, err := manager.EnsureToken(context.Background(), false); err != nil {
 		t.Fatalf("EnsureToken() error = %v", err)
 	}
@@ -311,14 +287,11 @@ func TestLoginMetricsNegativeDurationClamped(t *testing.T) {
 
 func TestLoginMetricsAPIURLFailureIsFailedObservation(t *testing.T) {
 	metrics := &recordingLoginMetrics{}
-	manager := &TokenManager{
-		metrics: metrics,
-		jwClient: &mockJWClient{
-			fetchAPIURL: func(ctx context.Context) (string, error) {
-				return "", errors.New("serverconfig down")
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		fetchAPIURL: func(ctx context.Context) (string, error) {
+			return "", errors.New("serverconfig down")
 		},
-	}
+	}, tokenManagerTestOptions{metrics: metrics})
 	if _, err := manager.EnsureToken(context.Background(), false); err == nil {
 		t.Fatal("EnsureToken() expected API URL failure")
 	}
@@ -332,6 +305,9 @@ func TestLoginMetricsAPIURLFailureIsFailedObservation(t *testing.T) {
 }
 
 func TestLoginMetricsNilMetricsSafe(t *testing.T) {
+	// Deliberately a bare literal: this test asserts the nil-metrics guard and
+	// must not go through newTokenManagerForTest (which injects NoopMetrics).
+	// It is deleted together with the guard when metrics become non-nil always.
 	manager := &TokenManager{
 		jwClient: &mockJWClient{
 			login: func(ctx context.Context, apiURL string) (string, error) {

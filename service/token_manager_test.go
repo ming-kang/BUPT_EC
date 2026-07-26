@@ -49,7 +49,7 @@ func TestConcurrentAuthFailuresShareOneLogin(t *testing.T) {
 		},
 	}
 	svc := newTestService(t, client)
-	svc.tokenManager.setToken("expired-token", tokenSourceLogin)
+	installToken(svc, "expired-token")
 
 	errCh := make(chan error, 2)
 	for _, campusID := range []string{"01", "04"} {
@@ -115,7 +115,7 @@ func TestDelayedAuthFailureReusesInstalledToken(t *testing.T) {
 		},
 	}
 	svc := newTestService(t, client)
-	svc.tokenManager.setToken("expired-token", tokenSourceLogin)
+	installToken(svc, "expired-token")
 
 	errCh := make(chan error, 2)
 	for _, campusID := range []string{"01", "04"} {
@@ -137,15 +137,12 @@ func TestDelayedAuthFailureReusesInstalledToken(t *testing.T) {
 
 func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
 	var loginCalls atomic.Int32
-	manager := &TokenManager{
-		overrideToken: "override-token",
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				loginCalls.Add(1)
-				return "login-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			loginCalls.Add(1)
+			return "login-token", nil
 		},
-	}
+	}, tokenManagerTestOptions{override: "override-token"})
 
 	override, err := manager.EnsureToken(context.Background(), false)
 	if err != nil {
@@ -157,10 +154,7 @@ func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
 	if _, err := manager.RefreshAfterAuthFailure(context.Background(), override); err != nil {
 		t.Fatalf("RefreshAfterAuthFailure() error = %v", err)
 	}
-	manager.mu.Lock()
-	invalidated := manager.overrideInvalidated
-	source := manager.tokenSource
-	manager.mu.Unlock()
+	source, invalidated := tokenState(manager)
 	if !invalidated || source != tokenSourceLogin {
 		t.Fatalf("override recovery state = invalidated:%v source:%v", invalidated, source)
 	}
@@ -170,26 +164,18 @@ func TestAuthFailureInvalidatesOnlyRejectedOverrideSource(t *testing.T) {
 }
 
 func TestLoginTokenFailurePreservesOverrideInvalidationState(t *testing.T) {
-	manager := &TokenManager{
-		overrideToken: "old-override",
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				return "new-login-token", nil
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			return "new-login-token", nil
 		},
-	}
-	manager.mu.Lock()
-	manager.overrideInvalidated = true
-	manager.mu.Unlock()
+	}, tokenManagerTestOptions{override: "old-override"})
+	invalidateOverride(manager)
 	manager.setToken("expired-login-token", tokenSourceLogin)
 
 	if _, err := manager.RefreshAfterAuthFailure(context.Background(), "expired-login-token"); err != nil {
 		t.Fatalf("RefreshAfterAuthFailure() error = %v", err)
 	}
-	manager.mu.Lock()
-	invalidated := manager.overrideInvalidated
-	source := manager.tokenSource
-	manager.mu.Unlock()
+	source, invalidated := tokenState(manager)
 	if !invalidated {
 		t.Fatal("login-token recovery restored an invalidated override")
 	}
@@ -203,20 +189,18 @@ func TestCanceledTokenWaiterDoesNotCancelSharedLogin(t *testing.T) {
 	releaseLogin := make(chan struct{})
 	var once sync.Once
 	var loginCalls atomic.Int32
-	manager := &TokenManager{
-		jwClient: &mockJWClient{
-			login: func(ctx context.Context, apiURL string) (string, error) {
-				loginCalls.Add(1)
-				once.Do(func() { close(loginStarted) })
-				select {
-				case <-releaseLogin:
-					return "shared-login-token", nil
-				case <-ctx.Done():
-					return "", ctx.Err()
-				}
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			loginCalls.Add(1)
+			once.Do(func() { close(loginStarted) })
+			select {
+			case <-releaseLogin:
+				return "shared-login-token", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
 		},
-	}
+	}, tokenManagerTestOptions{})
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	canceledResult := make(chan error, 1)
@@ -261,20 +245,18 @@ func TestCanceledAPIURLWaiterDoesNotCancelSharedFetch(t *testing.T) {
 	releaseFetch := make(chan struct{})
 	var once sync.Once
 	var fetchCalls atomic.Int32
-	manager := &TokenManager{
-		jwClient: &mockJWClient{
-			fetchAPIURL: func(ctx context.Context) (string, error) {
-				fetchCalls.Add(1)
-				once.Do(func() { close(fetchStarted) })
-				select {
-				case <-releaseFetch:
-					return DefaultAPIURL, nil
-				case <-ctx.Done():
-					return "", ctx.Err()
-				}
-			},
+	manager := newTokenManagerForTest(&mockJWClient{
+		fetchAPIURL: func(ctx context.Context) (string, error) {
+			fetchCalls.Add(1)
+			once.Do(func() { close(fetchStarted) })
+			select {
+			case <-releaseFetch:
+				return DefaultAPIURL, nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
 		},
-	}
+	}, tokenManagerTestOptions{})
 
 	canceledCtx, cancel := context.WithCancel(context.Background())
 	canceledResult := make(chan error, 1)
