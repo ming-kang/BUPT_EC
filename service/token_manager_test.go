@@ -53,7 +53,6 @@ func TestConcurrentAuthFailuresShareOneLogin(t *testing.T) {
 
 	errCh := make(chan error, 2)
 	for _, campusID := range []string{"01", "04"} {
-		campusID := campusID
 		go func() {
 			_, err := svc.queryCampus(context.Background(), campusID)
 			errCh <- err
@@ -119,7 +118,6 @@ func TestDelayedAuthFailureReusesInstalledToken(t *testing.T) {
 
 	errCh := make(chan error, 2)
 	for _, campusID := range []string{"01", "04"} {
-		campusID := campusID
 		go func() {
 			_, err := svc.queryCampus(context.Background(), campusID)
 			errCh <- err

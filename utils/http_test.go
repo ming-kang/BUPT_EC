@@ -154,12 +154,9 @@ func TestNewHTTPClientPreservesTransportSettings(t *testing.T) {
 }
 
 func TestHTTPHelpersRejectNilDoer(t *testing.T) {
-	var typedNilDoer *http.Client
-	for _, doer := range []HTTPDoer{nil, typedNilDoer} {
-		_, _, _, err := HttpGet(doer, context.Background(), "https://example.test")
-		if err == nil {
-			t.Fatal("HttpGet() expected nil doer error")
-		}
+	_, _, _, err := HttpGet(nil, context.Background(), "https://example.test")
+	if err == nil {
+		t.Fatal("HttpGet() expected nil doer error")
 	}
 }
 

@@ -64,7 +64,7 @@ func Init() (*application, error) {
 	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{
 		DisableCompression: true,
 	})
-	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials, metricsHandler)
+	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials(), metricsHandler)
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP server: %w", err)
 	}

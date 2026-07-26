@@ -50,7 +50,7 @@ func (e *jwError) Unwrap() error {
 	return e.err
 }
 
-func newJWError(kind jwErrorKind, op string, err error, format string, v ...interface{}) error {
+func newJWError(kind jwErrorKind, op string, err error, format string, v ...any) error {
 	return &jwError{kind: kind, op: op, err: err, msg: fmt.Sprintf(format, v...)}
 }
 

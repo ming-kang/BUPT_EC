@@ -5,23 +5,25 @@ import (
 )
 
 type RuntimeStatus struct {
-	LastLoginSuccessAt   *time.Time `json:"last_login_success_at,omitempty"`
-	LastLoginError       string     `json:"last_login_error,omitempty"`
-	LastRefreshSuccessAt *time.Time `json:"last_refresh_success_at,omitempty"`
-	LastRefreshWarning   string     `json:"last_refresh_warning,omitempty"`
-	LastRefreshError     string     `json:"last_refresh_error,omitempty"`
-	CacheAvailable       bool       `json:"cache_available"`
-	CacheFresh           bool       `json:"cache_fresh"`
-	CacheStale           bool       `json:"cache_stale"`
-	CachePartial         bool       `json:"cache_partial"`
-	PartialCampuses      []string   `json:"partial_campuses,omitempty"`
-	CacheDate            string     `json:"cache_date,omitempty"`
+	// Timestamps use omitzero: an unset time is omitted from JSON, matching the
+	// previous *time.Time+omitempty wire format exactly.
+	LastLoginSuccessAt   time.Time `json:"last_login_success_at,omitzero"`
+	LastLoginError       string    `json:"last_login_error,omitempty"`
+	LastRefreshSuccessAt time.Time `json:"last_refresh_success_at,omitzero"`
+	LastRefreshWarning   string    `json:"last_refresh_warning,omitempty"`
+	LastRefreshError     string    `json:"last_refresh_error,omitempty"`
+	CacheAvailable       bool      `json:"cache_available"`
+	CacheFresh           bool      `json:"cache_fresh"`
+	CacheStale           bool      `json:"cache_stale"`
+	CachePartial         bool      `json:"cache_partial"`
+	PartialCampuses      []string  `json:"partial_campuses,omitempty"`
+	CacheDate            string    `json:"cache_date,omitempty"`
 }
 
 func (s *ClassroomService) recordLoginSuccess(at time.Time) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
-	s.status.LastLoginSuccessAt = cloneTime(at)
+	s.status.LastLoginSuccessAt = at
 	s.status.LastLoginError = ""
 }
 
@@ -34,7 +36,7 @@ func (s *ClassroomService) recordLoginFailure(err error) {
 func (s *ClassroomService) recordRefreshSuccess(at time.Time) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
-	s.status.LastRefreshSuccessAt = cloneTime(at)
+	s.status.LastRefreshSuccessAt = at
 	s.status.LastRefreshWarning = ""
 	s.status.LastRefreshError = ""
 }
@@ -42,7 +44,7 @@ func (s *ClassroomService) recordRefreshSuccess(at time.Time) {
 func (s *ClassroomService) recordRefreshPartial(at time.Time) {
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
-	s.status.LastRefreshSuccessAt = cloneTime(at)
+	s.status.LastRefreshSuccessAt = at
 	s.status.LastRefreshWarning = partialCampusErrorMessage
 	s.status.LastRefreshError = ""
 }
@@ -73,20 +75,10 @@ func (s *ClassroomService) HasUsableTodayCache() bool {
 	return ok && s.now().Before(cached.StaleUntil)
 }
 
+// snapshotRuntimeStatus returns a value copy of the status under the read lock.
+// All fields are values (times included), so the struct copy is the snapshot.
 func (s *ClassroomService) snapshotRuntimeStatus() RuntimeStatus {
 	s.statusMu.RLock()
 	defer s.statusMu.RUnlock()
-	status := s.status
-	if s.status.LastLoginSuccessAt != nil {
-		status.LastLoginSuccessAt = cloneTime(*s.status.LastLoginSuccessAt)
-	}
-	if s.status.LastRefreshSuccessAt != nil {
-		status.LastRefreshSuccessAt = cloneTime(*s.status.LastRefreshSuccessAt)
-	}
-	return status
-}
-
-func cloneTime(t time.Time) *time.Time {
-	copy := t
-	return &copy
+	return s.status
 }

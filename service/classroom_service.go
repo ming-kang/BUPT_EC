@@ -91,7 +91,7 @@ type ClassroomServiceOptions struct {
 }
 
 func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*ClassroomService, error) {
-	if isNilDependency(client) {
+	if client == nil {
 		return nil, errors.New("JW client is required")
 	}
 	if len(options.Campuses) == 0 {
@@ -134,10 +134,8 @@ func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*Cla
 }
 
 // now returns the business-location instant from the injected Clock.
-// Production and tests share this single time seam (same instance as TokenManager).
+// Production and tests share this single time seam (same instance as
+// TokenManager); the constructor guarantees a non-nil clock.
 func (s *ClassroomService) now() time.Time {
-	if s == nil || s.clock == nil {
-		return time.Now().In(businessLocation)
-	}
 	return s.clock.Now().In(businessLocation)
 }

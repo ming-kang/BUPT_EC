@@ -11,22 +11,25 @@ import (
 	"BUPT_EC/service/model"
 )
 
-func TestTotalFailureBackoffBaseLadder(t *testing.T) {
-	want := []time.Duration{
-		30 * time.Second,
-		time.Minute,
-		2 * time.Minute,
-		5 * time.Minute,
-		5 * time.Minute,
+// TestBackoffLadder locks the single shared ladder consumed by both the
+// refresh coordinator (with jitter) and the warmup scheduler (relative sleep).
+func TestBackoffLadder(t *testing.T) {
+	tests := []struct {
+		attempt int
+		want    time.Duration
+	}{
+		{attempt: 0, want: 30 * time.Second},
+		{attempt: 1, want: 30 * time.Second},
+		{attempt: 2, want: time.Minute},
+		{attempt: 3, want: 2 * time.Minute},
+		{attempt: 4, want: 5 * time.Minute},
+		{attempt: 5, want: 5 * time.Minute},
+		{attempt: 8, want: 5 * time.Minute},
 	}
-	for i, expected := range want {
-		got := totalFailureBackoffBase(i + 1)
-		if got != expected {
-			t.Fatalf("totalFailureBackoffBase(%d) = %v, want %v", i+1, got, expected)
+	for _, tt := range tests {
+		if got := backoffLadder(tt.attempt); got != tt.want {
+			t.Errorf("backoffLadder(%d) = %v, want %v", tt.attempt, got, tt.want)
 		}
-	}
-	if totalFailureBackoffBase(0) != 30*time.Second {
-		t.Fatalf("totalFailureBackoffBase(0) = %v, want 30s", totalFailureBackoffBase(0))
 	}
 }
 
@@ -105,7 +108,7 @@ func TestFinishClassroomRefreshSamplesOnceAndAppliesJitter(t *testing.T) {
 	if samples.Load() != 1 {
 		t.Fatalf("random samples = %d, want 1", samples.Load())
 	}
-	want := fixed.Add(jitteredBackoff(totalFailureBackoffBase(1), 1))
+	want := fixed.Add(jitteredBackoff(backoffLadder(1), 1))
 	next, _, _ := backoffState(svc)
 	if !next.Equal(want) {
 		t.Fatalf("nextRefreshAllowed = %v, want %v", next, want)
@@ -253,7 +256,7 @@ func TestConcurrentCallersShareNextRefreshAllowed(t *testing.T) {
 		t.Fatalf("consecutive = %d, want 8", consecutive)
 	}
 	// Cap base is 5m; sample 0 → 5m - 5s.
-	want := fixed.Add(jitteredBackoff(totalFailureBackoffBase(8), 0))
+	want := fixed.Add(jitteredBackoff(backoffLadder(8), 0))
 	if !next.Equal(want) {
 		t.Fatalf("next = %v, want %v", next, want)
 	}

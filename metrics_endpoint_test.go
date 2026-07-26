@@ -36,7 +36,7 @@ func newTestMetricsHandler(t *testing.T, observe func(*service.PrometheusMetrics
 
 func newMetricsTestRouter(t *testing.T, metricsHandler http.Handler) *gin.Engine {
 	t.Helper()
-	httpServer, err := NewHTTPServer(&fakeClassroomService{}, func() bool { return true }, metricsHandler)
+	httpServer, err := NewHTTPServer(&fakeClassroomService{}, true, metricsHandler)
 	if err != nil {
 		t.Fatalf("NewHTTPServer() error = %v", err)
 	}

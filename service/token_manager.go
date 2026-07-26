@@ -49,11 +49,10 @@ type TokenManager struct {
 	apiURLGroup         singleflight.Group
 }
 
+// now returns the injected clock's instant. Every TokenManager is built with a
+// non-nil clock (NewClassroomService or newTokenManagerForTest).
 func (m *TokenManager) now() time.Time {
-	if m != nil && m.clock != nil {
-		return m.clock.Now()
-	}
-	return time.Now()
+	return m.clock.Now()
 }
 
 func (m *TokenManager) EnsureToken(ctx context.Context) (string, error) {
@@ -66,7 +65,7 @@ func (m *TokenManager) EnsureToken(ctx context.Context) (string, error) {
 		return state.token, nil
 	}
 
-	resultCh := m.tokenGroup.DoChan("jw-token", func() (interface{}, error) {
+	resultCh := m.tokenGroup.DoChan("jw-token", func() (any, error) {
 		if state := m.cachedTokenState(); state.token != "" {
 			return state, nil
 		}
@@ -91,7 +90,7 @@ func (m *TokenManager) RefreshAfterAuthFailure(ctx context.Context, failedToken 
 		return "", err
 	}
 
-	resultCh := m.tokenGroup.DoChan("jw-token", func() (interface{}, error) {
+	resultCh := m.tokenGroup.DoChan("jw-token", func() (any, error) {
 		decision := m.prepareAuthRecovery(failedToken)
 		if decision.reusable {
 			return decision.state, nil
@@ -115,7 +114,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		return apiURL, nil
 	}
 
-	resultCh := m.apiURLGroup.DoChan("jw-api-url", func() (interface{}, error) {
+	resultCh := m.apiURLGroup.DoChan("jw-api-url", func() (any, error) {
 		if apiURL := m.cachedAPIURL(); apiURL != "" {
 			return apiURL, nil
 		}
@@ -274,7 +273,7 @@ func sharedOperationContext(ctx context.Context) (context.Context, context.Cance
 	return context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), jwRequestTimeout)
 }
 
-func waitSingleflightResult(ctx context.Context, resultCh <-chan singleflight.Result) (interface{}, error) {
+func waitSingleflightResult(ctx context.Context, resultCh <-chan singleflight.Result) (any, error) {
 	select {
 	case result := <-resultCh:
 		return result.Val, result.Err

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"reflect"
 
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
@@ -22,29 +21,15 @@ type classroomDataService interface {
 
 type HTTPServer struct {
 	classroomService classroomDataService
-	hasJWCredentials func() bool
+	// hasJWCredentials is the startup credential predicate result. Runtime
+	// config is immutable after Init, so a snapshot bool is equivalent.
+	hasJWCredentials bool
 	metricsHandler   http.Handler
 }
 
-func isNilClassroomService(classroomService classroomDataService) bool {
+func NewHTTPServer(classroomService classroomDataService, hasJWCredentials bool, metricsHandler http.Handler) (*HTTPServer, error) {
 	if classroomService == nil {
-		return true
-	}
-	value := reflect.ValueOf(classroomService)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
-}
-
-func NewHTTPServer(classroomService classroomDataService, hasJWCredentials func() bool, metricsHandler http.Handler) (*HTTPServer, error) {
-	if isNilClassroomService(classroomService) {
 		return nil, errors.New("classroom service is required")
-	}
-	if hasJWCredentials == nil {
-		hasJWCredentials = func() bool { return false }
 	}
 
 	return &HTTPServer{
@@ -81,7 +66,7 @@ func (server *HTTPServer) Healthz(c *gin.Context) {
 
 func (server *HTTPServer) Readyz(c *gin.Context) {
 	status := server.classroomService.GetRuntimeStatus()
-	configured := server.hasJWCredentials()
+	configured := server.hasJWCredentials
 	ready := configured && server.classroomService.HasUsableTodayCache()
 	code := http.StatusOK
 	if !ready {

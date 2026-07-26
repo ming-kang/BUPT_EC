@@ -20,24 +20,6 @@ func TestNextWarmupDelayRetriesBackoffAcrossMidnight(t *testing.T) {
 	}
 }
 
-func TestWarmupFailureDelayCapsAtFiveMinutes(t *testing.T) {
-	tests := []struct {
-		failures int
-		want     time.Duration
-	}{
-		{failures: 1, want: 30 * time.Second},
-		{failures: 2, want: time.Minute},
-		{failures: 3, want: 2 * time.Minute},
-		{failures: 4, want: 5 * time.Minute},
-		{failures: 8, want: 5 * time.Minute},
-	}
-	for _, tt := range tests {
-		if got := warmupFailureDelay(tt.failures); got != tt.want {
-			t.Errorf("warmupFailureDelay(%d) = %v, want %v", tt.failures, got, tt.want)
-		}
-	}
-}
-
 func TestNextWarmupFailureCountResetsOnUsableOutcome(t *testing.T) {
 	failed := classroomRefreshResult{kind: refreshFailed, err: fmt.Errorf("down")}
 	if got := nextWarmupFailureCount(1, failed, true); got != 2 {

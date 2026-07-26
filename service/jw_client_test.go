@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"BUPT_EC/config"
-	"BUPT_EC/utils"
 )
 
 type serviceHTTPDoerFunc func(*http.Request) (*http.Response, error)
@@ -64,15 +63,12 @@ func TestNewJWClientUsesInjectedCredentials(t *testing.T) {
 func TestNewJWClientRejectsNilDoerWithoutLeakingCredentials(t *testing.T) {
 	username := "constructor-secret-user"
 	password := "constructor-secret-password"
-	var typedNilDoer *http.Client
-	for _, doer := range []utils.HTTPDoer{nil, typedNilDoer} {
-		_, err := NewJWClient(username, password, doer)
-		if err == nil {
-			t.Fatal("NewJWClient() expected nil doer error")
-		}
-		if strings.Contains(err.Error(), username) || strings.Contains(err.Error(), password) {
-			t.Fatalf("NewJWClient() error leaked credentials: %v", err)
-		}
+	_, err := NewJWClient(username, password, nil)
+	if err == nil {
+		t.Fatal("NewJWClient() expected nil doer error")
+	}
+	if strings.Contains(err.Error(), username) || strings.Contains(err.Error(), password) {
+		t.Fatalf("NewJWClient() error leaked credentials: %v", err)
 	}
 }
 

@@ -14,7 +14,6 @@ func TestNewClassroomServiceValidatesDependenciesWithoutLeakingOverride(t *testi
 		TokenOverride: secretOverride,
 	}
 	client := &mockJWClient{}
-	var typedNilClient *mockJWClient
 
 	tests := []struct {
 		name    string
@@ -22,7 +21,6 @@ func TestNewClassroomServiceValidatesDependenciesWithoutLeakingOverride(t *testi
 		client  JWClient
 	}{
 		{name: "missing JW client", options: options},
-		{name: "typed nil JW client", options: options, client: typedNilClient},
 		{name: "missing campuses", options: ClassroomServiceOptions{TokenOverride: secretOverride}, client: client},
 	}
 

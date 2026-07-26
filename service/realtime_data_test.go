@@ -1014,7 +1014,7 @@ func TestFinishClassroomRefreshTransitionsBackoffByOutcome(t *testing.T) {
 	})
 	// sample=0.5 → base ladder step only (first total failure = 30s).
 	next, consecutive, lastErr = backoffState(svc)
-	if want := fixed.Add(totalFailureBackoffBase(1)); !next.Equal(want) {
+	if want := fixed.Add(backoffLadder(1)); !next.Equal(want) {
 		t.Fatalf("failed nextRefreshAllowed = %v, want %v", next, want)
 	}
 	if !errors.Is(lastErr, failure) {

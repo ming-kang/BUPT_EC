@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"reflect"
 	"time"
 )
 
@@ -59,7 +58,7 @@ func HttpPostWithHeader(client HTTPDoer, ctx context.Context, rawURL string, hea
 }
 
 func httpRequest(client HTTPDoer, ctx context.Context, method string, rawURL string, headers map[string]string, query map[string]string, body []byte) (int, http.Header, []byte, error) {
-	if isNilHTTPDoer(client) {
+	if client == nil {
 		return 0, nil, nil, errors.New("HTTP client is required")
 	}
 	parsedURL, err := url.Parse(rawURL)
@@ -104,17 +103,4 @@ func httpRequest(client HTTPDoer, ctx context.Context, method string, rawURL str
 		return resp.StatusCode, resp.Header, nil, fmt.Errorf("http response body exceeds %d bytes", maxResponseBodyBytes)
 	}
 	return resp.StatusCode, resp.Header, respBody, nil
-}
-
-func isNilHTTPDoer(client HTTPDoer) bool {
-	if client == nil {
-		return true
-	}
-	value := reflect.ValueOf(client)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
 }

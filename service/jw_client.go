@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"BUPT_EC/service/model"
 	"BUPT_EC/utils"
@@ -27,7 +28,7 @@ type defaultJWClient struct {
 }
 
 func NewJWClient(username, password string, client utils.HTTPDoer) (JWClient, error) {
-	if isNilDependency(client) {
+	if client == nil {
 		return nil, errors.New("JW HTTP client is required")
 	}
 	return &defaultJWClient{
@@ -45,7 +46,8 @@ func (c *defaultJWClient) QueryCampus(ctx context.Context, apiURL string, campus
 	if err != nil {
 		return nil, newJWError(jwErrorConfig, "jw query", err, "build query URL failed")
 	}
-	queryURL = addQuery(queryURL, map[string]string{"campusId": campusID})
+	// Validated API URLs carry no query, so the campus filter is the only pair.
+	queryURL += "?" + url.Values{"campusId": {campusID}}.Encode()
 
 	code, _, body, err := utils.HttpPostWithHeader(c.client, requestCtx, queryURL, map[string]string{"token": token})
 	if err != nil {

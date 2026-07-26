@@ -7,12 +7,8 @@ import (
 )
 
 const (
-	warmupRetryInitial = 30 * time.Second
-	warmupRetrySecond  = time.Minute
-	warmupRetryThird   = 2 * time.Minute
-	warmupRetryMax     = 5 * time.Minute
-	warmupJitterMin    = time.Second
-	warmupJitterRange  = 4 * time.Second
+	warmupJitterMin   = time.Second
+	warmupJitterRange = 4 * time.Second
 )
 
 type warmupCacheState int
@@ -25,19 +21,6 @@ const (
 
 func randomWarmupJitter() time.Duration {
 	return warmupJitterMin + time.Duration(rand.Int64N(int64(warmupJitterRange)))
-}
-
-func warmupFailureDelay(failures int) time.Duration {
-	switch failures {
-	case 0, 1:
-		return warmupRetryInitial
-	case 2:
-		return warmupRetrySecond
-	case 3:
-		return warmupRetryThird
-	default:
-		return warmupRetryMax
-	}
 }
 
 func nextWarmupFailureCount(current int, result classroomRefreshResult, completed bool) int {
@@ -78,7 +61,7 @@ func nextWarmupDelay(
 			}
 		}
 	default:
-		target = now.Add(warmupFailureDelay(failures))
+		target = now.Add(backoffLadder(failures))
 		if nextAllowed.After(target) {
 			target = nextAllowed
 		}

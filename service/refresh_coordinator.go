@@ -35,14 +35,22 @@ type classroomRefreshResult struct {
 	err      error
 }
 
-// totalFailureBackoffSteps is the adaptive open-circuit base ladder for
-// consecutive total JW refresh failures. Partial success keeps a fixed 30s soft
-// backoff without total-failure jitter.
-var totalFailureBackoffSteps = []time.Duration{
-	30 * time.Second,
-	time.Minute,
-	2 * time.Minute,
-	5 * time.Minute,
+// backoffLadder is the shared base ladder for consecutive total JW refresh
+// failures: 30s → 1m → 2m → 5m (cap). The refresh coordinator adds bounded
+// jitter on top and stores an absolute deadline; the warmup scheduler uses the
+// same ladder as a relative sleep target. Partial success keeps a fixed 30s
+// soft backoff without total-failure jitter.
+func backoffLadder(attempt int) time.Duration {
+	switch {
+	case attempt <= 1:
+		return 30 * time.Second
+	case attempt == 2:
+		return time.Minute
+	case attempt == 3:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
 }
 
 // totalFailureJitterFraction bounds the symmetric relative offset applied to the
@@ -51,16 +59,6 @@ const (
 	totalFailureJitterFraction = 0.10
 	totalFailureJitterCap      = 5 * time.Second
 )
-
-func totalFailureBackoffBase(consecutive int) time.Duration {
-	if consecutive < 1 {
-		consecutive = 1
-	}
-	if consecutive > len(totalFailureBackoffSteps) {
-		consecutive = len(totalFailureBackoffSteps)
-	}
-	return totalFailureBackoffSteps[consecutive-1]
-}
 
 // productionBackoffRandom is the default concurrent-safe unit sample source.
 func productionBackoffRandom() float64 {
@@ -165,7 +163,7 @@ func (s *ClassroomService) finishClassroomRefresh(attempt *classroomRefreshAttem
 		if s.backoffRandom != nil {
 			sample = s.backoffRandom()
 		}
-		base := totalFailureBackoffBase(s.consecutiveTotalFailures)
+		base := backoffLadder(s.consecutiveTotalFailures)
 		s.nextRefreshAllowed = s.now().Add(jitteredBackoff(base, sample))
 	case result.kind == refreshPartial:
 		s.lastRefreshErr = nil

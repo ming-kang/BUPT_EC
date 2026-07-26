@@ -14,19 +14,6 @@ func joinAPIPath(apiURL string, path string) (string, error) {
 	return parsed.String(), nil
 }
 
-func addQuery(rawURL string, values map[string]string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	query := parsed.Query()
-	for key, value := range values {
-		query.Set(key, value)
-	}
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
 func validateJWAPIURL(rawURL string) (string, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {

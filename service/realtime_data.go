@@ -162,10 +162,10 @@ type campusQueryResult struct {
 func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classroomRefreshResult {
 	results := make([]campusQueryResult, len(s.campuses))
 
-	var group errgroupNoCancel
+	// One goroutine per campus; a failed campus never cancels its siblings.
+	var wg sync.WaitGroup
 	for i, campusConfig := range s.campuses {
-		i, campusConfig := i, campusConfig
-		group.Go(func() {
+		wg.Go(func() {
 			jwRows, err := s.queryCampus(ctx, campusConfig.ID)
 			if err != nil {
 				results[i] = campusQueryResult{err: err}
@@ -177,7 +177,7 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 			}
 		})
 	}
-	group.Wait()
+	wg.Wait()
 
 	successCount := 0
 	failures := make([]campusRefreshFailure, 0, len(results))
@@ -267,23 +267,6 @@ func emptyCampusInfo(campusConfig config.CampusConfig) model.CampusInfo {
 		Buildings: []model.BuildingInfo{},
 		Nodes:     []model.NodeInfo{},
 	}
-}
-
-// errgroupNoCancel runs goroutines without canceling siblings on the first error.
-type errgroupNoCancel struct {
-	wg sync.WaitGroup
-}
-
-func (g *errgroupNoCancel) Go(fn func()) {
-	g.wg.Add(1)
-	go func() {
-		defer g.wg.Done()
-		fn()
-	}()
-}
-
-func (g *errgroupNoCancel) Wait() {
-	g.wg.Wait()
 }
 
 func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {

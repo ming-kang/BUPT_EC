@@ -41,12 +41,9 @@ func (classroomService *fakeClassroomService) HasUsableTodayCache() bool {
 	return classroomService.usableTodayCache
 }
 
-func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials func() bool) *HTTPServer {
+func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials bool) *HTTPServer {
 	if classroomService == nil {
 		classroomService = &fakeClassroomService{}
-	}
-	if hasJWCredentials == nil {
-		hasJWCredentials = func() bool { return true }
 	}
 	httpServer, err := NewHTTPServer(classroomService, hasJWCredentials, nil)
 	if err != nil {
@@ -56,50 +53,41 @@ func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials 
 }
 
 func TestNewHTTPServerRejectsNilService(t *testing.T) {
-	if _, err := NewHTTPServer(nil, nil, nil); err == nil {
+	if _, err := NewHTTPServer(nil, false, nil); err == nil {
 		t.Fatal("NewHTTPServer(nil) expected error")
 	}
-	var typedNil *fakeClassroomService
-	if _, err := NewHTTPServer(typedNil, nil, nil); err == nil {
-		t.Fatal("NewHTTPServer(typed-nil) expected error")
-	}
-	if _, err := NewHTTPServer(&fakeClassroomService{}, nil, nil); err != nil {
+	if _, err := NewHTTPServer(&fakeClassroomService{}, false, nil); err != nil {
 		t.Fatalf("NewHTTPServer(valid) error = %v", err)
 	}
 }
 
 func TestReadyzRequiresConfiguredCredentialsAndUsableCache(t *testing.T) {
-	classroomService := &fakeClassroomService{usableTodayCache: true}
-	credentialsConfigured := false
-	httpServer := newTestHTTPServer(classroomService, func() bool {
-		return credentialsConfigured
-	})
-
-	router := gin.New()
-	router.GET("/readyz", httpServer.Readyz)
-
-	responseRecorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	router.ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("readyz without credentials status = %d, want %d", responseRecorder.Code, http.StatusServiceUnavailable)
+	serveReadyz := func(httpServer *HTTPServer) *httptest.ResponseRecorder {
+		router := gin.New()
+		router.GET("/readyz", httpServer.Readyz)
+		responseRecorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		router.ServeHTTP(responseRecorder, request)
+		return responseRecorder
 	}
 
-	credentialsConfigured = true
-	classroomService.usableTodayCache = false
-	responseRecorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	router.ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusServiceUnavailable {
-		t.Fatalf("readyz without cache status = %d, want %d", responseRecorder.Code, http.StatusServiceUnavailable)
+	// Credentials missing: not ready even with a usable cache.
+	withoutCredentials := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, false)
+	if code := serveReadyz(withoutCredentials).Code; code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz without credentials status = %d, want %d", code, http.StatusServiceUnavailable)
 	}
 
+	// Credentials configured but no usable cache: still not ready.
+	classroomService := &fakeClassroomService{usableTodayCache: false}
+	withCredentials := newTestHTTPServer(classroomService, true)
+	if code := serveReadyz(withCredentials).Code; code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz without cache status = %d, want %d", code, http.StatusServiceUnavailable)
+	}
+
+	// Cache becomes usable: ready.
 	classroomService.usableTodayCache = true
-	responseRecorder = httptest.NewRecorder()
-	request = httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	router.ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusOK {
-		t.Fatalf("readyz with credentials and cache status = %d, want %d", responseRecorder.Code, http.StatusOK)
+	if code := serveReadyz(withCredentials).Code; code != http.StatusOK {
+		t.Fatalf("readyz with credentials and cache status = %d, want %d", code, http.StatusOK)
 	}
 }
 
@@ -113,7 +101,7 @@ func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 			PartialCampuses:    []string{"04"},
 			LastRefreshWarning: "部分校区数据刷新失败，已展示可用数据",
 		},
-	}, nil)
+	}, true)
 
 	router := gin.New()
 	router.GET("/readyz", httpServer.Readyz)
@@ -155,7 +143,7 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 				{ID: "01", Name: "西土城"},
 			},
 		},
-	}, nil)
+	}, true)
 
 	router := gin.New()
 	httpServer.RegisterRoutes(router)
@@ -190,7 +178,7 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 
 func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 	upstreamError := errors.New("raw upstream token detail should not leak")
-	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: upstreamError}, nil)
+	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: upstreamError}, true)
 
 	router := gin.New()
 	httpServer.RegisterRoutes(router)
@@ -234,7 +222,7 @@ func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 
 func TestNoRouteServesSPAFallback(t *testing.T) {
 	router := gin.New()
-	newTestHTTPServer(nil, nil).RegisterRoutes(router)
+	newTestHTTPServer(nil, true).RegisterRoutes(router)
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
@@ -281,7 +269,7 @@ func TestNoRouteServesSPAFallback(t *testing.T) {
 }
 
 func TestGzipMiddlewareCompressesAPIAndSkipsHealthz(t *testing.T) {
-	httpServer := newTestHTTPServer(nil, nil)
+	httpServer := newTestHTTPServer(nil, true)
 	router := gin.New()
 	router.Use(gzipMiddleware())
 	router.GET("/api/test", func(c *gin.Context) {
