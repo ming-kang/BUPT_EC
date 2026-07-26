@@ -462,3 +462,24 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+
+## Session 15: 架构简化重构收尾：父任务集成审查与归档
+
+**Date**: 2026-07-27
+**Task**: 架构简化重构收尾：父任务集成审查与归档
+**Branch**: `main`
+
+### Summary
+
+四个子任务全部归档后的父任务集成审查：三镜头并行（跨子任务验收标准 / 文档与 CHANGELOG 一致性 / 完整构建与全栈冒烟）全部 pass、零 blocker。实测总账：go.mod 声明依赖 43→15 行、module graph 77→40、前端 gzip 293,407→210,143 B（-28.4%）、四子任务合计 147 文件 +9888/-3645。批次④越界检查通过（无过期模型收敛/生命周期重构/TS/Dockerfile/goreleaser）。冒烟覆盖 task build 全链路 + 8 组 HTTP 断言 + 安全红线 grep（响应侧零泄漏）。审查发现 7 处文档缺口已修补（/readyz version 字段与升级校验、静态缓存契约与排障、体积预算 CI 步、根级 ErrorBoundary、native equivalent 版本注入措辞、父 PRD 依赖口径）。遗留：人工视觉回归待用户执行；服务端 WARN 日志仍原样打印 transport 错误（既有行为，非本轮引入）。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c54463b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
