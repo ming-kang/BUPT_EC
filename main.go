@@ -21,6 +21,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
+// version is the build version reported by the startup log and /readyz. It
+// defaults to "dev" and is overridden at release build time via
+// -ldflags "-X main.version=<tag>".
+var version = "dev"
+
 type application struct {
 	runtimeConfig    config.RuntimeConfig
 	classroomService *service.ClassroomService
@@ -112,7 +117,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf("BUPT_EC listening on %s", addr)
+		log.Printf("BUPT_EC %s listening on %s", version, addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 			return

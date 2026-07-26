@@ -92,6 +92,7 @@ func (server *HTTPServer) Readyz(c *gin.Context) {
 		"status":                    http.StatusText(code),
 		"jw_credentials_configured": configured,
 		"runtime":                   status,
+		"version":                   version,
 	})
 }
 

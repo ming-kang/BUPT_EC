@@ -8,6 +8,17 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Added
+
+- `/readyz` now includes a `version` field, and the startup log records the
+  same build version (`dev` for local builds without injection).
+
+### Changed
+
+- Release binaries embed the build version at build time (`-trimpath` plus
+  `-ldflags` version injection: the release tag, or `nightly-<commit>` for
+  nightly builds), so packaged builds report the exact deployed version and
+  omit local build paths.
 
 ## [0.1.6] - 2026-07-11
 

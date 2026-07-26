@@ -127,6 +127,7 @@ func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 
 	var body struct {
 		Runtime service.RuntimeStatus `json:"runtime"`
+		Version string                `json:"version"`
 	}
 	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode readyz partial response: %v", err)
@@ -136,6 +137,9 @@ func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 	}
 	if body.Runtime.LastRefreshWarning == "" {
 		t.Fatalf("readyz missing partial warning: %#v", body.Runtime)
+	}
+	if body.Version != "dev" {
+		t.Fatalf("readyz version = %q, want default %q", body.Version, "dev")
 	}
 }
 
