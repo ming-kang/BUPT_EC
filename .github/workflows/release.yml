@@ -46,7 +46,7 @@ jobs:
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
         with:
           name: frontend-dist
-          path: frontend/dist
+          path: web/dist
 
       - name: Build Go binary
         env:
@@ -59,7 +59,7 @@ jobs:
             version="nightly-$(git rev-parse --short HEAD)"
           fi
           mkdir -p "build/bupt-ec-linux-${GOARCH}"
-          go build -trimpath -ldflags "-s -w -X main.version=${version}" \
+          go build -trimpath -tags embed_assets -ldflags "-s -w -X main.version=${version}" \
             -o "build/bupt-ec-linux-${GOARCH}/bupt-ec" -v ./
 
       - name: Upload Go binary

@@ -1,3 +1,6 @@
+# NOTE: Keep the commands in this gate in sync with Taskfile.yml and
+# docs/development.md (local developers run the same checks via `task check`,
+# `task test`, and `task build`).
 name: Quality
 
 on:
@@ -90,6 +93,15 @@ jobs:
 
       - name: Build Go packages
         run: go build ./...
+
+      - name: Build with embedded assets
+        # vet/test/build above stay tag-less on purpose: they gate the bare
+        # clone (placeholder) build. This step catches embed pattern breakage
+        # before release.
+        run: |
+          rm -rf web/dist
+          cp -r frontend/dist web/dist
+          go build -tags embed_assets ./...
 
       - name: Run govulncheck
         # go run reuses the module/build caches managed by actions/setup-go,

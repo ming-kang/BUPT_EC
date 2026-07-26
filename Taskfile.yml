@@ -1,0 +1,66 @@
+# Taskfile.yml — local development entry points (Task v3, https://taskfile.dev).
+# Works on Windows/Linux/macOS via Task's built-in shell interpreter.
+# CI keeps native commands: when editing tasks here, keep the commands in sync
+# with .github/workflows/quality.yml and docs/development.md.
+version: '3'
+
+vars:
+  BIN: bupt-ec{{exeExt}}
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo dev
+
+tasks:
+  frontend:install:
+    desc: Install frontend dependencies (frozen lockfile)
+    dir: frontend
+    cmds:
+      - pnpm install --frozen-lockfile
+
+  frontend:build:
+    desc: Build frontend into frontend/dist (embedded by -tags embed_assets)
+    deps: [frontend:install]
+    dir: frontend
+    cmds:
+      - pnpm build
+    sources:
+      - src/**/*
+      - public/**/*
+      - index.html
+      - package.json
+      - vite.config.js
+      - pnpm-lock.yaml
+    generates:
+      - dist/**/*
+
+  build:
+    desc: Full release-equivalent binary with embedded frontend
+    deps: [frontend:build]
+    cmds:
+      - rm -rf web/dist
+      - cp -r frontend/dist web/dist
+      - go build -trimpath -tags embed_assets -ldflags "-s -w -X main.version={{.VERSION}}" -o {{.BIN}} ./
+
+  test:
+    desc: Backend tests with race detector (no embed tag; works on a clean checkout)
+    cmds:
+      - go test -race ./...
+
+  check:
+    desc: Local quality gate mirroring quality.yml (Go + frontend)
+    cmds:
+      - |
+        unformatted="$(gofmt -l .)"
+        if [ -n "$unformatted" ]; then echo "Files need gofmt:"; echo "$unformatted"; exit 1; fi
+      - go vet ./...
+      - go mod tidy -diff
+      - go mod verify
+      - task: frontend:install
+      - pnpm -C frontend lint
+      - pnpm -C frontend test
+      - pnpm -C frontend audit:prod
+      - pnpm -C frontend audit:dev
+
+  vuln:
+    desc: govulncheck (needs network; same pinned version as CI)
+    cmds:
+      - go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...

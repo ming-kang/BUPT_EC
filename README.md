@@ -13,7 +13,7 @@ BUPT_EC is a lightweight BUPT empty-classroom query service. It shows today's av
 
 ```text
 Browser
-  -> Go / Gin backend (embedded React + Ant Design UI)
+  -> Go backend (embedded React + Ant Design UI)
   -> HTTP login to BUPT JW system
   -> todayClassrooms?campusId=01|04
   -> normalized JSON response
@@ -55,12 +55,14 @@ active/active is not recommended (see [operations.md](docs/operations.md#deploym
 ## Develop locally
 
 ```bash
-cd frontend && pnpm install && pnpm build && cd ..
-go run ./
+task build   # frontend build + embed + Go build → ./bupt-ec (bupt-ec.exe on Windows)
+./bupt-ec
 # open http://127.0.0.1:8080/
 ```
 
-Requires Go 1.25.12+ (or Go 1.26.5+), Node 22, pnpm 9.15.x, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
+`go run ./` also works but compiles without the `embed_assets` build tag, so it serves the API plus a placeholder page instead of the UI; the native equivalent of `task build` is `cd frontend && pnpm install && pnpm build && cd .. && rm -rf web/dist && cp -r frontend/dist web/dist && go build -tags embed_assets -o bupt-ec ./`.
+
+Requires Go 1.25.12+ (or Go 1.26.5+), Node 22, pnpm 9.15.x, [Task](https://taskfile.dev) for the `task` entry points, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
 
 ## Documentation
 

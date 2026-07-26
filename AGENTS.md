@@ -8,14 +8,15 @@ The frontend is in `frontend/src/`; put reusable UI in `components/` and colocat
 
 ## Build, Test, and Development
 
-Build the embedded frontend before running the Go server:
+Local entry points live in `Taskfile.yml` ([Task](https://taskfile.dev)):
 
 ```bash
-cd frontend && pnpm install && pnpm build && cd ..
-go run ./
+task build   # pnpm build → copy frontend/dist to web/dist → go build -tags embed_assets
+task test    # go test -race ./...
+task check   # gofmt/vet/tidy/verify + frontend lint/test/audits (mirrors CI)
 ```
 
-Use `go build -o bupt-ec -v ./` for a binary, `go test ./...` for backend tests, and `go test -race ./...` before a substantial change. Run `gofmt -w` on changed Go files and verify `go vet ./...`.
+Native equivalents without `task`: `cd frontend && pnpm install && pnpm build && cd ..`, then `rm -rf web/dist && cp -r frontend/dist web/dist` and `go build -tags embed_assets -o bupt-ec ./`. `go run ./` and bare `go build` compile without the tag and serve a placeholder page instead of the UI (this keeps clean checkouts buildable). Use `go test ./...` for backend tests and `go test -race ./...` before a substantial change. Run `gofmt -w` on changed Go files and verify `go vet ./...`.
 
 For frontend work, use `pnpm dev`, `pnpm build`, `pnpm lint`, and `pnpm test` from `frontend/`. Vite proxies `/api` to `http://localhost:8080`.
 

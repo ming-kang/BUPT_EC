@@ -28,18 +28,23 @@ Startup reads configuration once. Process environment values override `.env`; a 
 
 ## Run locally
 
-The Go binary embeds `frontend/dist` (`//go:embed` in `router.go`), so build the frontend once before running or building the backend:
+The `web/` package embeds the frontend only when built with `-tags embed_assets` (which expects `frontend/dist` copied to `web/dist`). Without the tag — the default for `go run ./`, `go test`, and bare `go build` — the backend compiles on a clean checkout and serves a small placeholder page instead of the UI. `task build` ([Task](https://taskfile.dev)) runs the whole chain:
 
 ```bash
-cd frontend
-pnpm install
-pnpm build
-cd ..
-go run ./
+task build   # pnpm build → copy frontend/dist to web/dist → go build -tags embed_assets
+./bupt-ec    # bupt-ec.exe on Windows
 # open http://127.0.0.1:8080/
 ```
 
-For frontend work with hot reload, run both dev servers:
+Without `task`, the equivalent is:
+
+```bash
+cd frontend && pnpm install && pnpm build && cd ..
+rm -rf web/dist && cp -r frontend/dist web/dist
+go build -tags embed_assets -o bupt-ec ./
+```
+
+For frontend work with hot reload, run both dev servers (the backend only needs to answer `/api`, so plain `go run ./` is fine here):
 
 ```bash
 go run ./                # terminal 1: backend on 127.0.0.1:8080
@@ -49,8 +54,16 @@ cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to localhos
 ## Tests and checks
 
 ```bash
+task test    # go test -race ./...
+task check   # gofmt/vet/tidy/verify + frontend lint/test/audits (mirrors CI)
+task vuln    # govulncheck (needs network; same pinned version as CI)
+```
+
+Native equivalents, for environments without `task`:
+
+```bash
 go test ./...              # unit tests always run; integration tests skip
-go test -race ./...        # what CI runs
+go test -race ./...        # what CI and `task test` run
 go vet ./...
 gofmt -l .                 # must print nothing
 GOTOOLCHAIN=go1.25.12 go mod tidy -diff   # go.mod/go.sum match the import graph
@@ -59,8 +72,10 @@ cd frontend && pnpm lint && pnpm test && pnpm build
 cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
 
-The reusable quality gate (`.github/workflows/quality.yml`) also runs `go mod tidy -diff`
-and `go mod verify` after Go setup so PR/main/tag pipelines reject untidy module metadata.
+The reusable quality gate (`.github/workflows/quality.yml`) runs the same
+checks, plus an embedded-assets build (`go build -tags embed_assets` after
+copying the freshly built frontend to `web/dist`); the other Go steps stay
+tag-less so a clean checkout without `frontend/dist` keeps building.
 
 Integration tests in `service/integration_test.go` hit the real JW system and compile only with `go test -tags integration ./service`. `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; `TestQueryOne` and `TestQueryAll` accept that pair or `JW_TOKEN`. Without the required credentials they skip with a clear message.
 
@@ -73,7 +88,8 @@ Backend protocol tests cover AES password encryption known vectors (`service/cry
 ## Project structure
 
 ```text
-main.go, router.go, handler.go            Gin entry points; main.go wires ClassroomService into HTTPServer
+main.go, router.go, handler.go            HTTP entry points; main.go wires ClassroomService into HTTPServer
+web/                     embedded frontend assets (real dist with -tags embed_assets, placeholder otherwise)
 service/
   classroom_service.go   ClassroomService struct, atomic day-cache slot, Clock, constructor
   realtime_data.go       public API: GetTodayClassrooms, refresh data flow
@@ -108,7 +124,7 @@ There is one public API endpoint, `GET /api/get_data`, plus `/healthz` and `/rea
 2. `POST <api>/login` performs an AES-encrypted password login and yields a token, held in memory only.
 3. `POST <api>/todayClassrooms?campusId=01|04` fetches classroom rows for Xitucheng (`01`) and Shahe (`04`).
 
-All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` is the sole production composition root: it calls `config.Load`, applies Gin/log settings, constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and `service.NewClassroomService`, then injects the resulting service into `NewHTTPServer` before route registration:
+All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` is the sole production composition root: it calls `config.Load`, applies the log settings, constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and `service.NewClassroomService`, then injects the resulting service into `NewHTTPServer` before route registration:
 
 - **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `NewJWClient` receives immutable username/password values plus an explicit `utils.HTTPDoer`; tests substitute `mockJWClient` or a fake doer.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, records whether the current token came from the startup `JW_TOKEN` snapshot or login, and deduplicates login/API-URL work with `singleflight.DoChan`. Each shared operation has its own bounded context detached from the first waiter's cancellation, while every caller can still stop waiting through its own context. On an auth failure, `RefreshAfterAuthFailure` rechecks the failed token inside singleflight: a delayed request reuses any newer token instead of logging in again. The injected override is invalidated only when that actual override token is rejected; expiration of a login-issued token does not change override state.

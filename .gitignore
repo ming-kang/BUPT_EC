@@ -16,6 +16,9 @@
 # Frontend build output staged for go:embed (copied from frontend/dist)
 /web/dist/
 
+# Task (go-task) fingerprint cache for sources/generates checksums
+/.task/
+
 # Test, coverage, and profiling output
 *.test
 *.out

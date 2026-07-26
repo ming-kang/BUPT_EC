@@ -19,6 +19,21 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   `-ldflags` version injection: the release tag, or `nightly-<commit>` for
   nightly builds), so packaged builds report the exact deployed version and
   omit local build paths.
+- The request correlation id response header is now `X-Log-Id` (previously
+  `LogID`). Body `log_id` fields are unchanged.
+- Response compression now applies only to compressible content types (JSON,
+  HTML, plain text, CSS, JavaScript, SVG, XML, wasm) and responses larger than
+  1 KB, so binary assets and tiny bodies are no longer gzipped. Hashed static
+  assets under `/assets/` are served with a one-year immutable `Cache-Control`
+  header, and the SPA page is served with `no-cache` plus an `ETag` so
+  browsers revalidate cheaply after deploys.
+
+### Removed
+
+- The `GIN_MODE` environment variable: the HTTP layer no longer uses Gin, so
+  the setting has no effect and is now ignored. Existing `GIN_MODE=` lines in
+  `/etc/bupt-ec/bupt-ec.env` are harmless; the installer no longer prompts for
+  a Gin mode.
 
 ## [0.1.6] - 2026-07-11
 

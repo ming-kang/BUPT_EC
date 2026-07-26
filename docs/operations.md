@@ -37,8 +37,10 @@ singleflight waiters). `source` is `override` when recovery was caused by a
 rejected startup `JW_TOKEN`, otherwise `login`. `outcome` is `success` or
 `failed`.
 
-Response encoding: the Gin gzip middleware is the only compressor for
-`/metrics`. Prometheus client compression is disabled so scrapers with
+Response encoding: the gzhttp wrapper is the only compressor for `/metrics`
+(it compresses only responses larger than 1 KB whose content type is on a
+compressible allow-list — JSON, HTML, plain text, CSS, JavaScript, SVG, XML,
+wasm). Prometheus client compression is disabled so scrapers with
 `Accept-Encoding: gzip` decompress once into Prometheus text format. Health and
 readiness stay uncompressed.
 
@@ -127,7 +129,7 @@ Set `LOG_CALLER=1` in the environment file to add source file/line to each recor
 Every `/api/*` request gets a `log_id` that appears:
 
 - in every log record produced while handling that request,
-- in the `LogID` response header,
+- in the `X-Log-Id` response header,
 - in the JSON body of error responses from `/api/get_data`.
 
 When a user reports an error, ask for the `log_id` from the error response and search the logs:
