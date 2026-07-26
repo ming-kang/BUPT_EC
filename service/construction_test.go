@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"BUPT_EC/cache"
 	"BUPT_EC/config"
 )
 
@@ -14,27 +13,22 @@ func TestNewClassroomServiceValidatesDependenciesWithoutLeakingOverride(t *testi
 		Campuses:      []config.CampusConfig{{ID: "01", Name: "西土城"}},
 		TokenOverride: secretOverride,
 	}
-	store := cache.New()
 	client := &mockJWClient{}
-	var typedNilStore *cache.TodayClassroomsStore
 	var typedNilClient *mockJWClient
 
 	tests := []struct {
 		name    string
 		options ClassroomServiceOptions
-		store   TodayClassroomCache
 		client  JWClient
 	}{
-		{name: "missing cache", options: options, client: client},
-		{name: "typed nil cache", options: options, store: typedNilStore, client: client},
-		{name: "missing JW client", options: options, store: store},
-		{name: "typed nil JW client", options: options, store: store, client: typedNilClient},
-		{name: "missing campuses", options: ClassroomServiceOptions{TokenOverride: secretOverride}, store: store, client: client},
+		{name: "missing JW client", options: options},
+		{name: "typed nil JW client", options: options, client: typedNilClient},
+		{name: "missing campuses", options: ClassroomServiceOptions{TokenOverride: secretOverride}, client: client},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := NewClassroomService(tt.options, tt.store, tt.client)
+			_, err := NewClassroomService(tt.options, tt.client)
 			if err == nil {
 				t.Fatal("NewClassroomService() expected constructor error")
 			}
@@ -52,7 +46,6 @@ func TestNewClassroomServiceCopiesCampusOptions(t *testing.T) {
 	}
 	svc, err := NewClassroomService(
 		ClassroomServiceOptions{Campuses: campuses},
-		cache.New(),
 		&mockJWClient{},
 	)
 	if err != nil {

@@ -11,7 +11,6 @@ import (
 	"syscall"
 	"time"
 
-	"BUPT_EC/cache"
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
@@ -43,7 +42,6 @@ func Init() (*application, error) {
 		return nil, fmt.Errorf("init logging: %w", err)
 	}
 
-	store := cache.New()
 	httpClient := utils.NewHTTPClient()
 	jwClient, err := service.NewJWClient(runtimeConfig.JW.Username, runtimeConfig.JW.Password, httpClient)
 	if err != nil {
@@ -57,7 +55,7 @@ func Init() (*application, error) {
 		Campuses:      runtimeConfig.Campuses,
 		TokenOverride: runtimeConfig.JW.Token,
 		Metrics:       runtimeMetrics,
-	}, store, jwClient)
+	}, jwClient)
 	if err != nil {
 		return nil, fmt.Errorf("create classroom service: %w", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"BUPT_EC/config"
@@ -32,21 +33,18 @@ type systemClock struct{}
 
 func (systemClock) Now() time.Time { return time.Now() }
 
-// TodayClassroomCache is the typed process-local cache for same-day classroom data.
-// Implementations must not require callers to know storage keys or interface{} casts.
-type TodayClassroomCache interface {
-	Load() (*model.TodayClassrooms, bool)
-	Store(value *model.TodayClassrooms, expiration time.Duration)
-}
-
 // ClassroomService owns all runtime state for classroom queries:
 // token/API URL caching, refresh coordination and runtime status.
 type ClassroomService struct {
 	tokenManager *TokenManager
-	cache        TodayClassroomCache
-	campuses     []config.CampusConfig
-	jwClient     JWClient
-	clock        Clock
+	// todayCache holds the single same-day classroom payload. Stored values are
+	// treated as immutable: responses copy before mutating (classroomResponse),
+	// and cross-day rejection happens on read via the Date guard in
+	// getCachedTodayClassroomsAt, so no TTL/janitor is needed.
+	todayCache atomic.Pointer[model.TodayClassrooms]
+	campuses   []config.CampusConfig
+	jwClient   JWClient
+	clock      Clock
 	// backoffRandom returns one sample in [0,1] for total-failure jitter.
 	// Always non-nil after construction (production or injected).
 	backoffRandom RandomSample
@@ -92,10 +90,7 @@ type ClassroomServiceOptions struct {
 	WarmupJitter func() time.Duration
 }
 
-func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCache, client JWClient) (*ClassroomService, error) {
-	if isNilDependency(store) {
-		return nil, errors.New("classroom cache store is required")
-	}
+func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*ClassroomService, error) {
 	if isNilDependency(client) {
 		return nil, errors.New("JW client is required")
 	}
@@ -116,7 +111,6 @@ func NewClassroomService(options ClassroomServiceOptions, store TodayClassroomCa
 		warmupJitter = randomWarmupJitter
 	}
 	s := &ClassroomService{
-		cache:         store,
 		campuses:      append([]config.CampusConfig(nil), options.Campuses...),
 		jwClient:      client,
 		clock:         clock,

@@ -18,8 +18,6 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"BUPT_EC/cache"
 )
 
 func init() {
@@ -80,7 +78,7 @@ func newTestServiceWithOptions(t *testing.T, client JWClient, options ClassroomS
 	if options.BackoffRandom == nil {
 		options.BackoffRandom = func() float64 { return 0.5 }
 	}
-	svc, err := NewClassroomService(options, cache.New(), client)
+	svc, err := NewClassroomService(options, client)
 	if err != nil {
 		t.Fatalf("NewClassroomService() error = %v", err)
 	}
@@ -289,29 +287,6 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	}
 }
 
-func TestCacheExpirationAlwaysPositive(t *testing.T) {
-	now := time.Date(2026, 7, 9, 12, 0, 0, 0, businessLocation)
-	staleUntil := endOfDay(now)
-	d := cacheExpiration(now, staleUntil)
-	if d <= 0 {
-		t.Fatalf("cacheExpiration positive day = %s, want > 0", d)
-	}
-	if want := staleUntil.Sub(now); d != want {
-		t.Fatalf("cacheExpiration = %s, want %s", d, want)
-	}
-
-	// Past or equal StaleUntil must not yield a non-positive go-cache TTL.
-	if got := cacheExpiration(now, now); got != time.Second {
-		t.Fatalf("cacheExpiration(now, now) = %s, want 1s", got)
-	}
-	if got := cacheExpiration(now, now.Add(-time.Hour)); got != time.Second {
-		t.Fatalf("cacheExpiration past StaleUntil = %s, want 1s", got)
-	}
-	if got := cacheExpiration(now, now.Add(500*time.Millisecond)); got != time.Second {
-		t.Fatalf("cacheExpiration sub-second remaining = %s, want 1s", got)
-	}
-}
-
 func TestDoRefreshStampsCacheAtCompletionAcrossMidnight(t *testing.T) {
 	beforeMidnight := time.Date(2026, 7, 9, 23, 59, 50, 0, businessLocation)
 	afterMidnight := time.Date(2026, 7, 10, 0, 0, 5, 0, businessLocation)
@@ -351,9 +326,6 @@ func TestDoRefreshStampsCacheAtCompletionAcrossMidnight(t *testing.T) {
 	wantStaleUntil := endOfDay(afterMidnight)
 	if !resp.StaleUntil.Equal(wantStaleUntil) {
 		t.Fatalf("StaleUntil = %v, want %v", resp.StaleUntil, wantStaleUntil)
-	}
-	if d := cacheExpiration(afterMidnight, resp.StaleUntil); d <= 0 {
-		t.Fatalf("cache TTL would be non-positive: %s", d)
 	}
 
 	cached, ok := svc.getCachedTodayClassrooms()

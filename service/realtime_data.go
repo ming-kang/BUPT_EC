@@ -270,24 +270,15 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 		Error:           apiErr,
 	}
 
-	s.cache.Store(today, cacheExpiration(now, today.StaleUntil))
+	// today is never mutated after this Store: classroomResponse copies before
+	// changing Stale/Error, and doRefresh only reads prev.Campuses. Cross-day
+	// expiry is enforced on read by the Date guard in getCachedTodayClassroomsAt.
+	s.todayCache.Store(today)
 	return classroomRefreshResult{
 		value:    today,
 		kind:     kind,
 		failures: failures,
 	}
-}
-
-// cacheExpiration returns the go-cache TTL for a today-classrooms entry.
-// go-cache treats non-positive durations as never-expire; clamp to a short
-// positive TTL if StaleUntil is not after now (defensive; completion-time
-// stamping normally keeps StaleUntil in the future).
-func cacheExpiration(now, staleUntil time.Time) time.Duration {
-	d := staleUntil.Sub(now)
-	if d < time.Second {
-		return time.Second
-	}
-	return d
 }
 
 func emptyCampusInfo(campusConfig config.CampusConfig) model.CampusInfo {
@@ -321,8 +312,8 @@ func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, b
 }
 
 func (s *ClassroomService) getCachedTodayClassroomsAt(now time.Time) (*model.TodayClassrooms, bool) {
-	cached, ok := s.cache.Load()
-	if !ok || cached == nil {
+	cached := s.todayCache.Load()
+	if cached == nil {
 		return nil, false
 	}
 	if cached.Date != now.In(businessLocation).Format("2006-01-02") {
