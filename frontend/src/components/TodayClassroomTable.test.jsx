@@ -226,6 +226,9 @@ describe("TodayClassroomTable room modal (R9)", () => {
     expect(document.querySelector(".ant-modal-wrap").style.display).not.toBe(
       "none"
     );
+    // The title comes from the opened room's identity, so the user can still
+    // tell which room the now-empty dialog refers to.
+    expect(within(dialog).getByText("3-201")).toBeTruthy();
   });
 
   it("keeps the modal mounted when the table falls into the empty state", () => {

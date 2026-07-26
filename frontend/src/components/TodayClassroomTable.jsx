@@ -9,7 +9,9 @@ function roomKey(room) {
 }
 
 function TodayClassroomTable(props) {
-  const [activeRoomKey, setActiveRoomKey] = useState(null);
+  // Holds the opened room's identity (stable key + display name), never its
+  // data: capacity and free_times always come from the latest payload below.
+  const [openedRoom, setOpenedRoom] = useState(null);
   const selectedBuildings = useMemo(
     () => (Array.isArray(props.selectedBuildings) ? props.selectedBuildings : []),
     [props.selectedBuildings]
@@ -64,7 +66,7 @@ function TodayClassroomTable(props) {
   // the filtered emptyClassrooms) so background refreshes update an open
   // modal and building/time filter changes cannot blank it out.
   const activeRoom = useMemo(() => {
-    if (activeRoomKey == null) {
+    if (openedRoom == null) {
       return null;
     }
     return (
@@ -75,9 +77,9 @@ function TodayClassroomTable(props) {
             building: building.name,
           }))
         )
-        .find((room) => roomKey(room) === activeRoomKey) || null
+        .find((room) => roomKey(room) === openedRoom.key) || null
     );
-  }, [buildings, activeRoomKey]);
+  }, [buildings, openedRoom]);
 
   if (!props.selectedCampusData) {
     return null;
@@ -94,11 +96,11 @@ function TodayClassroomTable(props) {
   // free-times fallback row takes over.
   const roomInfoModal = (
     <Modal
-      title={activeRoom?.display_name ?? ""}
-      open={activeRoomKey != null}
+      title={activeRoom?.display_name ?? openedRoom?.displayName ?? ""}
+      open={openedRoom != null}
       footer={null}
       onCancel={() => {
-        setActiveRoomKey(null);
+        setOpenedRoom(null);
       }}
     >
       <div className="room-info">
@@ -192,7 +194,10 @@ function TodayClassroomTable(props) {
                         type="button"
                         className="room-name"
                         onClick={() => {
-                          setActiveRoomKey(roomKey(record));
+                          setOpenedRoom({
+                            key: roomKey(record),
+                            displayName: record.display_name,
+                          });
                         }}
                       >
                         {record.display_name}
