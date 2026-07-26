@@ -1,0 +1,31 @@
+{
+  "id": "arch-simplify-refactor",
+  "name": "arch-simplify-refactor",
+  "title": "架构简化重构：依赖瘦身与技术栈现代化",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-07-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-26-hygiene-quick-wins",
+    "07-26-backend-subtraction",
+    "07-26-degin-http-rewrite",
+    "07-26-frontend-modernize"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/07-26-arch-simplify-refactor/research/audit-engineering.md", "reason": "工程化审计证据：CI/gitignore/版本注入/文档矛盾的 file:line 依据"}
+{"file": ".trellis/tasks/07-26-arch-simplify-refactor/research/audit-frontend.md", "reason": "dayjs 未使用与版本前缀策略的证据"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "CI 命令、发布卫生与检查清单约定"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "C:/Program Files/Git/readyz 增加 version 字段需符合响应契约约定"}
