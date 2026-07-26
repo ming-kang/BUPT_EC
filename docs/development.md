@@ -69,13 +69,19 @@ gofmt -l .                 # must print nothing
 GOTOOLCHAIN=go1.25.12 go mod tidy -diff   # go.mod/go.sum match the import graph
 go mod verify
 cd frontend && pnpm lint && pnpm test && pnpm build
+cd frontend && pnpm size    # gzip budget over dist/, CI runs it after the build
 cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
 
 The reusable quality gate (`.github/workflows/quality.yml`) runs the same
 checks, plus an embedded-assets build (`go build -tags embed_assets` after
 copying the freshly built frontend to `web/dist`); the other Go steps stay
-tag-less so a clean checkout without `frontend/dist` keeps building.
+tag-less so a clean checkout without `frontend/dist` keeps building. `task
+check` skips `pnpm size` on purpose (it needs a fresh production build) — run
+it by hand when changing frontend dependencies or chunk splitting.
+
+`BUNDLE_REPORT=1 pnpm build` additionally writes a treemap report to
+`frontend/bundle-stats.local.html` (gitignored, never inside `dist/`).
 
 Integration tests in `service/integration_test.go` hit the real JW system and compile only with `go test -tags integration ./service`. `TestLogin` requires `JW_USERNAME`/`JW_PASSWORD`; `TestQueryOne` and `TestQueryAll` accept that pair or `JW_TOKEN`. Without the required credentials they skip with a clear message.
 
@@ -109,7 +115,7 @@ utils/                   HTTP helpers
 frontend/src/            React app (Vite + Ant Design)
   selectionContext.js    selection state: reducer + useSelection hook
   SelectionProvider.jsx  context provider
-  useTodayClassrooms.js  data fetching + auto-refresh on expires_at
+  useTodayClassrooms.js  SWR data fetching + auto-refresh on expires_at
   todayClassroomsResponse.js  API envelope normalization helpers
   components/            UI components (pickers, table, modal, ErrorBoundary)
 scripts/                 install.sh, release.sh, extract-changelog.sh
@@ -139,7 +145,7 @@ Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.L
 
 ## Frontend architecture
 
-- `useTodayClassrooms.js` fetches `/api/get_data` and schedules automatic reloads via pure helpers in `reloadSchedule.js`: near `expires_at` when fully fresh (1s floor), ≥15s for ordinary stale data, ≥30s for partial-campus data, and 10s/20s/30s/60s client-failure backoff. Each schedule samples `random` once, applies **positive-only** bounded jitter (≤10% of base, cap 5s), then clamps to remaining `stale_until` so the final delay never exceeds the hard display deadline. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future. Hidden tabs drop timers; resume after expiry clears stale campuses before a single background reload. Background polls do **not** full-page spin.
+- `useTodayClassrooms.js` fetches `/api/get_data` through `swr` and schedules automatic reloads via pure helpers in `reloadSchedule.js`: near `expires_at` when fully fresh (1s floor), ≥15s for ordinary stale data, ≥30s for partial-campus data, and 10s/20s/30s/60s client-failure backoff. SWR's `refreshInterval` drives the poll (through a never-falsy wrapper — a falsy interval would end the polling chain permanently) and a custom `onErrorRetry` drives the backoff, so the same pure schedule covers both paths. Each schedule samples `random` once, applies **positive-only** bounded jitter (≤10% of base, cap 5s), then clamps to remaining `stale_until` so the final delay never exceeds the hard display deadline. A snapshot is kept only while its date matches the Shanghai business day and `stale_until` remains in the future; failures keep the last good snapshot because SWR stores data and errors on separate tracks and the hook merges them during render. Hidden tabs issue no requests (timers may re-arm, but polls are skipped and an armed retry gives up when it wakes hidden); resume after expiry clears stale campuses before a single background reload. Background polls do **not** full-page spin.
 - `todayClassroomsResponse.js` normalizes backend envelopes before UI code reads them. Class-period “now” and “today” use Asia/Shanghai to match the backend business day.
 - Selection state (campus, buildings, class times, display preferences) lives in a `useReducer` store exposed through `SelectionProvider` / `useSelection()`; preferences persist to `localStorage` in the reducer.
 - The classroom table is lazy-loaded behind `Suspense` and an `ErrorBoundary`.

@@ -13,6 +13,15 @@ import { gzipSync } from 'node:zlib';
 // Pre-upgrade baseline for reference: 293,407 B (2026-07-27, antd 5.12.6 /
 // vite 6.4.3, same gzip -9 metric). If you exceed the budget intentionally,
 // update BUDGET_BYTES here with a justification.
+//
+// Known and accepted trade-off: this is a TOTAL budget, not a first-load one.
+// Grouping antd into one eagerly preloaded vendor chunk hoists the parts that
+// used to live in lazy chunks (Modal/Empty/Tag/Divider/Switch + rc-dialog),
+// so first load went 183,599 B → 207,242 B (index.html + index js/css +
+// react-vendor + antd-vendor) even though the total dropped ~28%. Bought with
+// it: antd-vendor keeps its hash across application-only releases. Revisit
+// (per-entry budget, or a getModuleInfo-based "statically reachable only"
+// split) if antd usage in lazy routes grows.
 const BUDGET_BYTES = 230_888;
 
 const dist = join(fileURLToPath(new URL('..', import.meta.url)), 'dist');

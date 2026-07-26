@@ -12,6 +12,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 - `/readyz` now includes a `version` field, and the startup log records the
   same build version (`dev` for local builds without injection).
+- The frontend error state now shows the request `log_id` when the server
+  returns one, so a failure can be reported and traced precisely.
 
 ### Changed
 
@@ -34,6 +36,29 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   the setting has no effect and is now ignored. Existing `GIN_MODE=` lines in
   `/etc/bupt-ec/bupt-ec.env` are harmless; the installer no longer prompts for
   a Gin mode.
+
+### Fixed
+
+- The room detail dialog now follows background refreshes instead of freezing
+  the free periods captured when it was opened, and it no longer closes itself
+  when a refresh empties the table or the filters change.
+- The campus buttons and the classroom table no longer show a blank frame on
+  the first data frame, and class periods that have already ended are rendered
+  as unavailable immediately instead of briefly appearing selected.
+- The class-time picker resyncs its clock when a backgrounded tab becomes
+  visible again, so periods that ended while the tab was hidden stop being
+  offered as selectable.
+- An unexpected frontend crash now renders a plain "please refresh" page and
+  logs the component stack to the console instead of leaving a blank page.
+
+### Dependencies
+
+- Ant Design 5.12 → 5.29, React 18.2 → 18.3, Vite 6.4 → 7.3, and the data layer
+  now uses `swr`. The two remaining `@ant-design/icons` glyphs are inlined and
+  that dependency is dropped, the main classroom table renders as a native
+  table, and Ant Design ships as its own chunk that stays cached across
+  releases that only change application code: total gzipped assets drop from
+  ~293 KB to ~210 KB.
 
 ## [0.1.6] - 2026-07-11
 

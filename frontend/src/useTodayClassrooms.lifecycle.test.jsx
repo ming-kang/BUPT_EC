@@ -440,6 +440,89 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(fetch.mock.calls.length).toBe(callsAfterError + 1);
   });
 
+  it("restarts the failure ladder at 10s after an intervening successful payload", async () => {
+    // Contract §4 row "valid payload → reset client-failure count": SWR only
+    // increments retryCount along one error-retry chain, so the rung after a
+    // recovery must be 10s again, never the 20s second rung. Both failures are
+    // driven by the polling chain (a fresh error chain each time), never by
+    // manual mutate — bound mutate would reset the count on its own and make
+    // the assertion vacuous.
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    const shortLived = () => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        usablePayload({
+          data: { expires_at: new Date(Date.now() + 3_000).toISOString() },
+        }),
+    });
+    fetch
+      .mockImplementationOnce(async () => shortLived())
+      .mockImplementationOnce(async () => {
+        throw new Error("network down");
+      })
+      .mockImplementationOnce(async () => shortLived())
+      .mockImplementation(async () => {
+        throw new Error("network down");
+      });
+
+    renderProbe();
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+
+    // ~3s: the poll driven by expires_at hits failure #1 and arms rung 1.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("true");
+    });
+    const afterFirstFailure = fetch.mock.calls.length;
+    expect(afterFirstFailure).toBe(2);
+
+    // Backoff window stays quiet: SWR's polling loop skips fetching while the
+    // cache holds an error, so only the ladder timer can issue a request.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(fetch.mock.calls.length).toBe(afterFirstFailure);
+
+    // Rung 1 (10s) fires and succeeds → the failure count must reset.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_500);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("false");
+    });
+    expect(fetch.mock.calls.length).toBe(afterFirstFailure + 1);
+
+    // The next poll fails again, starting a brand new error chain.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("true");
+    });
+    const afterSecondFailure = fetch.mock.calls.length;
+    expect(afterSecondFailure).toBe(afterFirstFailure + 2);
+
+    // Still silent 9s after failure #2 …
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(7_500);
+    });
+    expect(fetch.mock.calls.length).toBe(afterSecondFailure);
+
+    // … and retried by ~11s: rung 1 again. Had the count carried over, rung 2
+    // (20s) would keep this window silent too.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await waitFor(() => {
+      expect(fetch.mock.calls.length).toBe(afterSecondFailure + 1);
+    });
+  });
+
   it("clears expired snapshot and reloads once when becoming visible after stale_until", async () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     let visibility = "visible";
@@ -495,13 +578,15 @@ describe("useTodayClassrooms lifecycle", () => {
     // Stale snapshot may still be in state while hidden.
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
 
-    // Become visible after the hard deadline: revalidateOnFocus reloads
-    // immediately; the pending chain tick is absorbed by the dedupe window.
+    // Become visible after the hard deadline. The prompt reload comes from the
+    // polling chain resuming (its interval is the 1s floor once the cached
+    // snapshot stopped being displayable); SWR arms focus revalidation only
+    // focusThrottleInterval after mount, so these two events are still inside
+    // the throttle window and cannot double-fire.
     await act(async () => {
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    // Duplicate visible events are throttled (focusThrottleInterval).
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
