@@ -430,3 +430,35 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+
+## Session 14: 重构批次4：前端现代化（frontend-modernize）
+
+**Date**: 2026-07-27
+**Task**: 重构批次4：前端现代化（frontend-modernize）
+**Branch**: `main`
+
+### Summary
+
+四路并行研究后按 8 步提交落地：antd 5.29/React 18.3 升级并清理 4 条 CVE overrides、Vite 7 并显式锁 build.target=safari14、normalizeResponse 去 throw 与 ApiError/log_id 透传、SWR 替换手写数据层（spike 验证可测性后走主路，胶水约 40 行，逃生出口未触发）、antd Table 换原生表格并内联图标（懒加载 chunk 106KB→3.26KB）、antd-vendor 分组+visualizer+CI gzip 体积预算、Modal/campus/裁剪渲染期派生与时钟重同步、ErrorBoundary 与 aria-pressed。总 gzip 293,407→210,143 B（-28.4%），首屏因 antd 归组升 23.6KB 换 vendor hash 稳定（已记录）。测试 69→112，契约/UI 双镜头对抗验证通过，全链路冒烟 11 项 pass。ToggleButtonGroup 完整档经判据评估跳过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `edb4d35` | (see git log) |
+| `c992435` | (see git log) |
+| `d574915` | (see git log) |
+| `282242c` | (see git log) |
+| `2135321` | (see git log) |
+| `8689af2` | (see git log) |
+| `6510b12` | (see git log) |
+| `ebe5a25` | (see git log) |
+| `d57c2ca` | (see git log) |
+| `8daed66` | (see git log) |
+| `84a1dfe` | (see git log) |
+| `c3b6791` | (see git log) |
+
+### Status
+
+[OK] **Completed**
