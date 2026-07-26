@@ -96,6 +96,42 @@ describe("ClassTimePicker derived pruning (R10)", () => {
   });
 });
 
+describe("ClassTimePicker aria-pressed (R12)", () => {
+  function pressedOf(name) {
+    return screen.getByRole("button", { name }).getAttribute("aria-pressed");
+  }
+
+  it("exposes the pruned selection through aria-pressed", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(BASE_NOW);
+    renderPicker({ state: makeState({ selectedClassTimes: [1, 2] }) });
+
+    // Node 1 has ended: pruned out during render, so not pressed.
+    expect(pressedOf("01")).toBe("false");
+    expect(pressedOf("02")).toBe("true");
+    expect(pressedOf("03")).toBe("false");
+  });
+
+  it("flips aria-pressed when the selection changes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(BASE_NOW);
+    const { rerender } = renderPicker({ state: makeState() });
+    expect(pressedOf("03")).toBe("false");
+
+    rerender(
+      <SelectionContext.Provider
+        value={{
+          state: makeState({ selectedClassTimes: [3] }),
+          dispatch: vi.fn(),
+        }}
+      >
+        <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
+      </SelectionContext.Provider>
+    );
+    expect(pressedOf("03")).toBe("true");
+  });
+});
+
 describe("ClassTimePicker clock resync (R11)", () => {
   it("resyncs now when the tab becomes visible again", () => {
     vi.useFakeTimers();

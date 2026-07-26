@@ -36,6 +36,9 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
               ) : null}
               <Button
                 type={activeCampusId === campus.id ? "primary" : "default"}
+                // R12: single-select group, but kept on aria-pressed like the
+                // other pickers (design D10) instead of a radiogroup rewrite.
+                aria-pressed={activeCampusId === campus.id}
                 onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
               >
                 {campus.name}

@@ -32,6 +32,9 @@ function BuildingPicker({ selectedCampusData }) {
         <Button
           key={`${selectedCampusData.id}-${building.name}`}
           type={selectedBuildings.includes(building.name) ? "primary" : "default"}
+          // R12: selection is conveyed by colour only; aria-pressed exposes it
+          // to assistive tech.
+          aria-pressed={selectedBuildings.includes(building.name)}
           onClick={() => {
             const next = selectedBuildings.includes(building.name)
               ? selectedBuildings.filter((x) => x !== building.name)

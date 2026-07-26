@@ -137,6 +137,8 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
         <Button
           key={item.node}
           type={prunedSelected.includes(item.node) ? "primary" : "default"}
+          // R12: mirror the derived (pruned) selection, not the raw store list.
+          aria-pressed={prunedSelected.includes(item.node)}
           className={state.showClassTime ? "time-slot-show-time" : ""}
           onClick={() => {
             const times = prunedSelected.includes(item.node)
