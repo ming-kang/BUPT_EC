@@ -8,6 +8,11 @@
 *.so
 *.dylib
 
+# Local Go build output (e.g. go build -o bupt-ec)
+/bupt-ec
+/build/
+/dist/
+
 # Test, coverage, and profiling output
 *.test
 *.out
@@ -25,7 +30,6 @@ run_log/
 
 # Local secrets and private config
 .env
-config/*.json
 
 # Project-local workflow files
 .claude/

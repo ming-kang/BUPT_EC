@@ -20,9 +20,6 @@ importers:
       antd:
         specifier: ^5.12.6
         version: 5.12.6(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
-      dayjs:
-        specifier: ^1.11.10
-        version: 1.11.10
       prop-types:
         specifier: ^15.8.1
         version: 15.8.1
