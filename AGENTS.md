@@ -30,3 +30,25 @@ Add focused Go tests beside implementation as `*_test.go`. Use injected fakes (`
 Use one scoped Conventional Commit, such as `fix(installer): validate checksum before extract` or `docs: clarify local setup`. Add user-visible changes to `CHANGELOG.md` under **Unreleased**. PRs need a short description, linked issue when applicable, commands run, and screenshots for UI changes.
 
 Never commit credentials, JW tokens, logs, or private `.env` files. Use `.env.example`; environment values override the optional root `.env`. Keep public behavior, endpoints, configuration, deployment, and release documentation synchronized with code changes.
+
+<!-- TRELLIS:START -->
+# Trellis Instructions
+
+These instructions are for AI assistants working in this project.
+
+This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
+
+- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
+- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
+- `.trellis/workspace/` — per-developer journals and session traces
+- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
+
+If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
+
+If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
+- `.agents/skills/` — reusable Trellis skills
+- `.codex/agents/` — optional custom subagents
+
+Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
+
+<!-- TRELLIS:END -->
