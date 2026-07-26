@@ -10,6 +10,7 @@
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "test": "vitest run",
+    "size": "node scripts/check-bundle-size.mjs",
     "audit:prod": "pnpm audit --prod --audit-level moderate",
     "audit:dev": "pnpm audit --audit-level high"
   },
@@ -33,6 +34,7 @@
     "eslint-plugin-react-refresh": "^0.5.3",
     "globals": "^17.8.0",
     "jsdom": "^29.1.1",
+    "rollup-plugin-visualizer": "^7.0.1",
     "vite": "^7.3.6",
     "vitest": "^3.2.7"
   },

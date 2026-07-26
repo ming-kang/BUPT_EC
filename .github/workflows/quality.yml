@@ -53,6 +53,10 @@ jobs:
         working-directory: frontend
         run: pnpm build
 
+      - name: Check bundle size budget
+        working-directory: frontend
+        run: node scripts/check-bundle-size.mjs
+
       - name: Upload frontend dist
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

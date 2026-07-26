@@ -47,6 +47,11 @@ tasks:
 
   check:
     desc: Local quality gate mirroring quality.yml (Go + frontend)
+    # Deliberate deviation from quality.yml: the bundle size budget gate
+    # ("Check bundle size budget" step) needs a fresh production build, which
+    # would slow down every local `task check`. Run it manually when touching
+    # frontend deps/chunks:
+    #   pnpm -C frontend build && node frontend/scripts/check-bundle-size.mjs
     cmds:
       - |
         unformatted="$(gofmt -l .)"
