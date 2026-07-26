@@ -36,7 +36,7 @@ gzip：
 
 ## Acceptance Criteria
 
-- [ ] `go.mod` 直接依赖不含 gin、gin-contrib/static；`go list -m all | wc -l` 相比主分支显著下降（预期 ≤ 15）。
+- [ ] `go.mod` 直接依赖不含 gin、gin-contrib/static；go.mod 声明依赖（require 行）≤ 15，完整 module graph（`go list -m all`，含 test-only）相比主分支显著下降（实测 76 → 40）。
 - [ ] 4 条路由 + SPA fallback + 404 行为与现状一致：`/api/get_data`（含 log_id 信封）、`/healthz`、`/readyz`、`/metrics`、静态资源、深链接回落 index.html。
 - [ ] gzip 行为：Accept-Encoding 协商正确；所有可压缩响应带 `Vary: Accept-Encoding`；png/woff2 不二次压缩；现有 router_test / handler_test / metrics_endpoint_test 语义级断言通过（允许因中间件实现更换调整测试内部装配）。
 - [ ] 干净检出（无 frontend/dist）下 `go vet ./...`、`go test ./...` 全绿；`task build` 产出可运行的完整二进制。

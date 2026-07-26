@@ -128,7 +128,10 @@ config.go 6 处 + main.go:40 + config_test 8 处（`TestLoadGinModeAndLogCaller`
 | B9 | `/index.html` | 301 → `./` | 200 直接服务 | 接受 |
 | B10 | 静态响应缓存头 | 全无 | ETag/Cache-Control 按 D3 | 增强 |
 | B11 | panic 日志 | gin stderr 纯文本无 log_id | slog JSON 带 log_id | 增强，无测试锁定 |
-| B12 | 路径含 `//`、`..` | 直接进 SPA | ServeMux 先 301 清洗 | 接受（更安全） |
+| B12 | 路径含 `//`、`..`；`/assets` 无尾斜杠 | `//healthz` 直接进 SPA；`/assets` 由 FileServer 301 | ServeMux 先 **307** 重定向到清洗路径（Go 1.25 findHandler 用 TemporaryRedirect；`/assets`→`/assets/` 同为 307） | 接受（更安全；307 为 mux 内建不可配） |
+| B13 | Vary 头范围 | 仅实际压缩的响应带 `Vary: Accept-Encoding` | 经 gzhttp 的一切响应（含 identity、404、304）都带 | 接受（缓存语义更正确：该 URL 的表示确随 Accept-Encoding 变化） |
+| B14 | index.html 条件/范围请求 | `c.Data` 一律 200 全量 | `http.ServeContent` 完整语义：Range→206、If-Match 失配→412、响应带 `Accept-Ranges: bytes` | 接受（标准语义；浏览器 GET HTML 不发这些头） |
+| B15 | `/assets/` 目录路径 | FileServer 输出目录列表 | 一律 404（listings 无内容 hash，不得配 immutable 缓存） | 修复 |
 
 ## 4. 测试策略
 
@@ -141,7 +144,7 @@ config.go 6 处 + main.go:40 + config_test 8 处（`TestLoadGinModeAndLogCaller`
 ## 5. 依赖变化
 
 - 新增：`github.com/klauspost/compress v1.19.1`（纯 Go，零传递依赖）。
-- 删除：`gin-gonic/gin`、`gin-contrib/static` 直接依赖及 ~30 个传递模块（sonic/quic-go/mongo-driver/validator 等）。`go mod tidy` 后 `go list -m all` 预期 ≤15。
+- 删除：`gin-gonic/gin`、`gin-contrib/static` 直接依赖及 ~30 个传递模块（sonic/quic-go/mongo-driver/validator 等）。口径说明：go.mod 声明依赖（require 行）降到 15（7 直接 + 8 indirect）；`go list -m all`（含 test-only 传递的完整 module graph）从 76 降到 40。PRD 验收按声明依赖口径。
 
 ## 6. 回滚与提交切分
 
