@@ -7,7 +7,6 @@ How versioning, the changelog, and the release pipeline work, and how to cut a r
 | Flavor | Trigger | Audience |
 |---|---|---|
 | `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; first-install fallback when no release choice exists (edge); notes may be GitHub-generated |
-
 | `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible production deployments (recommended) |
 
 Both flavors publish the same four assets, which the installer depends on by exact name:
@@ -64,7 +63,7 @@ If something fails after the commit/tag but before the push, undo locally with `
 
 ## CI/CD pipeline
 
-Two workflows, no overlap:
+Three workflows: `ci.yml` and `release.yml` both call `quality.yml` (reusable gate), so the checks stay identical with no overlap:
 
 ### `ci.yml` — pull requests
 
@@ -72,12 +71,11 @@ Runs the full quality gate on every PR to `main`: frontend production/toolchain 
 
 ### `release.yml` — pushes to `main` and `v*` tags
 
-Four jobs in sequence:
+Three jobs in sequence:
 
-1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`).
-2. **build-frontend** — builds the React app, uploads `frontend/dist` as an artifact.
-3. **build-go** — matrix over `amd64`/`arm64`; embeds the frontend artifact and compiles static Linux binaries (`CGO_ENABLED=0`).
-4. **release** — packs each binary with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests build provenance, then publishes:
+1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`); the frontend it builds is uploaded as the `frontend-dist` artifact.
+2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `nightly-<commit>` on `main` pushes).
+3. **release** — packs each binary with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
    - **main push**: deletes and re-creates the rolling `nightly` prerelease.
    - **manual dispatch**: a dry-run — assets are uploaded as workflow artifacts, nothing is published.

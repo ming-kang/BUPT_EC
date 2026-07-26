@@ -100,7 +100,7 @@ frontend/src/            React app (Vite + Ant Design)
   todayClassroomsResponse.js  API envelope normalization helpers
   components/            UI components (pickers, table, modal, ErrorBoundary)
 scripts/                 install.sh, release.sh, extract-changelog.sh
-.github/workflows/       ci.yml (PRs), release.yml (main pushes + tags)
+.github/workflows/       ci.yml (PRs), release.yml (main pushes + tags), quality.yml (reusable gate)
 ```
 
 ## Backend architecture
