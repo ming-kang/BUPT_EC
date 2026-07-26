@@ -13,6 +13,9 @@
 /build/
 /dist/
 
+# Frontend build output staged for go:embed (copied from frontend/dist)
+/web/dist/
+
 # Test, coverage, and profiling output
 *.test
 *.out
