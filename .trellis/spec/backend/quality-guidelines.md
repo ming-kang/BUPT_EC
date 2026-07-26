@@ -123,6 +123,33 @@ PR, and release checks share the same thresholds: production dependencies fail
 at moderate or above; the full development toolchain fails at high or above.
 Generate and verify `frontend/pnpm-lock.yaml` with pnpm 9.15.x.
 
+### Convention: CI Workflow Editing Rules
+
+**What**: Constraints that hold across `.github/workflows/*.yml` edits.
+
+- Every third-party action is pinned to a 40-char commit SHA with a trailing
+  version comment. Never introduce an action you cannot pin (prefer reusing an
+  action+SHA already present in the repo, or a `go run <module>@<version>`
+  equivalent, as done for `govulncheck`).
+- Every job carries `timeout-minutes` — except jobs that call a reusable
+  workflow (`uses:` form), where GitHub Actions rejects the key; their
+  effective timeout is the inner job's `timeout-minutes` inside
+  `quality.yml`.
+- `frontend/dist` is built once in the `quality.yml` reusable gate and shared
+  as the `frontend-dist` artifact (retention 3 days). `release.yml`'s
+  `build-go` downloads it before `go build` so `//go:embed frontend/dist`
+  resolves; keep the upload/download artifact names in sync when renaming.
+- Release binaries build with
+  `go build -trimpath -ldflags "-s -w -X main.version=<value>"`; the version
+  value is the tag name for tag builds and `nightly-<short-sha>` otherwise.
+  Keep the `-X` target in sync with the `version` variable in `main.go`
+  (see api-contract.md "Health and Readiness" for the injection gotchas).
+
+**Why**: The pinning rule is a supply-chain gate; the artifact contract spans
+two workflow files and breaks silently when only one side is renamed; the
+`timeout-minutes` exception avoids a recurring "add timeout to every job"
+false fix that GitHub rejects at parse time.
+
 ## Scenario: Dependency Security Baseline
 
 ### 1. Scope / Trigger

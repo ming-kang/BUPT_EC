@@ -220,9 +220,20 @@ Use it for liveness only.
 cache exists. Its body includes:
 
 - `status`: HTTP status text;
+- `version`: build version string (`main.version`, default `"dev"`; injected at
+  release time via `go build -ldflags "-X main.version=<value>"` — release tag
+  for tag builds, `nightly-<short-sha>` for nightly builds);
 - `jw_credentials_configured`: result of the injected immutable
   `config.RuntimeConfig.HasJWCredentials()` predicate;
 - `runtime`: `service.RuntimeStatus` diagnostics.
+
+> **Gotcha (version injection)**: `-X main.version=...` only binds in a real
+> `go build`. In `go test` the test binary's main package is the synthesized
+> test main, so `go test -ldflags "-X main.version=..."` silently no-ops (the
+> package under test is addressed as `BUPT_EC`, not `main`). Also, Go 1.19+
+> deliberately excludes `-ldflags` values from `go version -m` build info —
+> audit the injected value at runtime via `/readyz` or the startup log, never
+> via `go version -m`.
 
 Runtime cache diagnostics keep age and completeness separate:
 
