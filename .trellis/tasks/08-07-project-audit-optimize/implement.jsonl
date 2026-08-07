@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-backend.md", "reason": "07-26 后端审计基线；对照已落地/仍有效/过时与批次④遗留"}
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-frontend.md", "reason": "07-26 前端审计基线；SWR/antd/TS 等项状态核对"}
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-engineering.md", "reason": "07-26 工程链路审计基线；CI/release/install 遗留项核对"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端规格总览与非协商规则（无 DB、状态挂 ClassroomService）"}
+{"file": ".trellis/spec/backend/runtime-state-and-cache.md", "reason": "缓存/刷新/token 现行契约，审计建议不得与之无意识冲突"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "API 与前端 SWR/快照契约；性能建议需标契约影响"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "质量门禁、前端体积预算、CI 同步规则"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流检查清单，避免只评单层漏契约"}

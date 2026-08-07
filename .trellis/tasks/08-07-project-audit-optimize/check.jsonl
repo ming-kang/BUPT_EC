@@ -1,0 +1,7 @@
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-backend.md", "reason": "核对：07-26 后端主要条目均有状态标注；批次④后端项均有继续做/降级/关闭"}
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-frontend.md", "reason": "核对：前端基线条目状态完整；TS/React19/antd 剩余债判定明确"}
+{"file": ".trellis/tasks/archive/2026-07/07-26-arch-simplify-refactor/research/audit-engineering.md", "reason": "核对：工程/CI/install/release 遗留项判定完整"}
+{"file": ".trellis/spec/backend/runtime-state-and-cache.md", "reason": "核对：缓存/刷新类建议未静默违反现行 runtime 约定"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "核对：涉及响应/前端数据层的建议已标契约影响"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "核对：工程类建议与质量门禁/体积预算叙述一致"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对：跨层条目在 backlog 中有统一优先级，非三份报告各说各话"}
