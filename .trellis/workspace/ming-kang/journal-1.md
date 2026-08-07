@@ -483,3 +483,33 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+
+## Session 16: 全面审计：性能与可维护性优化机会
+
+**Date**: 2026-08-07
+**Task**: 全面审计：性能与可维护性优化机会
+**Branch**: `main`
+
+### Summary
+
+对 07-26 减法重构后的 `main` 做只读审计（交付形态 A，不改产品代码）。产出 `research/audit-{backend,frontend,engineering}.md` 与跨层 `backlog.md`；对照 07-26 基线与批次④遗留项。批次④判定：lifecycle Run/Shutdown 与 TypeScript **继续做**；过期模型/singleflight/React19/goreleaser/install 大改 **降级**；Dockerfile **关闭**。`trellis-check` PASS。归档路径：`archive/2026-08/08-07-project-audit-optimize`。
+
+### Main Changes
+
+- 写入三份审计报告 + 优先级 backlog（建议后续任务：lifecycle-run-shutdown、release-hygiene 等）
+- 产品树零 diff
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1403f80` | (see git log) |
+
+### Testing
+
+- [OK] trellis-check PASS；抽样 file:line 锚点与当前源码一致
+
+### Status
+
+[OK] **Completed**
