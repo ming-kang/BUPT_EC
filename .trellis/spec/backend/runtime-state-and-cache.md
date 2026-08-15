@@ -420,9 +420,14 @@ validation.
 - `ClassroomService.HasUsableTodayCache()` reports a same-day cache that is
   fresh or stale-but-usable.
 
-`handler.go` returns `RuntimeStatus` in the readiness body so operators can see
-refresh/login timestamps and cache diagnostics. Keep status fields diagnostic;
-do not add credentials, tokens, or raw upstream payloads.
+The response surface is gated by `config.ReadyzDiagnostics`
+(`READYZ_DIAGNOSTICS`, default off): the default body carries only
+`status`+`version`, while the opt-in body adds `jw_credentials_configured` and
+the full `RuntimeStatus` block (refresh/login timestamps, cache diagnostics).
+Keep status fields diagnostic; do not add credentials, tokens, or raw upstream
+payloads. A loopback check is deliberately not used: the reference deployment
+fronts the binary with a same-host reverse proxy, so every request appears to
+originate from loopback and the check would not distinguish public traffic.
 
 ## Anti-Patterns
 

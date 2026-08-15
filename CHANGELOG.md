@@ -17,6 +17,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- `/readyz` no longer exposes runtime internals (login/refresh/cache
+  diagnostics) by default; the body now carries only `status` and `version`.
+  Set `READYZ_DIAGNOSTICS=1` (environment or `/etc/bupt-ec/bupt-ec.env`) to
+  restore the full diagnostics block for troubleshooting.
+- Successful `/api/get_data` responses now include the request `log_id`,
+  mirroring the failure envelope (both paths correlate with server logs and
+  the `X-Log-Id` header).
 - Nightly releases are now published by clobbering the rolling `nightly`
   release assets in place instead of deleting and re-creating the release,
   so `releases/download/nightly/...` URLs no longer briefly 404 between

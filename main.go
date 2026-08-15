@@ -69,6 +69,7 @@ func Init() (*application, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create HTTP server: %w", err)
 	}
+	httpServer.SetReadyzDiagnostics(runtimeConfig.ReadyzDiagnostics)
 
 	return &application{
 		runtimeConfig:    runtimeConfig,

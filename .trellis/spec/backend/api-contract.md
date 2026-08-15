@@ -14,7 +14,7 @@ charset=utf-8`, `json.Marshal`, no trailing newline).
 | --- | --- | --- |
 | `GET /api/get_data` | `handler.go::GetData` | Returns today's classroom data or a safe service error. |
 | `GET /healthz` | `handler.go::Healthz` | Liveness probe: `200 {"status":"ok"}`. |
-| `GET /readyz` | `handler.go::Readyz` | Readiness probe with credential/cache/runtime status; 503 when not ready. |
+| `GET /readyz` | `handler.go::Readyz` | Readiness probe; 503 when not ready. Minimal surface is `status`+`version`; the full runtime diagnostics block (credential/cache details) is opt-in via `READYZ_DIAGNOSTICS` (`config.ReadyzDiagnostics`). |
 | `GET /metrics` | `handler.go::Metrics` | Loopback Prometheus exposition from an isolated registry; nil handler → 404. |
 | `GET /assets/` | `router.go::immutableCache` + `http.FileServerFS` | Hashed frontend build assets with immutable caching; directory paths are 404. |
 | any other path/method | `router.go::Routes` `fallback` | Unknown `/api/*` → JSON 404 `{"code":404,"msg":"not found","log_id":...}`; existing dist-root files (`favicon.ico`) → served `no-cache`; everything else → SPA fallback to `index.html`. |
@@ -87,11 +87,13 @@ must get valid Prometheus text after a single decompress. Public Nginx keeps
 
 ## `/api/get_data` Response Shape
 
-Success responses use this envelope:
+Success responses use this envelope (log_id mirrors the failure envelope so
+both paths are correlatable against server logs and the `X-Log-Id` header):
 
 ```json
 {
   "code": 0,
+  "log_id": "20260706120000ABCDEF...",
   "data": { "date": "2026-07-06", "campuses": [] }
 }
 ```

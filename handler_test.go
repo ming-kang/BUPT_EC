@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -85,6 +86,42 @@ func TestReadyzRequiresConfiguredCredentialsAndUsableCache(t *testing.T) {
 	}
 }
 
+func TestReadyzDefaultsToMinimalSurfaceWithoutDiagnostics(t *testing.T) {
+	serveReadyz := func(httpServer *HTTPServer) *httptest.ResponseRecorder {
+		responseRecorder := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+		http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
+		return responseRecorder
+	}
+
+	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
+	responseRecorder := serveReadyz(httpServer)
+	if responseRecorder.Code != http.StatusOK {
+		t.Fatalf("readyz status = %d, want %d", responseRecorder.Code, http.StatusOK)
+	}
+
+	var body map[string]json.RawMessage
+	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode readyz response: %v", err)
+	}
+	for _, key := range []string{"status", "version"} {
+		if _, ok := body[key]; !ok {
+			t.Fatalf("readyz minimal surface missing %q: %s", key, responseRecorder.Body.String())
+		}
+	}
+	for _, key := range []string{"runtime", "jw_credentials_configured"} {
+		if _, ok := body[key]; ok {
+			t.Fatalf("readyz minimal surface must not expose %q: %s", key, responseRecorder.Body.String())
+		}
+	}
+
+	// Not-ready keeps 503 on the minimal surface.
+	notReady := newTestHTTPServer(&fakeClassroomService{usableTodayCache: false}, true)
+	if code := serveReadyz(notReady).Code; code != http.StatusServiceUnavailable {
+		t.Fatalf("readyz not-ready status = %d, want %d", code, http.StatusServiceUnavailable)
+	}
+}
+
 func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 	httpServer := newTestHTTPServer(&fakeClassroomService{
 		usableTodayCache: true,
@@ -96,6 +133,7 @@ func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
 			LastRefreshWarning: "部分校区数据刷新失败，已展示可用数据",
 		},
 	}, true)
+	httpServer.SetReadyzDiagnostics(true)
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
@@ -146,14 +184,18 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 	}
 
 	var envelope struct {
-		Code int                    `json:"code"`
-		Data *model.TodayClassrooms `json:"data"`
+		Code  int                    `json:"code"`
+		LogID string                 `json:"log_id"`
+		Data  *model.TodayClassrooms `json:"data"`
 	}
 	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("decode GetData response: %v", err)
 	}
 	if envelope.Code != 0 {
 		t.Fatalf("GetData code = %d, want 0", envelope.Code)
+	}
+	if envelope.LogID == "" {
+		t.Fatal("GetData success envelope should carry a non-empty log_id")
 	}
 	if envelope.Data == nil {
 		t.Fatal("GetData data should not be nil")
@@ -326,6 +368,11 @@ func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	if len(identityBody) < 1024 {
 		t.Fatalf("fixture body = %d bytes, must be >= 1024 to exceed gzhttp MinSize", len(identityBody))
 	}
+	// Each request gets a fresh log_id; strip it before byte comparison.
+	stripLogID := func(body string) string {
+		return regexp.MustCompile(`"log_id":"[^"]*"`).ReplaceAllString(body, `"log_id":""`)
+	}
+	identityBody = stripLogID(identityBody)
 
 	// Compressible API response with Accept-Encoding: gzip is compressed once.
 	responseRecorder := httptest.NewRecorder()
@@ -347,8 +394,8 @@ func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read gzip body: %v", err)
 	}
-	if string(body) != identityBody {
-		t.Fatalf("decompressed body differs from identity body:\n%q\nvs\n%q", body, identityBody)
+	if stripLogID(string(body)) != identityBody {
+		t.Fatalf("decompressed body differs from identity body:\n%q\nvs\n%q", stripLogID(string(body)), identityBody)
 	}
 
 	// gzip;q=0 negotiates identity.
@@ -359,7 +406,7 @@ func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	if responseRecorder.Header().Get("Content-Encoding") != "" {
 		t.Fatalf("gzip;q=0 Content-Encoding = %q, want empty", responseRecorder.Header().Get("Content-Encoding"))
 	}
-	if responseRecorder.Body.String() != identityBody {
+	if stripLogID(responseRecorder.Body.String()) != identityBody {
 		t.Fatal("gzip;q=0 body should remain identity")
 	}
 

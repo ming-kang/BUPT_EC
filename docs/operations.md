@@ -72,7 +72,19 @@ Returns `200 {"status":"ok"}` whenever the process is up.
 
 ### `GET /readyz` — readiness
 
-Returns `200` when JW credentials are configured **and** a usable same-day cache exists; `503` otherwise. The body always includes diagnostics:
+Returns `200` when JW credentials are configured **and** a usable same-day cache exists; `503` otherwise.
+
+By default the body is minimal (no runtime internals on the public surface):
+
+```json
+{
+  "status": "OK",
+  "version": "v0.1.6"
+}
+```
+
+Set `READYZ_DIAGNOSTICS=1` (environment or `/etc/bupt-ec/bupt-ec.env`) to also
+return the full diagnostics block for troubleshooting:
 
 ```json
 {
@@ -95,6 +107,9 @@ Returns `200` when JW credentials are configured **and** a usable same-day cache
 ```
 
 - `version`: build version string. Release binaries get the tag (or `nightly-<short-sha>`) injected via `-ldflags "-X main.version=..."`; locally built binaries report `dev`.
+- The troubleshooting table below references `runtime` fields — those require
+  `READYZ_DIAGNOSTICS=1`, or use the structured logs (`journalctl -u bupt-ec`),
+  which always carry the same diagnostics with a `log_id`.
 - `cache_fresh`: within the ~5 minute fresh TTL.
 - `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
 - `cache_partial`: at least one configured campus used prior same-day data or an empty skeleton during the latest usable refresh. `partial_campuses` lists the affected campus IDs when present.

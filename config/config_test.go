@@ -216,6 +216,36 @@ func TestLoadLogCaller(t *testing.T) {
 	}
 }
 
+func TestLoadReadyzDiagnostics(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "defaults"},
+		{name: "one", in: "1", want: true},
+		{name: "mixed true", in: "TRUE", want: true},
+		// Invalid values parse as false (opt-in switch, same policy as LOG_CALLER).
+		{name: "garbage", in: "yes-please"},
+		{name: "zero", in: "0"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(map[string]string{
+				JWTokenKey:           "token",
+				ReadyzDiagnosticsKey: tt.in,
+			}))
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			if cfg.ReadyzDiagnostics != tt.want {
+				t.Fatalf("readyz diagnostics = %v, want %v", cfg.ReadyzDiagnostics, tt.want)
+			}
+		})
+	}
+}
+
 func TestLoadReturnsIndependentCampusSlices(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.env")
 	first, err := Load(path, mapLookup(map[string]string{JWTokenKey: "token"}))

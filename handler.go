@@ -22,7 +22,10 @@ type HTTPServer struct {
 	// hasJWCredentials is the startup credential predicate result. Runtime
 	// config is immutable after Init, so a snapshot bool is equivalent.
 	hasJWCredentials bool
-	metricsHandler   http.Handler
+	// readyzDiagnostics gates the full runtime diagnostics block on /readyz
+	// (opt-in via READYZ_DIAGNOSTICS; public responses stay minimal).
+	readyzDiagnostics bool
+	metricsHandler    http.Handler
 }
 
 func NewHTTPServer(classroomService classroomDataService, hasJWCredentials bool, metricsHandler http.Handler) (*HTTPServer, error) {
@@ -35,6 +38,12 @@ func NewHTTPServer(classroomService classroomDataService, hasJWCredentials bool,
 		hasJWCredentials: hasJWCredentials,
 		metricsHandler:   metricsHandler,
 	}, nil
+}
+
+// SetReadyzDiagnostics enables the full /readyz diagnostics block. Called
+// once during Init from the loaded runtime config.
+func (server *HTTPServer) SetReadyzDiagnostics(enabled bool) {
+	server.readyzDiagnostics = enabled
 }
 
 func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
@@ -53,8 +62,9 @@ func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"code": 0,
-		"data": todayData,
+		"code":   0,
+		"log_id": logs.GetLogIDFromContext(ctx),
+		"data":   todayData,
 	})
 }
 
@@ -63,7 +73,6 @@ func (server *HTTPServer) Healthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (server *HTTPServer) Readyz(w http.ResponseWriter, _ *http.Request) {
-	status := server.classroomService.GetRuntimeStatus()
 	configured := server.hasJWCredentials
 	ready := configured && server.classroomService.HasUsableTodayCache()
 	code := http.StatusOK
@@ -71,10 +80,21 @@ func (server *HTTPServer) Readyz(w http.ResponseWriter, _ *http.Request) {
 		code = http.StatusServiceUnavailable
 	}
 
+	// Default surface is minimal (status + version). Full runtime diagnostics
+	// are opt-in via READYZ_DIAGNOSTICS so public deployments do not expose
+	// login/refresh/cache internals.
+	if !server.readyzDiagnostics {
+		writeJSON(w, code, map[string]any{
+			"status":  http.StatusText(code),
+			"version": version,
+		})
+		return
+	}
+
 	writeJSON(w, code, map[string]any{
 		"status":                    http.StatusText(code),
 		"jw_credentials_configured": configured,
-		"runtime":                   status,
+		"runtime":                   server.classroomService.GetRuntimeStatus(),
 		"version":                   version,
 	})
 }

@@ -16,6 +16,9 @@ const (
 	JWTokenKey    = "JW_TOKEN"
 	AppAddrKey    = "APP_ADDR"
 	LogCallerKey  = "LOG_CALLER"
+	// ReadyzDiagnosticsKey gates the full runtime diagnostics on /readyz.
+	// Default off: public responses then carry only status+version.
+	ReadyzDiagnosticsKey = "READYZ_DIAGNOSTICS"
 
 	DefaultAppAddr = "127.0.0.1:8080"
 )
@@ -37,7 +40,10 @@ type RuntimeConfig struct {
 	JW        JWCredentials
 	AppAddr   string
 	LogCaller bool
-	Campuses  []CampusConfig
+	// ReadyzDiagnostics enables the full runtime diagnostics block on
+	// /readyz (opt-in; see ReadyzDiagnosticsKey).
+	ReadyzDiagnostics bool
+	Campuses          []CampusConfig
 }
 
 type LookupEnv func(string) (string, bool)
@@ -64,8 +70,9 @@ func Load(dotenvPath string, lookup LookupEnv) (RuntimeConfig, error) {
 			Password: resolve(JWPasswordKey),
 			Token:    resolve(JWTokenKey),
 		},
-		AppAddr:   resolve(AppAddrKey),
-		LogCaller: parseLogCaller(resolve(LogCallerKey)),
+		AppAddr:           resolve(AppAddrKey),
+		LogCaller:         parseLogCaller(resolve(LogCallerKey)),
+		ReadyzDiagnostics: parseLogCaller(resolve(ReadyzDiagnosticsKey)),
 		Campuses: []CampusConfig{
 			{ID: "01", Name: "西土城"},
 			{ID: "04", Name: "沙河"},
