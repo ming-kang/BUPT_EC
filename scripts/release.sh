@@ -61,12 +61,40 @@ awk -v ver="${bare}" -v today="${today}" '
   { print }
 ' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 
-# Refresh the compare links at the bottom.
-sed -i \
-  "s#^\[Unreleased\]: .*#[Unreleased]: ${REPO_URL}/compare/${version}...HEAD\n[${bare}]: ${REPO_URL}/compare/${prev}...${version}#" \
-  CHANGELOG.md
+# Refresh the compare links at the bottom (portable awk; no sed -i — BSD and
+# GNU sed disagree on -i suffixes and \n in replacements).
+awk -v repo="${REPO_URL}" -v ver="${version}" -v bare="${bare}" -v prev="${prev}" '
+  /^\[Unreleased\]:/ && !done {
+    print "[Unreleased]: " repo "/compare/" ver "...HEAD"
+    print "[" bare "]: " repo "/compare/" prev "..." ver
+    done = 1
+    next
+  }
+  { print }
+' CHANGELOG.md > CHANGELOG.md.tmp && mv CHANGELOG.md.tmp CHANGELOG.md
 
-sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${bare}\"/" frontend/package.json
+awk -v bare="${bare}" '
+  !done && /"version": "/ {
+    sub(/"version": "[^"]*"/, "\"version\": \"" bare "\"")
+    done = 1
+  }
+  { print }
+' frontend/package.json > frontend/package.json.tmp && mv frontend/package.json.tmp frontend/package.json
+
+# Fail loudly if any rewrite missed its target — a partial bump must never
+# reach the release commit.
+if ! grep -q "^## \[${bare}\] - ${today}$" CHANGELOG.md; then
+  echo "CHANGELOG.md is missing the ## [${bare}] heading; refusing to release." >&2
+  exit 1
+fi
+if ! grep -q "^\[${bare}\]: ${REPO_URL}/compare/${prev}\.\.\.${version}$" CHANGELOG.md; then
+  echo "CHANGELOG.md is missing the [${bare}] compare link; refusing to release." >&2
+  exit 1
+fi
+if ! grep -q "^  \"version\": \"${bare}\",$" frontend/package.json; then
+  echo "frontend/package.json version was not bumped to ${bare}; refusing to release." >&2
+  exit 1
+fi
 
 git add CHANGELOG.md frontend/package.json
 git commit -m "chore: release ${version}"

@@ -17,6 +17,15 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- Nightly releases are now published by clobbering the rolling `nightly`
+  release assets in place instead of deleting and re-creating the release,
+  so `releases/download/nightly/...` URLs no longer briefly 404 between
+  builds (installers keep working during a publish). The rolling `nightly`
+  tag is force-moved to the new commit on each publish.
+- `scripts/release.sh` now rewrites `CHANGELOG.md` compare links and the
+  frontend version with portable `awk` instead of GNU-only `sed -i`, and
+  verifies every rewrite landed before committing — running the release
+  script on macOS no longer risks silently corrupting those files.
 - SIGTERM/SIGINT shutdown now cancels in-flight JW refreshes and logins
   immediately (the service lifecycle is bridged into shared background work
   with `context.AfterFunc`), so shutdown tail latency no longer depends on the

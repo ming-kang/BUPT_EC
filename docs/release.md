@@ -77,7 +77,9 @@ Three jobs in sequence:
 2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `nightly-<commit>` on `main` pushes).
 3. **release** — packs each binary with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
-   - **main push**: deletes and re-creates the rolling `nightly` prerelease.
+   - **main push**: clobbers the rolling `nightly` prerelease assets in place
+     (`gh release upload --clobber` after force-moving the `nightly` tag), so
+     asset URLs never 404 between builds.
    - **manual dispatch**: a dry-run — assets are uploaded as workflow artifacts, nothing is published.
 
 Release assets keep this layout (the installer depends on it):

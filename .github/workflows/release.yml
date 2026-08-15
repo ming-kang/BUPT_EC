@@ -147,23 +147,28 @@ jobs:
             release/checksums.txt
             release/install.sh
 
-      - name: Delete previous nightly release
+      - name: Publish nightly release (main push, clobber assets)
         if: github.event_name == 'push' && github.ref_type == 'branch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete nightly --yes --cleanup-tag 2>/dev/null || true
-
-      - name: Publish nightly release (main push)
-        if: github.event_name == 'push' && github.ref_type == 'branch'
-        uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
-        with:
-          tag_name: nightly
-          name: nightly
-          prerelease: true
-          generate_release_notes: true
-          files: |
+          set -euo pipefail
+          assets=(
             release/bupt-ec-linux-amd64.tar.gz
             release/bupt-ec-linux-arm64.tar.gz
             release/checksums.txt
             release/install.sh
+          )
+          notes="nightly build of main @ ${GITHUB_SHA}"
+          # Move the rolling nightly tag to this commit first. Never delete
+          # the release: assets stay downloadable while --clobber replaces
+          # them, so consumers never hit a 404 window.
+          git tag -f nightly "$GITHUB_SHA"
+          git push origin -f refs/tags/nightly
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --notes "${notes}"
+            gh release upload nightly "${assets[@]}" --clobber
+          else
+            gh release create nightly "${assets[@]}" \
+              --title nightly --generate-notes --prerelease
+          fi
