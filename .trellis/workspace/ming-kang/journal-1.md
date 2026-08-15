@@ -513,3 +513,42 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed**
+
+## 2026-08-15 (evening): backlog 实现批次 —— 4 任务连做
+
+### Task
+
+按 08-07 审计 backlog 优先级顺序连做 4 个实现任务（每个独立规划→实现→检查→归档）：
+
+1. **08-15-lifecycle-run-shutdown**（B-01+B-02，M 级复杂任务）
+   - StartWarmup/WaitBackground → Run(ctx) error / Shutdown(ctx) error；5 侧门字段收敛为 lifecycleCtx/lifecycleCancel/schedulerDone；二次 Run 返回 ErrAlreadyRunning
+   - B-01 取消传播：worker 与 token 共享操作经 context.AfterFunc(lifecycle, cancel) 桥接 SIGTERM 取消（复合 cancel 防泄漏）；单 waiter 隔离保持（WithoutCancel）
+   - 独立 explorer 审查发现 2 处边界（已取消 lifecycle 下 token 操作拿满 12s 预算；测试日志残留）已修
+   - commit `6c806bf`
+2. **08-15-release-hygiene**（E-04+E-05，轻量 PRD-only）
+   - nightly 发布去 delete-then-create：tag force-move + gh release upload --clobber，资产 URL 无 404 空窗
+   - release.sh 两处 GNU-only sed -i → awk + 三道事后校验（防 macOS 静默损坏）；临时目录端到端演练验证语义一致 + 负路径拦截
+   - commit `70c8644`
+3. **08-15-frontend-picker-dedup**（F-03+F-06，M 级）
+   - 抽 ToggleButtonGroup/ToggleButton 共享组件（aria-pressed 仅在 boolean pressed 时输出——全选/设置按钮零回退）；三 Picker 接入 + CSS 收编
+   - F-06：formatShanghaiDateTime 替换 CampusSettingsModal 裸 toLocaleString
+   - 既有测试断言零修改通过；体积 210394/230888 B
+   - commit `bf9655a`
+4. **08-15-api-surface-hygiene**（B-07+B-11，轻量）
+   - /readyz 默认只返回 status+version；READYZ_DIAGNOSTICS=1 恢复全量诊断（拒绝 loopback 检测：同机反代下恒 loopback，XFF 可伪造）
+   - 成功信封补 log_id 与错误路径对称；gzip 测试改剥离 log_id 比较
+   - commit `cf6c238`
+
+### Main Changes
+
+- 4 个任务全部完成归档（archive/2026-08/）；spec（runtime-state-and-cache、api-contract、directory-structure）、docs、CHANGELOG 均同步
+- 环境注记：pi 环境无 trellis 子代理可执行文件（spawn pi ENOENT），trellis-implement/check 回退为内联实现 + 原生 subagent 审查
+
+### Testing
+
+- [OK] 每任务 go test -race ./... 全绿（lifecycle 加 -count=3）；gofmt/vet 干净；embed 构建通过；前端 119 测试全绿 + lint + build + 体积预算内
+- [SKIPPED] pnpm audit 失败为存量 devDependency 漏洞（vite/postcss/nanoid 链），与本次改动无关
+
+### Status
+
+[OK] **Completed** — backlog 剩余：frontend-typescript（L 级）、classroom-display-contract（需产品确认）、utils-into-service（S）、ETag/冷路径（按需/需批准）
