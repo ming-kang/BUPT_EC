@@ -1,5 +1,5 @@
 import PropTypes from "prop-types";
-import { Button, Card } from "antd";
+import { Card } from "antd";
 import { useEffect, useMemo, useState } from "react";
 import {
   formatShanghaiDate,
@@ -8,6 +8,7 @@ import {
   pruneEndedClassTimes,
 } from "../classTimeUtils";
 import { useSelection } from "../selectionContext";
+import { ToggleButton, ToggleButtonGroup } from "./ToggleButtonGroup";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
@@ -133,53 +134,52 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
 
   return (
     <Card className="class-time-picker responsive-card">
-      {normalizedOptions.map((item) => (
-        <Button
-          key={item.node}
-          type={prunedSelected.includes(item.node) ? "primary" : "default"}
-          // R12: mirror the derived (pruned) selection, not the raw store list.
-          aria-pressed={prunedSelected.includes(item.node)}
-          className={state.showClassTime ? "time-slot-show-time" : ""}
-          onClick={() => {
-            const times = prunedSelected.includes(item.node)
-              ? prunedSelected.filter((node) => node !== item.node)
-              : [...prunedSelected, item.node];
-            dispatch({ type: "SET_CLASS_TIMES", times });
-          }}
-          disabled={item.disabled}
-        >
-          <div>
-            {state.showClassTime ? (
-              <div
-                style={{
-                  fontSize: "0.7em",
-                  marginBottom: "-0.5em",
-                }}
-              >
-                {renderTime(item.time, 0)}
-              </div>
-            ) : null}
-            {String(item.node).padStart(2, "0")}
-            {state.showClassTime ? (
-              <div
-                style={{
-                  fontSize: "0.7em",
-                  marginTop: "-0.5em",
-                }}
-              >
-                {renderTime(item.time, 1)}
-              </div>
-            ) : null}
-          </div>
-        </Button>
-      ))}
-      <Button
-        type={isAllChecked() ? "primary" : "default"}
+      <ToggleButtonGroup
+        className="class-time-buttons"
+        options={normalizedOptions.map((item) => ({
+          value: item.node,
+          disabled: item.disabled,
+          className: state.showClassTime ? "time-slot-show-time" : "",
+          content: (
+            <div>
+              {state.showClassTime ? (
+                <div
+                  style={{
+                    fontSize: "0.7em",
+                    marginBottom: "-0.5em",
+                  }}
+                >
+                  {renderTime(item.time, 0)}
+                </div>
+              ) : null}
+              {String(item.node).padStart(2, "0")}
+              {state.showClassTime ? (
+                <div
+                  style={{
+                    fontSize: "0.7em",
+                    marginTop: "-0.5em",
+                  }}
+                >
+                  {renderTime(item.time, 1)}
+                </div>
+              ) : null}
+            </div>
+          ),
+        }))}
+        selectedValues={prunedSelected}
+        onToggle={(node) => {
+          const times = prunedSelected.includes(node)
+            ? prunedSelected.filter((x) => x !== node)
+            : [...prunedSelected, node];
+          dispatch({ type: "SET_CLASS_TIMES", times });
+        }}
+      />
+      <ToggleButton
         className={`select-all-btn ${state.showClassTime ? "time-slot-show-time" : ""}`}
         onClick={onCheckAllChange}
       >
         {isAllChecked() ? "取消" : "全选"}
-      </Button>
+      </ToggleButton>
     </Card>
   );
 }

@@ -1,0 +1,42 @@
+.toggle-button-group {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+}
+
+.toggle-button-group .ant-btn {
+    min-width: 6em;
+    border-radius: var(--bupt-ec-radius-sm);
+    transition: transform 0.15s ease, box-shadow 0.15s ease,
+        background-color 0.15s ease;
+}
+
+.toggle-button-group .ant-btn:hover {
+    transform: translateY(-1px);
+}
+
+@media (max-width: 767px) {
+    .toggle-button-group {
+        gap: 6px;
+    }
+
+    .toggle-button-group .ant-btn {
+        min-width: 4.5em;
+        padding: 0 10px;
+        font-size: 0.85em;
+    }
+}
+
+@media (max-width: 479px) {
+    .toggle-button-group {
+        gap: 4px;
+    }
+
+    .toggle-button-group .ant-btn {
+        min-width: 3.5em;
+        padding: 0 8px;
+        font-size: 0.8em;
+    }
+}

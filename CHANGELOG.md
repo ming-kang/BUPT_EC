@@ -55,6 +55,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- The campus settings dialog now shows the data-updated time in the
+  Asia/Shanghai business timezone instead of the visitor's local timezone,
+  so the timestamp matches the data's actual business day.
 - The room detail dialog now follows background refreshes instead of freezing
   the free periods captured when it was opened, and it no longer closes itself
   when a refresh empties the table or the filters change.

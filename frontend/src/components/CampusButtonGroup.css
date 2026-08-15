@@ -2,23 +2,10 @@
     margin-bottom: 16px;
 }
 
+/* Campus buttons share .toggle-button-group presentation; only the settings
+   trigger and its spacing details live here. */
 .campus-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
     gap: 10px;
-}
-
-.campus-buttons .ant-btn {
-    min-width: 6em;
-    border-radius: var(--bupt-ec-radius-sm);
-    transition: transform 0.15s ease, background-color 0.15s ease,
-        box-shadow 0.15s ease;
-}
-
-.campus-buttons .ant-btn:hover {
-    transform: translateY(-1px);
 }
 
 .campus-buttons .settings-trigger {

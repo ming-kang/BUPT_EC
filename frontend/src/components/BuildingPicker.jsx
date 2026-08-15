@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
-import { Button, Card } from "antd";
+import { Card } from "antd";
 import { useSelection } from "../selectionContext";
+import { ToggleButtonGroup } from "./ToggleButtonGroup";
 import "./BuildingPicker.css";
 
 const BUILDING_ALIASES = {
@@ -28,23 +29,19 @@ function BuildingPicker({ selectedCampusData }) {
 
   return (
     <Card className="building-picker responsive-card">
-      {buildings.map((building) => (
-        <Button
-          key={`${selectedCampusData.id}-${building.name}`}
-          type={selectedBuildings.includes(building.name) ? "primary" : "default"}
-          // R12: selection is conveyed by colour only; aria-pressed exposes it
-          // to assistive tech.
-          aria-pressed={selectedBuildings.includes(building.name)}
-          onClick={() => {
-            const next = selectedBuildings.includes(building.name)
-              ? selectedBuildings.filter((x) => x !== building.name)
-              : [...selectedBuildings, building.name];
-            dispatch({ type: "SET_BUILDINGS", buildings: next });
-          }}
-        >
-          {displayBuildingName(building.name)}
-        </Button>
-      ))}
+      <ToggleButtonGroup
+        options={buildings.map((building) => ({
+          value: building.name,
+          label: displayBuildingName(building.name),
+        }))}
+        selectedValues={selectedBuildings}
+        onToggle={(name) => {
+          const next = selectedBuildings.includes(name)
+            ? selectedBuildings.filter((x) => x !== name)
+            : [...selectedBuildings, name];
+          dispatch({ type: "SET_BUILDINGS", buildings: next });
+        }}
+      />
     </Card>
   );
 }

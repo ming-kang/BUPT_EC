@@ -1,6 +1,7 @@
 import PropTypes from "prop-types";
 import { Button, Divider, Modal, Switch, Typography } from "antd";
 import { GithubIcon } from "./icons";
+import { formatShanghaiDateTime } from "../classTimeUtils";
 import { useSelection } from "../selectionContext";
 
 function CampusSettingsModal(props) {
@@ -54,7 +55,7 @@ function CampusSettingsModal(props) {
         <Typography.Text type="secondary" style={{ display: "block", lineHeight: "1.9em" }}>
           当前数据更新时间：
           {props.todayData.data?.updated_at
-            ? new Date(props.todayData.data.updated_at).toLocaleString()
+            ? formatShanghaiDateTime(new Date(props.todayData.data.updated_at))
             : "未知"}
         </Typography.Text>
         <div

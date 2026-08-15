@@ -3,6 +3,7 @@ import { Button } from "antd";
 import { Fragment, Suspense, lazy, useState } from "react";
 import { SettingIcon } from "./icons";
 import { useSelection } from "../selectionContext";
+import { ToggleButton } from "./ToggleButtonGroup";
 import "./CampusButtonGroup.css";
 
 const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
@@ -15,7 +16,7 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
 
   return (
     <div className="campus-button-group">
-      <div className="campus-buttons">
+      <div className="toggle-button-group campus-buttons">
         {list.length === 0 ? (
           <Button
             className="settings-trigger"
@@ -34,15 +35,14 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
                   aria-label="设置"
                 />
               ) : null}
-              <Button
-                type={activeCampusId === campus.id ? "primary" : "default"}
+              <ToggleButton
                 // R12: single-select group, but kept on aria-pressed like the
                 // other pickers (design D10) instead of a radiogroup rewrite.
-                aria-pressed={activeCampusId === campus.id}
+                pressed={activeCampusId === campus.id}
                 onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
               >
                 {campus.name}
-              </Button>
+              </ToggleButton>
             </Fragment>
           ))
         )}
