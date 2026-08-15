@@ -289,7 +289,9 @@ func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 
-	svc.StartWarmup(context.Background())
+	runCtx, runCancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(runCtx) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -318,6 +320,15 @@ func TestGetTodayClassroomsSharesWarmupRefreshResult(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("request did not receive warmup refresh result")
+	}
+	runCancel()
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after cancel")
 	}
 }
 

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -57,7 +58,7 @@ func TestNextWarmupDelayUsesCacheStatePolicy(t *testing.T) {
 	}
 }
 
-func TestStartWarmupRunsImmediatelyAndStopsOnCancel(t *testing.T) {
+func TestRunRefreshesImmediatelyAndStopsOnCancel(t *testing.T) {
 	started := make(chan struct{})
 	var once sync.Once
 	client := &mockJWClient{
@@ -74,7 +75,8 @@ func TestStartWarmupRunsImmediatelyAndStopsOnCancel(t *testing.T) {
 		WarmupJitter: func() time.Duration { return 0 },
 	})
 	ctx, cancel := context.WithCancel(context.Background())
-	svc.StartWarmup(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
 
 	select {
 	case <-started:
@@ -93,12 +95,20 @@ func TestStartWarmupRunsImmediatelyAndStopsOnCancel(t *testing.T) {
 	cancel()
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
 	defer waitCancel()
-	if err := svc.WaitBackground(waitCtx); err != nil {
-		t.Fatalf("WaitBackground() error = %v", err)
+	if err := svc.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() returned %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after lifecycle cancel")
 	}
 }
 
-func TestStartWarmupWithCanceledContextDoesNotRefresh(t *testing.T) {
+func TestRunWithCanceledContextDoesNotRefresh(t *testing.T) {
 	called := make(chan struct{})
 	var once sync.Once
 	client := &mockJWClient{
@@ -110,11 +120,20 @@ func TestStartWarmupWithCanceledContextDoesNotRefresh(t *testing.T) {
 	svc := newTestService(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	svc.StartWarmup(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() with pre-canceled context returned %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return with pre-canceled context")
+	}
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
 	defer waitCancel()
-	if err := svc.WaitBackground(waitCtx); err != nil {
-		t.Fatalf("WaitBackground() error = %v", err)
+	if err := svc.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
 	}
 	select {
 	case <-called:
@@ -123,7 +142,7 @@ func TestStartWarmupWithCanceledContextDoesNotRefresh(t *testing.T) {
 	}
 }
 
-func TestStartWarmupSecondCallIsNoOp(t *testing.T) {
+func TestRunSecondCallReturnsError(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	var once sync.Once
@@ -141,25 +160,35 @@ func TestStartWarmupSecondCallIsNoOp(t *testing.T) {
 	svc := newTestService(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	svc.StartWarmup(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
 		t.Fatal("warmup did not start")
 	}
 
-	firstDone := warmupSchedulerDone(svc)
-	svc.StartWarmup(context.Background())
-	secondDone := warmupSchedulerDone(svc)
-	if firstDone != secondDone {
-		t.Fatal("second StartWarmup call created another scheduler")
+	firstDone := schedulerDone(svc)
+	if err := svc.Run(context.Background()); !errors.Is(err, ErrAlreadyRunning) {
+		t.Fatalf("second Run() error = %v, want ErrAlreadyRunning", err)
+	}
+	if secondDone := schedulerDone(svc); firstDone != secondDone {
+		t.Fatal("second Run call created another scheduler")
 	}
 
 	cancel()
 	close(release)
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() returned %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after cancel")
+	}
 }
 
-func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
+func TestShutdownPreventsNewRefreshWorkers(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{})
 	var once sync.Once
@@ -176,7 +205,8 @@ func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 	ctx, cancel := context.WithCancel(context.Background())
-	svc.StartWarmup(ctx)
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
 	select {
 	case <-started:
 	case <-time.After(time.Second):
@@ -187,15 +217,15 @@ func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer waitCancel()
 	waitErr := make(chan error, 1)
-	go func() { waitErr <- svc.WaitBackground(waitCtx) }()
+	go func() { waitErr <- svc.Shutdown(waitCtx) }()
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		if isBackgroundStopping(svc) {
+		if isLifecycleCanceled(svc) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("WaitBackground did not stop new workers")
+			t.Fatal("Shutdown did not stop new workers")
 		}
 		time.Sleep(time.Millisecond)
 	}
@@ -205,6 +235,116 @@ func TestWaitBackgroundPreventsNewRefreshWorkers(t *testing.T) {
 
 	close(release)
 	if err := <-waitErr; err != nil {
-		t.Fatalf("WaitBackground() error = %v", err)
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+}
+
+func TestShutdownCancelsInFlightRefreshWorker(t *testing.T) {
+	started := make(chan struct{})
+	var once sync.Once
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			once.Do(func() { close(started) })
+			// Block until the worker context is canceled; without lifecycle
+			// propagation this would hang for the full ClassroomRefreshLimit.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		},
+	}
+	svc := newTestService(t, client)
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("refresh worker did not start")
+	}
+
+	cancel()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer waitCancel()
+	if err := svc.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown() error = %v (in-flight refresh was not canceled promptly)", err)
+	}
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() returned %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after lifecycle cancel")
+	}
+}
+
+func TestShutdownCancelsSharedTokenLogin(t *testing.T) {
+	started := make(chan struct{})
+	var once sync.Once
+	client := &mockJWClient{
+		login: func(ctx context.Context, apiURL string) (string, error) {
+			once.Do(func() { close(started) })
+			// Block until the shared login context is canceled; without lifecycle
+			// bridging this would hang for the full jwRequestTimeout.
+			<-ctx.Done()
+			return "", ctx.Err()
+		},
+	}
+	svc := newTestService(t, client)
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan error, 1)
+	go func() { runDone <- svc.Run(ctx) }()
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("shared login did not start")
+	}
+
+	cancel()
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer waitCancel()
+	if err := svc.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown() error = %v", err)
+	}
+	select {
+	case err := <-runDone:
+		if err != nil {
+			t.Fatalf("Run() returned %v, want nil", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Run() did not return after lifecycle cancel")
+	}
+}
+
+func TestOnDemandRefreshWorksBeforeRun(t *testing.T) {
+	client := &mockJWClient{
+		queryCampus: func(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
+			return []model.JWClassInfo{{
+				NodeName:   "1",
+				NodeTime:   "08:00-08:45",
+				Classrooms: fmt.Sprintf("教学实验综合楼-%s(10)", campusID),
+			}}, nil
+		},
+	}
+	svc := newTestService(t, client)
+
+	// A service that never called Run still serves on-demand refreshes
+	// (lifecycleCtx == nil allows workers).
+	attempt, ok := svc.startClassroomRefresh(context.Background(), svc.now())
+	if !ok {
+		t.Fatal("on-demand refresh rejected before Run")
+	}
+	select {
+	case <-attempt.done:
+		if attempt.result.err != nil {
+			t.Fatalf("refresh error = %v", attempt.result.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("on-demand refresh did not finish")
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if err := svc.Shutdown(waitCtx); err != nil {
+		t.Fatalf("Shutdown() on never-run service error = %v", err)
 	}
 }

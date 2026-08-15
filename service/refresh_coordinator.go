@@ -1,5 +1,13 @@
 package service
 
+// This file implements a hand-rolled single-flight for classroom refreshes.
+// golang.org/x/sync/singleflight is deliberately not used here: the
+// coordinator needs the absolute backoff deadline written under refreshMu,
+// ObserveRefreshSuppressed accounting for rejected starts, and coordination
+// with the lifecycle lock (backgroundMu → refreshMu ordering). A DoChan
+// migration would still need an external backoff state machine and re-test
+// all of that for little net code reduction.
+
 import (
 	"BUPT_EC/service/model"
 	"context"
@@ -102,7 +110,7 @@ func jitteredBackoff(base time.Duration, sample float64) time.Duration {
 
 func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.Time) (*classroomRefreshAttempt, bool) {
 	s.backgroundMu.Lock()
-	if s.backgroundStopping {
+	if s.isLifecycleCanceledLocked() {
 		s.backgroundMu.Unlock()
 		return nil, false
 	}
@@ -131,13 +139,19 @@ func (s *ClassroomService) startClassroomRefresh(ctx context.Context, now time.T
 	s.backgroundMu.Unlock()
 
 	// Keep request values such as log_id, but never inherit client cancellation
-	// or deadlines — shared workers outlive any single waiter.
+	// or deadlines — shared workers outlive any single waiter. The service
+	// lifecycle is the only additional cancellation source: AfterFunc bridges
+	// shutdown cancellation into the in-flight JW call so it stops promptly
+	// instead of burning the full refresh budget.
 	parent := context.WithoutCancel(nonNilContext(ctx))
 	go func() {
 		defer s.refreshWorkers.Done()
 		refreshCtx, cancel := context.WithTimeout(parent, ClassroomRefreshLimit)
 		defer cancel()
-
+		if lc := s.currentLifecycle(); lc != nil {
+			stop := context.AfterFunc(lc, cancel)
+			defer stop()
+		}
 		result := s.refreshTodayClassrooms(refreshCtx)
 		s.finishClassroomRefresh(attempt, result)
 	}()

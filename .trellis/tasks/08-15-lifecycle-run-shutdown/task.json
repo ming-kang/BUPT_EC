@@ -1,0 +1,28 @@
+{
+  "id": "lifecycle-run-shutdown",
+  "name": "lifecycle-run-shutdown",
+  "title": "生命周期 Run/Shutdown + 取消传播",
+  "description": "",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-08-15",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "description": "审计 B-01+B-02：刷新 worker / token 共享操作剥离生命周期取消导致关机尾延迟最坏 30s+；StartWarmup/WaitBackground 侧门 API 收敛为标准 Run/Shutdown，SIGTERM 取消传播进 in-flight JW 操作"
+  }
+}

@@ -85,7 +85,7 @@ same public payload unless the API contract changes.
 - Stale callers wait briefly (`staleRefreshWait`, 300ms) for a refresh to finish
   and otherwise return stale data immediately.
 - `startClassroomRefresh` holds `backgroundMu` while calling
-  `refreshWorkers.Add`, so `WaitBackground` can stop new workers before waiting.
+  `refreshWorkers.Add`, so `Shutdown` can stop new workers before waiting.
 - Business time uses `ClassroomService.now()` from the injected `Clock` (shared
   with `TokenManager`); tests inject a thread-safe fake `Clock` via
   `ClassroomServiceOptions.Clock` and must not replace an internal `now` field.
@@ -109,8 +109,10 @@ normal refresh coordinator.
 ### 2. Signatures
 
 ```go
-func (s *ClassroomService) StartWarmup(ctx context.Context)
-func (s *ClassroomService) WaitBackground(ctx context.Context) error
+func (s *ClassroomService) Run(ctx context.Context) error
+func (s *ClassroomService) Shutdown(ctx context.Context) error
+
+var ErrAlreadyRunning error // second Run on the same service
 
 func nextWarmupDelay(
     now time.Time,
@@ -123,8 +125,10 @@ func nextWarmupDelay(
 
 ### 3. Contracts
 
-- `StartWarmup` starts at most one scheduler per service and attempts refresh
-  immediately unless its context is already canceled.
+- `Run` starts at most one scheduler per service lifetime, attempts refresh
+  immediately (a pre-canceled context starts no worker), blocks until the
+  context is canceled, and then returns nil. A second `Run` call returns
+  `ErrAlreadyRunning` instead of silently no-op'ing.
 - Every scheduler wait uses `time.NewTimer` plus `select` on `ctx.Done()`; do not
   use an uninterruptible `time.Sleep` loop.
 - No usable cache retries after 30s, 1m, 2m, then 5m maximum, with
@@ -133,23 +137,40 @@ func nextWarmupDelay(
   Shanghai day boundary may wake it earlier.
 - Complete cache waits until next Shanghai midnight plus a randomized 1–5s
   jitter. A usable outcome resets the consecutive failure count.
-- `main.go` cancels the scheduler before HTTP shutdown, drains handlers, then
-  calls `WaitBackground`.
-- `WaitBackground` marks background state as stopping before `WaitGroup.Wait`.
-  `startClassroomRefresh` checks the same lock, so no later worker can call Add.
+- Shutdown cancellation propagates into in-flight JW work: refresh workers and
+  TokenManager shared operations keep request values (log_id) via
+  `context.WithoutCancel(caller)` but bridge the service lifecycle with
+  `context.AfterFunc(lifecycle, cancel)`; the composite cancel (`stop()` then
+  `cancel()`) must run on completion so nothing leaks. The lifecycle is the
+  only additional cancellation source — a single waiter's cancel still cannot
+  abort a shared operation.
+- `main.go` cancels the lifecycle before HTTP shutdown, drains handlers, then
+  calls `Shutdown`; ordering is `stopLifecycle` → `server.Shutdown` →
+  `ClassroomService.Shutdown` → read `Run`'s return.
+- `Shutdown` cancels the lifecycle while holding `backgroundMu`, waits for the
+  scheduler to exit, then drains `refreshWorkers`. `startClassroomRefresh`
+  checks the same lock (`lifecycleCtx != nil && lifecycleCtx.Err() != nil`),
+  so no later worker can call Add after the drain wait begins. `Shutdown` is
+  idempotent; on a service that never ran `Run` it just drains workers.
+- A service that never called `Run` (`lifecycleCtx == nil`) still serves
+  on-demand refreshes and token operations — lifecycle cancel is the only
+  worker gate.
 
 ### 4. Validation & Error Matrix
 
 | Condition | Required scheduling/lifecycle result |
 | --- | --- |
 | startup with active context | refresh immediately |
-| startup with canceled context | no refresh worker |
+| startup with canceled context | no refresh worker, `Run` returns nil |
 | no cache, first/second/third/fourth failure | 30s / 1m / 2m / 5m |
 | retry target before `nextRefreshAllowed` | wait until `nextRefreshAllowed` |
 | partial same-day cache | wait at least fresh TTL, unless day boundary is earlier |
 | full same-day cache | next midnight + injected jitter |
-| repeated `StartWarmup` | existing scheduler/channel unchanged |
+| second `Run` call | `ErrAlreadyRunning`, existing scheduler/channel unchanged |
+| shutdown begins while a refresh/login is in flight | JW call canceled promptly (not the full budget), attempt completes |
 | shutdown begins | reject new refresh workers, exit scheduler, drain existing workers |
+| one waiter cancels | that waiter returns; shared refresh/login unaffected |
+| `Shutdown` on a service that never ran `Run` | drain workers only, return nil |
 
 ### 5. Good/Base/Bad Cases
 
@@ -164,8 +185,12 @@ func nextWarmupDelay(
 
 - Pure delay tests cover cross-midnight `nextRefreshAllowed`, capped failure
   delays, partial fresh-TTL policy, and full-cache midnight jitter.
-- Lifecycle tests cover immediate start, pre-canceled context, duplicate start,
-  scheduler cancellation, and rejection of workers after drain begins.
+- Lifecycle tests cover immediate start, pre-canceled context, second `Run`
+  returning `ErrAlreadyRunning`, scheduler cancellation, rejection of workers
+  after drain begins, and cancellation propagation into an in-flight refresh
+  worker and a shared token login (mock JW client blocks on `ctx.Done()`;
+  `Shutdown` must return well inside `ClassroomRefreshLimit`).
+- On-demand refresh on a service that never ran `Run` keeps working.
 - Run `go test -race ./...` to protect the `WaitGroup.Add` / `Wait` boundary.
 - Main tests assert the shutdown timeout exceeds `ClassroomRefreshLimit`.
 
@@ -306,9 +331,12 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error)
   `tokenSourceOverride`.
 - Auth recovery performs at most one login and `queryCampus` retries its JW query
   exactly once.
-- Token and API URL groups use `DoChan`. Shared work runs under
-  `context.WithTimeout(context.WithoutCancel(caller), jwRequestTimeout)` so one
-  waiter cannot cancel the operation for others.
+- Token and API URL groups use `DoChan`. Shared work runs under a context
+  derived by `TokenManager.sharedOperationContext`: request values survive
+  via `WithoutCancel(caller)` plus a `jwRequestTimeout` budget, and the service
+  lifecycle (bound once by `ClassroomService.Run` via `bindLifecycle`) is
+  bridged with `context.AfterFunc` so shutdown cancels in-flight logins/API
+  URL fetches promptly.
 - Each caller selects the shared result against its own `ctx.Done()` and may
   return early.
 - There is no force-refresh path: `EnsureToken(ctx)` serves the cached token or

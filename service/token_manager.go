@@ -45,6 +45,7 @@ type TokenManager struct {
 	tokenSource         tokenSource
 	apiURL              string
 	overrideInvalidated bool
+	lifecycleCtx        context.Context
 	tokenGroup          singleflight.Group
 	apiURLGroup         singleflight.Group
 }
@@ -118,7 +119,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 		if apiURL := m.cachedAPIURL(); apiURL != "" {
 			return apiURL, nil
 		}
-		apiCtx, cancel := sharedOperationContext(ctx)
+		apiCtx, cancel := m.sharedOperationContext(ctx)
 		defer cancel()
 		apiURL, err := m.jwClient.FetchAPIURL(apiCtx)
 		if err != nil {
@@ -143,7 +144,7 @@ func (m *TokenManager) APIURL(ctx context.Context) (string, error) {
 // "override" when recovery was caused by a rejected startup JW_TOKEN, else "login".
 func (m *TokenManager) loginAndStore(ctx context.Context, triggerSource string) (tokenOperationResult, error) {
 	startedAt := m.now()
-	loginCtx, cancel := sharedOperationContext(ctx)
+	loginCtx, cancel := m.sharedOperationContext(ctx)
 	defer cancel()
 	token, err := m.login(loginCtx)
 	duration := m.elapsedSince(startedAt)
@@ -269,8 +270,32 @@ func nonNilContext(ctx context.Context) context.Context {
 	return ctx
 }
 
-func sharedOperationContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), jwRequestTimeout)
+func (m *TokenManager) sharedOperationContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	opCtx, cancel := context.WithTimeout(context.WithoutCancel(nonNilContext(ctx)), jwRequestTimeout)
+	m.mu.Lock()
+	lifecycle := m.lifecycleCtx
+	m.mu.Unlock()
+	if lifecycle == nil {
+		return opCtx, cancel
+	}
+	// Bridge shutdown cancellation into the shared call; AfterFunc on an
+	// already-canceled lifecycle fires immediately, so operations starting
+	// during shutdown do not get the full request budget. The returned
+	// composite cancel stops the AfterFunc watcher so nothing leaks.
+	stop := context.AfterFunc(lifecycle, cancel)
+	return opCtx, func() {
+		stop()
+		cancel()
+	}
+}
+
+// bindLifecycle records the service lifecycle context so shared token/API URL
+// operations can be canceled at shutdown. It is called exactly once by
+// ClassroomService.Run; only the service lifecycle (Run/Shutdown) cancels it.
+func (m *TokenManager) bindLifecycle(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lifecycleCtx = ctx
 }
 
 func waitSingleflightResult(ctx context.Context, resultCh <-chan singleflight.Result) (any, error) {

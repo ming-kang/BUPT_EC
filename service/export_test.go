@@ -101,17 +101,18 @@ func invalidateOverride(m *TokenManager) {
 	m.overrideInvalidated = true
 }
 
-// warmupSchedulerDone returns the current warmup scheduler's done channel
-// (nil when no scheduler has been started).
-func warmupSchedulerDone(svc *ClassroomService) chan struct{} {
+// schedulerDone returns the current scheduler's done channel (nil when Run
+// has not been called).
+func schedulerDone(svc *ClassroomService) chan struct{} {
 	svc.backgroundMu.Lock()
 	defer svc.backgroundMu.Unlock()
-	return svc.warmupDone
+	return svc.schedulerDone
 }
 
-// isBackgroundStopping reports whether background shutdown has begun.
-func isBackgroundStopping(svc *ClassroomService) bool {
+// isLifecycleCanceled reports whether the service lifecycle is canceled,
+// mirroring the worker gate in startClassroomRefresh.
+func isLifecycleCanceled(svc *ClassroomService) bool {
 	svc.backgroundMu.Lock()
 	defer svc.backgroundMu.Unlock()
-	return svc.backgroundStopping
+	return svc.lifecycleCtx != nil && svc.lifecycleCtx.Err() != nil
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"math/rand/v2"
 	"time"
 )
@@ -73,29 +74,62 @@ func nextWarmupDelay(
 	return 0
 }
 
-// StartWarmup starts one context-cancellable scheduler for this service.
-// The first refresh is attempted immediately; duplicate calls are no-ops.
-func (s *ClassroomService) StartWarmup(ctx context.Context) {
+// ErrAlreadyRunning is returned by Run when a scheduler was already started
+// for this service. Each service runs at most one scheduler in its lifetime.
+var ErrAlreadyRunning = errors.New("classroom service already running")
+
+// Run starts at most one warmup scheduler and blocks until ctx is canceled.
+// The first refresh is attempted immediately; a pre-canceled context starts
+// no refresh worker. Run returns nil once the scheduler has exited. A second
+// Run call on the same service returns ErrAlreadyRunning.
+func (s *ClassroomService) Run(ctx context.Context) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 
 	s.backgroundMu.Lock()
-	if s.backgroundStopping || s.warmupStarted {
+	if s.lifecycleCtx != nil {
 		s.backgroundMu.Unlock()
-		return
+		return ErrAlreadyRunning
 	}
-	warmupCtx, cancel := context.WithCancel(ctx)
+	lifecycleCtx, cancel := context.WithCancel(ctx)
 	done := make(chan struct{})
-	s.warmupStarted = true
-	s.warmupCancel = cancel
-	s.warmupDone = done
+	s.lifecycleCtx = lifecycleCtx
+	s.lifecycleCancel = cancel
+	s.schedulerDone = done
 	s.backgroundMu.Unlock()
 
-	go func() {
-		defer close(done)
-		s.warmupLoop(warmupCtx)
+	// The token manager keeps a reference (not a copy of cancel) so shutdown
+	// cancellation has a single owner: this service's lifecycle.
+	s.tokenManager.bindLifecycle(lifecycleCtx)
+
+	defer func() {
+		// Cancel under backgroundMu so a concurrent startClassroomRefresh that
+		// just passed the lifecycle gate cannot race with Shutdown's drain.
+		s.backgroundMu.Lock()
+		cancel()
+		s.backgroundMu.Unlock()
+		close(done)
 	}()
+
+	s.warmupLoop(lifecycleCtx)
+	return nil
+}
+
+// isLifecycleCanceledLocked reports whether the service lifecycle has been
+// canceled (Run started and its context is done). A service that never ran
+// (lifecycleCtx == nil) still allows on-demand refresh workers. Callers must
+// hold backgroundMu.
+func (s *ClassroomService) isLifecycleCanceledLocked() bool {
+	return s.lifecycleCtx != nil && s.lifecycleCtx.Err() != nil
+}
+
+// currentLifecycle snapshots the lifecycle context under backgroundMu. Nil
+// means Run has not been called (no cancellation bridging for workers).
+func (s *ClassroomService) currentLifecycle() context.Context {
+	s.backgroundMu.Lock()
+	defer s.backgroundMu.Unlock()
+	return s.lifecycleCtx
 }
 
 func (s *ClassroomService) warmupLoop(ctx context.Context) {
@@ -159,14 +193,19 @@ func waitForWarmup(ctx context.Context, delay time.Duration) bool {
 	}
 }
 
-// WaitBackground stops the scheduler, waits for it to exit, then drains every
-// refresh worker. Setting backgroundStopping before Wait prevents later Add
-// calls from racing with the WaitGroup wait.
-func (s *ClassroomService) WaitBackground(ctx context.Context) error {
+// Shutdown cancels the lifecycle, waits for the scheduler to exit, then
+// drains every refresh worker, all bounded by ctx. Cancelling under
+// backgroundMu prevents later Add calls from racing with the WaitGroup wait;
+// startClassroomRefresh checks the same lock and rejects new workers. It is
+// idempotent and safe on a service that never ran Run: it just drains.
+func (s *ClassroomService) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	s.backgroundMu.Lock()
-	s.backgroundStopping = true
-	cancel := s.warmupCancel
-	done := s.warmupDone
+	cancel := s.lifecycleCancel
+	done := s.schedulerDone
 	if cancel != nil {
 		cancel()
 	}

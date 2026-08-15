@@ -93,12 +93,17 @@ func main() {
 		log.Fatalf("invalid startup configuration: %v", err)
 	}
 
-	appCtx, stopBackground := context.WithCancel(context.Background())
-	defer stopBackground()
+	appCtx, stopLifecycle := context.WithCancel(context.Background())
+	defer stopLifecycle()
 	if _, embedded := web.Dist(); !embedded {
 		slog.Warn("serving placeholder frontend (built without embed_assets)")
 	}
-	app.classroomService.StartWarmup(appCtx)
+	// Run owns the warmup scheduler and blocks until appCtx is canceled;
+	// cancellation also stops in-flight JW refreshes/logins at shutdown.
+	runErr := make(chan error, 1)
+	go func() {
+		runErr <- app.classroomService.Run(appCtx)
+	}()
 	addr := app.runtimeConfig.AppAddr
 
 	server := &http.Server{
@@ -135,16 +140,20 @@ func main() {
 		log.Printf("received %s, shutting down", sig)
 	}
 
-	// Stop the scheduler first so it cannot add refresh workers while the HTTP
-	// server and already-started background work are being drained.
-	stopBackground()
+	// Cancel the service lifecycle first: the warmup scheduler exits,
+	// in-flight JW work stops immediately, and the gate in
+	// startClassroomRefresh rejects new workers while the server drains.
+	stopLifecycle()
 	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown did not finish cleanly: %v", err)
 	}
-	if err := app.classroomService.WaitBackground(ctx); err != nil {
+	if err := app.classroomService.Shutdown(ctx); err != nil {
 		log.Printf("background work did not finish before shutdown: %v", err)
+	}
+	if err := <-runErr; err != nil {
+		log.Printf("service lifecycle exited with error: %v", err)
 	}
 	if serveErr != nil {
 		log.Fatalf("server failed: %v", serveErr)

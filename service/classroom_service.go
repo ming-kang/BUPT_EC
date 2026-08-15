@@ -58,12 +58,11 @@ type ClassroomService struct {
 	refreshWorkers           sync.WaitGroup
 	metrics                  RuntimeMetrics
 
-	backgroundMu       sync.Mutex
-	backgroundStopping bool
-	warmupStarted      bool
-	warmupDone         chan struct{}
-	warmupCancel       context.CancelFunc
-	warmupJitter       func() time.Duration
+	backgroundMu    sync.Mutex
+	lifecycleCtx    context.Context    // nil until Run starts the scheduler
+	lifecycleCancel context.CancelFunc // set by Run; canceled by Run/Shutdown under backgroundMu
+	schedulerDone   chan struct{}      // closed when the Run scheduler goroutine exits
+	warmupJitter    func() time.Duration
 
 	statusMu sync.RWMutex
 	status   RuntimeStatus

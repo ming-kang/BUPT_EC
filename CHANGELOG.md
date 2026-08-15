@@ -17,6 +17,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- SIGTERM/SIGINT shutdown now cancels in-flight JW refreshes and logins
+  immediately (the service lifecycle is bridged into shared background work
+  with `context.AfterFunc`), so shutdown tail latency no longer depends on the
+  30s refresh budget. The backend service lifecycle is collapsed into a
+  standard `Run`/`Shutdown` pair instead of `StartWarmup`/`WaitBackground`
+  (internal Go API only; the HTTP contract is unchanged).
+
 - Release binaries embed the build version at build time (`-trimpath` plus
   `-ldflags` version injection: the release tag, or `nightly-<commit>` for
   nightly builds), so packaged builds report the exact deployed version and

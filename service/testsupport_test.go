@@ -85,8 +85,8 @@ func newTestServiceWithOptions(t *testing.T, client JWClient, options ClassroomS
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := svc.WaitBackground(ctx); err != nil {
-			t.Errorf("WaitBackground() cleanup error = %v", err)
+		if err := svc.Shutdown(ctx); err != nil {
+			t.Errorf("Shutdown() cleanup error = %v", err)
 		}
 	})
 	return svc

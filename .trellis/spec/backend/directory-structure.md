@@ -36,9 +36,9 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
   Its `Init()` loads one `config.RuntimeConfig`, applies log settings,
   constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and
   `service.NewClassroomService`, then injects the service plus the immutable
-  credential predicate result into `NewHTTPServer`. `main()` starts background warmup
-  with an application context, cancels it before HTTP shutdown, and drains work
-  with `ClassroomService.WaitBackground` after handlers exit. It sets
+  credential predicate result into `NewHTTPServer`. `main()` runs the service
+  lifecycle with `Run(appCtx)` on a goroutine, cancels it before HTTP shutdown,
+  and drains work with `ClassroomService.Shutdown` after handlers exit. It sets
   `Handler: app.httpServer.Routes()` (main.go:106) and warns when `web.Dist()`
   reports placeholder assets (main.go:98-100).
 - `router.go` owns `func (server *HTTPServer) Routes() http.Handler`: the
@@ -198,8 +198,9 @@ classroomService, err := service.NewClassroomService(service.ClassroomServiceOpt
   same-day cache read/write flow.
 - `refresh_coordinator.go` owns single-flight refresh state, backoff, and
   stale-while-revalidate behavior.
-- `warmup.go` owns the startup/midnight scheduler, retry-delay state machine,
-  scheduler cancellation, and background-worker draining.
+- `warmup.go` owns the `Run`/`Shutdown` service lifecycle, the startup/midnight
+  scheduler, retry-delay state machine, scheduler cancellation, and
+  background-worker draining.
 - `token_manager.go` owns token/API URL caching and `singleflight` login/API URL
   deduplication.
 - `jw_client.go`, `crypto.go`, and `urlutil.go` own the JW HTTP protocol,
