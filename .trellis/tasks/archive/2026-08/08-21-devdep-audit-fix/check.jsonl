@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality gates to verify: lint/test/build/size + both audit scripts pass; dependency security baseline scenario defines required validation matrix"}
