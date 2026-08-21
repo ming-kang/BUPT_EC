@@ -655,3 +655,46 @@ D1 handwritten types over codegen; D2 strict day-one, no checkJs phase; D3 runti
 ### Status
 
 [OK] **Completed** — backlog 剩余：classroom-display-contract（需产品确认）、api-etag-preserialize（流量驱动）、cold-path-bounded-wait（需产品批准）；F-02 React 19 现已解锁（可独立立项）
+
+## Session 20: classroom-display-contract — probe-settled F-05 + backend display_name
+
+**Date**: 2026-08-21
+**Task**: 08-21-classroom-display-contract (completed & archived)
+**Branch**: `main`
+
+### Summary
+
+Pre-task research (two parallel explorers) settled ground truth for F-05/F-07 and audited B-04:
+- **F-05 capacity**: JW has no seat field — capacity is the `(N)` suffix of each CLASSROOMS token
+  (builder regex, Atoi error discarded). Live probe via integration test + .env credentials:
+  **721 tokens, 0 suffix-less, 0 zero-capacity** ⇒ wire guarantees capacity ≥ 1; 0 only appears as
+  parse degradation (suffix-less token → 未分组), where the frontend 未知 fallback is correct.
+  Closed by specification, not code change.
+- **F-07 display_name**: frontend aliasing was label-only (selection values always raw names), so
+  moving rules backend-side is semantics-free. Implemented BuildingInfo.display_name following the
+  RoomInfo.DisplayName precedent; picker falls back to raw name for pre-deploy same-day caches.
+- **B-04 ETag research finding (task stays deferred)**: B-11's per-request body log_id makes
+  marshal+hash ETag hit rate 0%; (stale, errKind) keying would serve stale data across refreshes
+  (must key snapshot×variant). Only real payoff is 304 bandwidth at scale. If ever built: option A
+  = pre-serialize data segment per snapshot×variant at Store time with fresh log_id envelope
+  splice (no contract change); option B adds full 304 by moving log_id out of the success body.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8b4c689` | feat(api): normalize building display_name server-side and pin capacity wire contract |
+| `dbe1dca` | chore(task): archive 08-21-classroom-display-contract |
+
+### Testing
+
+- [OK] New: TestBuildingDisplayNameNormalization, TestBuildCampusInfoEmitsBuildingDisplayName,
+      stale-cache fallback picker test (120 frontend tests total), live integration guard
+      TestJWRoomTokensCarryPositiveCapacitySuffix (ran green against real JW twice)
+- [OK] go test -race ./service, vet, gofmt clean; frontend typecheck/lint/120/build green;
+      bundle 209,594 B within budget
+- [OK] Review PASS after fixing Medium (missing fallback test) + Low ((00) vs Atoi zero check)
+
+### Status
+
+[OK] **Completed** — backlog 剩余：api-etag-preserialize（挂起，研究结论见任务归档）、cold-path-bounded-wait（需产品批准）、React 19（已解锁）、低优先级杂项
