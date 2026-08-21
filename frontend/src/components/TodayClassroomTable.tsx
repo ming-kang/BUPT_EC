@@ -1,17 +1,40 @@
-import PropTypes from "prop-types";
 import { Card, Empty, Modal, Tag } from "antd";
 import { useMemo, useState } from "react";
 import "./TodayClassroomTable.css";
 
+/** Structural minimum the table reads off a campus payload. */
+interface BuildingView {
+  name: string;
+  rooms?: {
+    display_name: string;
+    capacity?: number;
+    free_nodes?: number[];
+    free_times?: { node: number; time: string }[] | null;
+  }[];
+}
+
+type RoomRecord = NonNullable<BuildingView["rooms"]>[number] & {
+  building: string;
+};
+
+interface TodayClassroomTableProps {
+  selectedCampusData?: { buildings?: BuildingView[] } | null;
+  selectedBuildings?: string[];
+  selectedClassTimes?: number[];
+}
+
 /** Same format as the table row key: display_name can repeat across buildings. */
-function roomKey(room) {
+function roomKey(room: RoomRecord) {
   return `${room.building}-${room.display_name}`;
 }
 
-function TodayClassroomTable(props) {
+function TodayClassroomTable(props: TodayClassroomTableProps) {
   // Holds the opened room's identity (stable key + display name), never its
   // data: capacity and free_times always come from the latest payload below.
-  const [openedRoom, setOpenedRoom] = useState(null);
+  const [openedRoom, setOpenedRoom] = useState<{
+    key: string;
+    displayName: string;
+  } | null>(null);
   const selectedBuildings = useMemo(
     () => (Array.isArray(props.selectedBuildings) ? props.selectedBuildings : []),
     [props.selectedBuildings]
@@ -86,7 +109,7 @@ function TodayClassroomTable(props) {
   }
 
   const activeFreeTimes = Array.isArray(activeRoom?.free_times)
-    ? activeRoom.free_times
+    ? activeRoom!.free_times
     : [];
 
   // Rendered by BOTH branches below: the modal must survive the empty-state
@@ -227,11 +250,5 @@ function TodayClassroomTable(props) {
     </div>
   );
 }
-
-TodayClassroomTable.propTypes = {
-  selectedCampusData: PropTypes.object,
-  selectedBuildings: PropTypes.array,
-  selectedClassTimes: PropTypes.array,
-};
 
 export default TodayClassroomTable;

@@ -22,9 +22,9 @@ const TodayClassroomTable = lazy(
   () => import("./components/TodayClassroomTable")
 );
 
-const WEEKDAY_LABELS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+const WEEKDAY_LABELS: string[] = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
-function formatDateWithWeekday(dateStr) {
+function formatDateWithWeekday(dateStr: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
   if (!match) return dateStr;
   const [, y, m, d] = match;
@@ -66,7 +66,7 @@ function AppContent() {
   useEffect(() => {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
 
-    function matchMode(e) {
+    function matchMode(e: { matches: boolean }) {
       const dark = resolveDarkMode(e.matches);
       applyDarkClass(dark);
       setIsDark(dark);

@@ -14,7 +14,9 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SelectionContext } from "../selectionContext";
+import React from "react";
+import { SelectionContext, type SelectionState, type SelectionAction } from "../selectionContext";
+import type { CampusInfo } from "../api/types";
 import ClassTimePicker from "./ClassTimePicker";
 
 // 2026-07-27 10:00 Asia/Shanghai.
@@ -33,7 +35,7 @@ const CAMPUS = {
   ],
 };
 
-function makeState(overrides = {}) {
+function makeState(overrides: Partial<SelectionState> = {}): SelectionState {
   return {
     selectedCampus: "04",
     selectedBuildings: [],
@@ -44,10 +46,16 @@ function makeState(overrides = {}) {
   };
 }
 
-function renderPicker({ state = makeState(), dispatch = vi.fn() } = {}) {
+function renderPicker({
+  state = makeState(),
+  dispatch = vi.fn(),
+}: {
+  state?: SelectionState;
+  dispatch?: React.Dispatch<SelectionAction>;
+} = {}) {
   const view = render(
     <SelectionContext.Provider value={{ state, dispatch }}>
-      <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
+      <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
     </SelectionContext.Provider>
   );
   return { ...view, dispatch };
@@ -68,7 +76,7 @@ describe("ClassTimePicker derived pruning (R10)", () => {
 
     const ended = screen.getByRole("button", { name: "01" });
     const active = screen.getByRole("button", { name: "02" });
-    expect(ended.disabled).toBe(true);
+    expect((ended as HTMLButtonElement).disabled).toBe(true);
     // Pruned during render: never flashes as selected while waiting for the
     // convergence effect.
     expect(ended.className).not.toContain("ant-btn-primary");
@@ -97,7 +105,7 @@ describe("ClassTimePicker derived pruning (R10)", () => {
 });
 
 describe("ClassTimePicker aria-pressed (R12)", () => {
-  function pressedOf(name) {
+  function pressedOf(name: string | RegExp) {
     return screen.getByRole("button", { name }).getAttribute("aria-pressed");
   }
 
@@ -125,7 +133,7 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
           dispatch: vi.fn(),
         }}
       >
-        <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
+        <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
       </SelectionContext.Provider>
     );
     expect(pressedOf("03")).toBe("true");
@@ -137,19 +145,19 @@ describe("ClassTimePicker clock resync (R11)", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
     renderPicker();
-    expect(screen.getByRole("button", { name: "02" }).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
 
     // Background throttling: the wall clock jumps 8h but no timer fires.
     act(() => {
       vi.setSystemTime(LATER_SAME_DAY);
     });
-    expect(screen.getByRole("button", { name: "02" }).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
 
     // Tab becomes visible → clock resyncs immediately, node 2 is now ended.
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(screen.getByRole("button", { name: "02" }).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("ignores visibilitychange while the tab stays hidden", () => {
@@ -169,9 +177,10 @@ describe("ClassTimePicker clock resync (R11)", () => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
       // No resync while hidden; the stale clock keeps node 2 enabled.
-      expect(screen.getByRole("button", { name: "02" }).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
     } finally {
-      delete document.visibilityState;
+      // Same cleanup pattern as the lifecycle suite (own property delete).
+      Reflect.deleteProperty(document, "visibilityState");
     }
   });
 

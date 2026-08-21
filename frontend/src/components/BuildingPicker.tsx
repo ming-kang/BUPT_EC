@@ -1,21 +1,25 @@
-import PropTypes from "prop-types";
 import { Card } from "antd";
+import type { CampusInfo } from "../api/types";
 import { useSelection } from "../selectionContext";
 import { ToggleButtonGroup } from "./ToggleButtonGroup";
 import "./BuildingPicker.css";
 
-const BUILDING_ALIASES = {
+const BUILDING_ALIASES: Record<string, string> = {
   未来学习大楼: "主楼",
 };
 
-function displayBuildingName(name) {
+function displayBuildingName(name: string): string {
   if (typeof name !== "string") return name;
   const trimmed = name.trim();
   if (BUILDING_ALIASES[trimmed]) return BUILDING_ALIASES[trimmed];
   return /^\d+$/.test(trimmed) ? `教${trimmed}` : name;
 }
 
-function BuildingPicker({ selectedCampusData }) {
+interface BuildingPickerProps {
+  selectedCampusData?: CampusInfo | null;
+}
+
+function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
   const { state, dispatch } = useSelection();
 
   if (!selectedCampusData) {
@@ -45,9 +49,5 @@ function BuildingPicker({ selectedCampusData }) {
     </Card>
   );
 }
-
-BuildingPicker.propTypes = {
-  selectedCampusData: PropTypes.object,
-};
 
 export default BuildingPicker;

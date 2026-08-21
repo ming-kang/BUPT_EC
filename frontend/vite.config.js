@@ -50,7 +50,7 @@ export default defineConfig({
     environment: 'node',
     // DOM-only stubs (matchMedia for antd) live here; the file guards on
     // `typeof window` so node-environment tests are untouched.
-    setupFiles: ['./src/test/setup.js'],
+    setupFiles: ['./src/test/setup.ts'],
   },
   server: {
     proxy: {

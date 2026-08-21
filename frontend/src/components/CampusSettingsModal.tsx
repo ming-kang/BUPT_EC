@@ -1,10 +1,16 @@
-import PropTypes from "prop-types";
 import { Button, Divider, Modal, Switch, Typography } from "antd";
+import type { Envelope } from "../todayClassroomsResponse";
 import { GithubIcon } from "./icons";
 import { formatShanghaiDateTime } from "../classTimeUtils";
 import { useSelection } from "../selectionContext";
 
-function CampusSettingsModal(props) {
+interface CampusSettingsModalProps {
+  open: boolean;
+  todayData: Envelope;
+  onClose?: () => void;
+}
+
+function CampusSettingsModal(props: CampusSettingsModalProps) {
   const { state, dispatch } = useSelection();
 
   return (
@@ -86,11 +92,5 @@ function CampusSettingsModal(props) {
     </Modal>
   );
 }
-
-CampusSettingsModal.propTypes = {
-  open: PropTypes.bool.isRequired,
-  todayData: PropTypes.object.isRequired,
-  onClose: PropTypes.func,
-};
 
 export default CampusSettingsModal;

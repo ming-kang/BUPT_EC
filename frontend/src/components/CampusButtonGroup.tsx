@@ -1,5 +1,6 @@
-import PropTypes from "prop-types";
 import { Button } from "antd";
+import type { Envelope } from "../todayClassroomsResponse";
+import type { CampusInfo } from "../api/types";
 import { Fragment, Suspense, lazy, useState } from "react";
 import { SettingIcon } from "./icons";
 import { useSelection } from "../selectionContext";
@@ -8,7 +9,15 @@ import "./CampusButtonGroup.css";
 
 const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
 
-function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
+interface CampusButtonGroupProps {
+  campuses: CampusInfo[];
+  todayData: Envelope;
+  /** Render-time derived campus id from App (R10): first frame already
+   * highlights the effective campus before the store reconciles. */
+  activeCampusId: string;
+}
+
+function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButtonGroupProps) {
   const { dispatch } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
   const list = Array.isArray(campuses) ? campuses : [];
@@ -59,18 +68,5 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }) {
     </div>
   );
 }
-
-CampusButtonGroup.propTypes = {
-  campuses: PropTypes.arrayOf(
-    PropTypes.shape({
-      id: PropTypes.string.isRequired,
-      name: PropTypes.string.isRequired,
-    })
-  ).isRequired,
-  todayData: PropTypes.object.isRequired,
-  // Render-time derived campus id from App (R10): first frame already
-  // highlights the effective campus before the store reconciles.
-  activeCampusId: PropTypes.string.isRequired,
-};
 
 export default CampusButtonGroup;

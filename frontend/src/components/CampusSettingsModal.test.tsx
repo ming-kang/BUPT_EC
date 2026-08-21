@@ -6,9 +6,10 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import CampusSettingsModal from "./CampusSettingsModal";
-import { SelectionContext } from "../selectionContext";
+import type { Envelope } from "../todayClassroomsResponse";
+import { SelectionContext, type SelectionState } from "../selectionContext";
 
-function makeState() {
+function makeState(): SelectionState {
   return {
     selectedCampus: "01",
     selectedBuildings: [],
@@ -33,7 +34,7 @@ describe("CampusSettingsModal updated time (F-06)", () => {
     };
     render(
       <SelectionContext.Provider value={{ state: makeState(), dispatch: () => {} }}>
-        <CampusSettingsModal open todayData={todayData} onClose={() => {}} />
+        <CampusSettingsModal open todayData={todayData as Envelope} onClose={() => {}} />
       </SelectionContext.Provider>
     );
     expect(screen.getByText(/2026-08-16 00:00/)).not.toBeNull();
@@ -43,7 +44,7 @@ describe("CampusSettingsModal updated time (F-06)", () => {
     const todayData = { data: {} };
     render(
       <SelectionContext.Provider value={{ state: makeState(), dispatch: () => {} }}>
-        <CampusSettingsModal open todayData={todayData} onClose={() => {}} />
+        <CampusSettingsModal open todayData={todayData as Envelope} onClose={() => {}} />
       </SelectionContext.Provider>
     );
     expect(screen.getByText(/未知/)).not.toBeNull();

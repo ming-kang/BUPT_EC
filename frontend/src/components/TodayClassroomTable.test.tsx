@@ -12,8 +12,10 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import type React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import TodayClassroomTable from "./TodayClassroomTable";
+import type { CampusInfo } from "../api/types";
 
 const campusData = {
   buildings: [
@@ -57,10 +59,16 @@ const campusData = {
   ],
 };
 
-function renderTable(overrides = {}) {
+function renderTable(
+  overrides?: Partial<{
+    selectedCampusData: CampusInfo | null;
+    selectedBuildings: string[];
+    selectedClassTimes: number[];
+  }>
+) {
   return render(
     <TodayClassroomTable
-      selectedCampusData={campusData}
+      selectedCampusData={campusData as CampusInfo}
       selectedBuildings={["教三", "教四"]}
       selectedClassTimes={[2, 3]}
       {...overrides}
@@ -104,7 +112,7 @@ describe("TodayClassroomTable", () => {
     const rows = container.querySelectorAll("tbody tr");
     expect(rows.length).toBe(3);
     const names = [...rows].map(
-      (row) => row.querySelector(".room-name").textContent
+      (row) => row.querySelector(".room-name")!.textContent
     );
     expect(names).toEqual(["3-101", "3-201", "4-102"]);
   });
@@ -125,15 +133,15 @@ describe("TodayClassroomTable", () => {
     const { container } = renderTable();
     const rows = container.querySelectorAll("tbody tr");
     const row3201 = [...rows].find(
-      (row) => row.querySelector(".room-name").textContent === "3-201"
-    );
+      (row) => row.querySelector(".room-name")!.textContent === "3-201"
+    )!;
     // free_nodes [1,2,3,5] intersect selected [2,3] -> 02, 03 only.
     const tags = [...row3201.querySelectorAll("td")[2].children].map(
       (tag) => tag.textContent
     );
     expect(tags).toEqual(["02", "03"]);
-    expect(within(row3201).queryByText("01")).toBeNull();
-    expect(within(row3201).queryByText("05")).toBeNull();
+    expect(within(row3201 as HTMLElement).queryByText("01")).toBeNull();
+    expect(within(row3201 as HTMLElement).queryByText("05")).toBeNull();
   });
 
   it("asks for buildings and class times when both are empty", () => {
@@ -163,7 +171,15 @@ describe("TodayClassroomTable room modal (R9)", () => {
     cleanup();
   });
 
-  function rerenderTable(rerender, campus, overrides = {}) {
+  function rerenderTable(
+    rerender: (ui: React.ReactElement) => void,
+    campus: React.ComponentProps<typeof TodayClassroomTable>["selectedCampusData"],
+    overrides: Partial<{
+      selectedCampusData: CampusInfo | null;
+      selectedBuildings: string[];
+      selectedClassTimes: number[];
+    }> = {}
+  ) {
     rerender(
       <TodayClassroomTable
         selectedCampusData={campus}
@@ -223,7 +239,7 @@ describe("TodayClassroomTable room modal (R9)", () => {
     });
     expect(within(dialog).getByText("暂无空闲节次")).toBeTruthy();
     expect(within(dialog).getByText("—")).toBeTruthy();
-    expect(document.querySelector(".ant-modal-wrap").style.display).not.toBe(
+    expect((document.querySelector(".ant-modal-wrap") as HTMLElement).style.display).not.toBe(
       "none"
     );
     // The title comes from the opened room's identity, so the user can still

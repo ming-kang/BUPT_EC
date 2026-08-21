@@ -6,7 +6,10 @@
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SelectionContext } from "../selectionContext";
+import type { Dispatch } from "react";
+import { SelectionContext, type SelectionAction } from "../selectionContext";
+import type { CampusInfo } from "../api/types";
+import type { Envelope } from "../todayClassroomsResponse";
 import CampusButtonGroup from "./CampusButtonGroup";
 
 const CAMPUSES = [
@@ -20,12 +23,29 @@ const XITUCHENG = "西土城";
 
 const TODAY_DATA = { code: 0, msg: "", data: { campuses: CAMPUSES } };
 
-function renderGroup({ activeCampusId = "04", dispatch = vi.fn() } = {}) {
+function renderGroup({
+  activeCampusId = "04",
+  dispatch = vi.fn(),
+}: {
+  activeCampusId?: string;
+  dispatch?: Dispatch<SelectionAction>;
+} = {}) {
   const view = render(
-    <SelectionContext.Provider value={{ state: {}, dispatch }}>
+    <SelectionContext.Provider
+      value={{
+        state: {
+          selectedCampus: "",
+          selectedBuildings: [],
+          selectedClassTimes: [],
+          showClassTime: true,
+          canSelectAllDay: false,
+        },
+        dispatch,
+      }}
+    >
       <CampusButtonGroup
-        campuses={CAMPUSES}
-        todayData={TODAY_DATA}
+        campuses={CAMPUSES as CampusInfo[]}
+        todayData={TODAY_DATA as unknown as Envelope}
         activeCampusId={activeCampusId}
       />
     </SelectionContext.Provider>
@@ -33,7 +53,7 @@ function renderGroup({ activeCampusId = "04", dispatch = vi.fn() } = {}) {
   return { ...view, dispatch };
 }
 
-function pressedOf(name) {
+function pressedOf(name: string | RegExp) {
   return screen.getByRole("button", { name }).getAttribute("aria-pressed");
 }
 
@@ -55,10 +75,21 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
     const { rerender } = renderGroup({ activeCampusId: "04" });
 
     rerender(
-      <SelectionContext.Provider value={{ state: {}, dispatch: vi.fn() }}>
+      <SelectionContext.Provider
+        value={{
+          state: {
+            selectedCampus: "",
+            selectedBuildings: [],
+            selectedClassTimes: [],
+            showClassTime: true,
+            canSelectAllDay: false,
+          },
+          dispatch: vi.fn(),
+        }}
+      >
         <CampusButtonGroup
-          campuses={CAMPUSES}
-          todayData={TODAY_DATA}
+          campuses={CAMPUSES as CampusInfo[]}
+          todayData={TODAY_DATA as unknown as Envelope}
           activeCampusId="02"
         />
       </SelectionContext.Provider>

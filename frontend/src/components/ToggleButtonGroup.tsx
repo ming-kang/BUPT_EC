@@ -1,4 +1,4 @@
-import PropTypes from "prop-types";
+import type { ReactNode } from "react";
 import { Button } from "antd";
 import "./ToggleButtonGroup.css";
 
@@ -8,8 +8,23 @@ import "./ToggleButtonGroup.css";
  * aria-pressed is only rendered when `pressed` is provided as a boolean, so
  * non-toggle buttons (select-all, settings trigger) stay plain buttons.
  */
-function ToggleButton({ pressed, className, disabled, onClick, children }) {
-  const buttonProps = {
+interface ToggleButtonProps {
+  /** Omitted `pressed` keeps the button a plain action button (no aria-pressed). */
+  pressed?: boolean;
+  className?: string;
+  disabled?: boolean;
+  onClick?: () => void;
+  children?: ReactNode;
+}
+
+function ToggleButton({ pressed, className, disabled, onClick, children }: ToggleButtonProps) {
+  const buttonProps: {
+    className?: string;
+    disabled?: boolean;
+    onClick?: () => void;
+    type?: "primary" | "default";
+    "aria-pressed"?: boolean;
+  } = {
     className,
     disabled,
     onClick,
@@ -26,7 +41,28 @@ function ToggleButton({ pressed, className, disabled, onClick, children }) {
  * option descriptors. Domain logic (store dispatch, pruning, select-all)
  * stays with the callers; this component only owns the shared presentation.
  */
-function ToggleButtonGroup({ options, selectedValues, onToggle, className }) {
+export interface ToggleOption<T extends string | number = string> {
+  value: T;
+  label?: ReactNode;
+  /** content overrides label when a richer node layout is needed. */
+  content?: ReactNode;
+  className?: string;
+  disabled?: boolean;
+}
+
+interface ToggleButtonGroupProps<T extends string | number> {
+  options: ToggleOption<T>[];
+  selectedValues?: T[];
+  onToggle: (value: T) => void;
+  className?: string;
+}
+
+function ToggleButtonGroup<T extends string | number>({
+  options,
+  selectedValues,
+  onToggle,
+  className,
+}: ToggleButtonGroupProps<T>) {
   const selected = Array.isArray(selectedValues) ? selectedValues : [];
   const list = Array.isArray(options) ? options : [];
 
@@ -46,30 +82,5 @@ function ToggleButtonGroup({ options, selectedValues, onToggle, className }) {
     </div>
   );
 }
-
-ToggleButton.propTypes = {
-  // Omitted `pressed` keeps the button a plain action button (no aria-pressed).
-  pressed: PropTypes.bool,
-  className: PropTypes.string,
-  disabled: PropTypes.bool,
-  onClick: PropTypes.func,
-  children: PropTypes.node,
-};
-
-ToggleButtonGroup.propTypes = {
-  options: PropTypes.arrayOf(
-    PropTypes.shape({
-      value: PropTypes.string.isRequired,
-      label: PropTypes.node,
-      // content overrides label when a richer node layout is needed.
-      content: PropTypes.node,
-      className: PropTypes.string,
-      disabled: PropTypes.bool,
-    })
-  ).isRequired,
-  selectedValues: PropTypes.arrayOf(PropTypes.string),
-  onToggle: PropTypes.func.isRequired,
-  className: PropTypes.string,
-};
 
 export { ToggleButtonGroup, ToggleButton };

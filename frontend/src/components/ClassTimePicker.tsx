@@ -1,5 +1,5 @@
-import PropTypes from "prop-types";
 import { Card } from "antd";
+import type { CampusInfo } from "../api/types";
 import { useEffect, useMemo, useState } from "react";
 import {
   formatShanghaiDate,
@@ -12,14 +12,19 @@ import { ToggleButton, ToggleButtonGroup } from "./ToggleButtonGroup";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
-const EMPTY_CLASS_TIMES = [];
+const EMPTY_CLASS_TIMES: number[] = [];
 
-function ClassTimePicker({ selectedCampusData, todayDate }) {
+interface ClassTimePickerProps {
+  selectedCampusData?: CampusInfo | null;
+  todayDate?: string;
+}
+
+function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps) {
   const { state, dispatch } = useSelection();
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
-    let timeoutID;
+    let timeoutID: number | undefined;
 
     function scheduleNextTick() {
       timeoutID = window.setTimeout(() => {
@@ -127,7 +132,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
     });
   }
 
-  function renderTime(time, index) {
+  function renderTime(time: unknown, index: number) {
     const [start = "", end = ""] = String(time || "").split("-");
     return index === 0 ? start : end;
   }
@@ -184,7 +189,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }) {
   );
 }
 
-function msUntilNextFiveMinuteTick(date) {
+function msUntilNextFiveMinuteTick(date: Date): number {
   const next = new Date(date);
   next.setSeconds(0, 0);
 
@@ -195,10 +200,5 @@ function msUntilNextFiveMinuteTick(date) {
 
   return Math.max(next.getTime() - date.getTime(), 1000);
 }
-
-ClassTimePicker.propTypes = {
-  selectedCampusData: PropTypes.object,
-  todayDate: PropTypes.string,
-};
 
 export default ClassTimePicker;

@@ -50,7 +50,7 @@ describe("ToggleButton", () => {
         12
       </ToggleButton>
     );
-    expect(screen.getByRole("button", { name: "12" }).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "12" }) as HTMLButtonElement).disabled).toBe(true);
   });
 });
 
@@ -87,7 +87,7 @@ describe("ToggleButtonGroup", () => {
         onToggle={onToggle}
       />
     );
-    expect(screen.getByRole("button", { name: "教2" }).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "教2" }) as HTMLButtonElement).disabled).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "教2" }));
     expect(onToggle).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "教3" }).querySelector("strong")).not.toBeNull();

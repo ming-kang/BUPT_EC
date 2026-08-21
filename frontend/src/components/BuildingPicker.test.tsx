@@ -4,9 +4,11 @@
  * BuildingPicker: aria-pressed reflects the selected buildings (R12) and the
  * toggle still dispatches add/remove correctly.
  */
+import type { Dispatch } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SelectionContext } from "../selectionContext";
+import { SelectionContext, type SelectionState, type SelectionAction } from "../selectionContext";
+import type { CampusInfo } from "../api/types";
 import BuildingPicker from "./BuildingPicker";
 
 const CAMPUS = {
@@ -18,7 +20,7 @@ const CAMPUS = {
 // antd inserts a space between two-CJK-character button labels.
 const MAIN_BUILDING = /主\s*楼/;
 
-function makeState(overrides = {}) {
+function makeState(overrides: Partial<SelectionState> = {}): SelectionState {
   return {
     selectedCampus: "04",
     selectedBuildings: [],
@@ -29,16 +31,22 @@ function makeState(overrides = {}) {
   };
 }
 
-function renderPicker({ state = makeState(), dispatch = vi.fn() } = {}) {
+function renderPicker({
+  state = makeState(),
+  dispatch = vi.fn(),
+}: {
+  state?: SelectionState;
+  dispatch?: Dispatch<SelectionAction>;
+} = {}) {
   const view = render(
     <SelectionContext.Provider value={{ state, dispatch }}>
-      <BuildingPicker selectedCampusData={CAMPUS} />
+      <BuildingPicker selectedCampusData={CAMPUS as CampusInfo} />
     </SelectionContext.Provider>
   );
   return { ...view, dispatch };
 }
 
-function pressedOf(name) {
+function pressedOf(name: string | RegExp) {
   return screen.getByRole("button", { name }).getAttribute("aria-pressed");
 }
 
@@ -66,7 +74,7 @@ describe("BuildingPicker aria-pressed (R12)", () => {
           dispatch: vi.fn(),
         }}
       >
-        <BuildingPicker selectedCampusData={CAMPUS} />
+        <BuildingPicker selectedCampusData={CAMPUS as CampusInfo} />
       </SelectionContext.Provider>
     );
     expect(pressedOf(MAIN_BUILDING)).toBe("true");

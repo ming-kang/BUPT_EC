@@ -7,6 +7,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import GlobalEmpty from "./GlobalEmpty";
+import type { HookEnvelope } from "../useTodayClassrooms";
 
 describe("GlobalEmpty", () => {
   afterEach(() => {
@@ -16,7 +17,11 @@ describe("GlobalEmpty", () => {
   it("renders nothing for a successful envelope", () => {
     const { container } = render(
       <GlobalEmpty
-        todayData={{ code: 0, msg: "", data: { campuses: [] } }}
+        todayData={{
+          code: 0,
+          msg: "",
+          data: { campuses: [] },
+        } as unknown as HookEnvelope}
         isError={false}
       />
     );

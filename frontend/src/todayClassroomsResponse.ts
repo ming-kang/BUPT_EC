@@ -20,15 +20,16 @@ export type NormalizeResult =
   | { ok: false; reason: string };
 
 /** Structural view this module reads off an unvalidated payload. */
-export interface PayloadView {
+export type PayloadView = {
   code?: unknown;
   msg?: unknown;
   log_id?: string;
+  stale?: unknown;
+  data?: unknown;
   error?: { message?: unknown } | null;
   partial_campuses?: unknown;
   campuses?: unknown;
-  [key: string]: unknown;
-}
+};
 
 export function classroomWarningMessage(data?: PayloadView | null): string {
   const fallback =

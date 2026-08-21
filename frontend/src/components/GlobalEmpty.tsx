@@ -1,8 +1,15 @@
-import PropTypes from "prop-types";
 import { Button, Card, Empty } from "antd";
 import "./GlobalEmpty.css";
 
-function GlobalEmpty(props) {
+import type { HookEnvelope } from "../useTodayClassrooms";
+
+interface GlobalEmptyProps {
+  todayData: HookEnvelope;
+  isError: boolean;
+  onRetry?: () => void;
+}
+
+function GlobalEmpty(props: GlobalEmptyProps) {
   if (props.todayData.code === 0) {
     return null;
   }
@@ -32,11 +39,5 @@ function GlobalEmpty(props) {
     </Card>
   );
 }
-
-GlobalEmpty.propTypes = {
-  todayData: PropTypes.object.isRequired,
-  isError: PropTypes.bool.isRequired,
-  onRetry: PropTypes.func,
-};
 
 export default GlobalEmpty;

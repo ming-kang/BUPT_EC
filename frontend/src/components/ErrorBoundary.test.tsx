@@ -5,10 +5,18 @@
  * longer swallows the error silently (componentDidCatch logs it).
  */
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+  type MockInstance,
+} from "vitest";
 import ErrorBoundary from "./ErrorBoundary";
 
-function Boom() {
+function Boom(): null {
   throw new Error("boom");
 }
 
@@ -17,7 +25,7 @@ function Fine() {
 }
 
 describe("ErrorBoundary", () => {
-  let errorSpy;
+  let errorSpy: MockInstance;
 
   beforeEach(() => {
     // React itself also logs the caught error; the spy both silences that noise
@@ -40,7 +48,7 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("页面出错，请刷新重试")).toBeTruthy();
     const logged = errorSpy.mock.calls.find(
       ([tag]) => tag === "[ErrorBoundary]"
-    );
+    )!;
     expect(logged).toBeTruthy();
     expect(logged[1]).toBeInstanceOf(Error);
     expect(logged[1].message).toBe("boom");
