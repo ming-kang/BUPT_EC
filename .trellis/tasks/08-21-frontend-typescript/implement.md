@@ -6,7 +6,7 @@ file lists live there, scoped by the map in prd.md.
 
 ## Ordered Checklist
 
-### Child 1 — `ts-foundation`
+### Child 1 — `ts-foundation` ✅ DONE (commit 023b73a, review 6/6 PASS)
 - [ ] Create child task (`task.py create ... --parent`), write PRD, start.
 - [ ] Add devDeps: `typescript`, `typescript-eslint` (parser+plugin); pnpm install.
 - [ ] `tsconfig.json`: strict, noEmit, allowJs, bundler resolution, react-jsx, ES2020+DOM lib,
