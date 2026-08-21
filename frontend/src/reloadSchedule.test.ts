@@ -15,7 +15,7 @@ import {
 // sample=0 keeps positive jitter at the base interval for exact assertions.
 const stable = { random: () => 0 };
 
-function spreadFor(base) {
+function spreadFor(base: number) {
   return Math.min(base * JITTER_RATIO, JITTER_MAX_MS);
 }
 

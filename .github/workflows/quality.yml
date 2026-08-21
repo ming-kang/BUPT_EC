@@ -45,6 +45,10 @@ jobs:
         working-directory: frontend
         run: pnpm lint
 
+      - name: Typecheck frontend
+        working-directory: frontend
+        run: pnpm typecheck
+
       - name: Test frontend
         working-directory: frontend
         run: pnpm test

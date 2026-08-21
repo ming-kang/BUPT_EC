@@ -1,7 +1,7 @@
 const SHANGHAI_TZ = "Asia/Shanghai";
 
 /** YYYY-MM-DD in Asia/Shanghai (matches backend business day). */
-export function formatShanghaiDate(date = new Date()) {
+export function formatShanghaiDate(date: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: SHANGHAI_TZ,
     year: "numeric",
@@ -11,7 +11,7 @@ export function formatShanghaiDate(date = new Date()) {
 }
 
 /** HH:mm in Asia/Shanghai for comparing against JW node end times. */
-export function formatShanghaiTime(date = new Date()) {
+export function formatShanghaiTime(date: Date = new Date()): string {
   return new Intl.DateTimeFormat("en-GB", {
     timeZone: SHANGHAI_TZ,
     hour: "2-digit",
@@ -21,7 +21,7 @@ export function formatShanghaiTime(date = new Date()) {
 }
 
 /** YYYY-MM-DD HH:mm in Asia/Shanghai for user-facing timestamps (F-06). */
-export function formatShanghaiDateTime(date = new Date()) {
+export function formatShanghaiDateTime(date: Date = new Date()): string {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: SHANGHAI_TZ,
     year: "numeric",
@@ -33,12 +33,12 @@ export function formatShanghaiDateTime(date = new Date()) {
   }).format(date);
 }
 
-export function parseNodeEndTime(timeRange) {
+export function parseNodeEndTime(timeRange: unknown): string {
   const [, endTime = ""] = String(timeRange || "").split("-");
   return endTime.trim();
 }
 
-export function isNodeEnded(timeRange, nowTime) {
+export function isNodeEnded(timeRange: unknown, nowTime: string): boolean {
   const endTime = parseNodeEndTime(timeRange);
   if (!endTime) {
     return false;
@@ -46,14 +46,25 @@ export function isNodeEnded(timeRange, nowTime) {
   return endTime.localeCompare(nowTime) < 0;
 }
 
+interface ClassTimeOption {
+  node: number;
+  time: string;
+}
+
+interface PruneOptions {
+  nowTime: string;
+  isToday: boolean;
+  canSelectAllDay: boolean;
+}
+
 /**
  * Drop selected nodes that have ended (when all-day selection is off and date is today).
  */
 export function pruneEndedClassTimes(
-  selectedClassTimes,
-  nodes,
-  { nowTime, isToday, canSelectAllDay }
-) {
+  selectedClassTimes: number[] | null | undefined,
+  nodes: ClassTimeOption[] | null | undefined,
+  { nowTime, isToday, canSelectAllDay }: PruneOptions
+): number[] {
   const selected = Array.isArray(selectedClassTimes) ? selectedClassTimes : [];
   if (canSelectAllDay || !isToday || selected.length === 0) {
     return selected;

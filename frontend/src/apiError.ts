@@ -3,8 +3,18 @@
  * envelope code and the server log_id on the error object so downstream code
  * never has to guess 500 or parse them back out of a message string.
  */
+export interface ApiErrorOptions {
+  status?: number;
+  code?: number;
+  logId?: string;
+}
+
 export class ApiError extends Error {
-  constructor(message, { status, code, logId } = {}) {
+  status?: number;
+  code?: number;
+  logId: string;
+
+  constructor(message: string, { status, code, logId }: ApiErrorOptions = {}) {
     super(message);
     this.name = "ApiError";
     this.status = status;

@@ -1,4 +1,5 @@
 import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
+import type { TodayClassroomsData } from "./api/types";
 
 // Rate-aware schedule tuned for Nginx 30 req/min /api limit with multi-tab users.
 export const STALE_POLL_MS = 15_000;
@@ -10,7 +11,10 @@ export const JITTER_RATIO = 0.1;
 /** Absolute cap on positive jitter so long fresh delays do not drift too far. */
 export const JITTER_MAX_MS = 5_000;
 
-export function failureRetryDelay(failureCount) {
+/** Structural view of the fields this module reads off a payload. */
+type SnapshotFields = Partial<TodayClassroomsData>;
+
+export function failureRetryDelay(failureCount: unknown): number {
   const parsed = Number(failureCount);
   const count = Number.isFinite(parsed) ? Math.max(1, Math.floor(parsed)) : 1;
   return FAILURE_RETRY_DELAYS_MS[
@@ -21,9 +25,10 @@ export function failureRetryDelay(failureCount) {
 /**
  * Normalize one random unit sample. Invalid / missing / throwing sources fall
  * back to 0.5 so callers never see NaN delays.
- * @param {() => number} [random]
  */
-export function normalizeRandomSample(random = Math.random) {
+export function normalizeRandomSample(
+  random: (() => number) | null = Math.random
+): number {
   let sample;
   try {
     sample = typeof random === "function" ? random() : 0.5;
@@ -46,10 +51,11 @@ export function normalizeRandomSample(random = Math.random) {
  * Apply bounded **positive** jitter so multi-tab reloads desync without
  * shortening the documented minimum intervals.
  * Reads the random source at most once per call.
- * @param {number|null} delayMs
- * @param {() => number} [random]
  */
-export function withJitter(delayMs, random = Math.random) {
+export function withJitter(
+  delayMs: number | null | undefined,
+  random?: (() => number) | null
+): number | null | undefined {
   if (delayMs == null || !Number.isFinite(delayMs) || delayMs <= 0) {
     return delayMs;
   }
@@ -61,14 +67,12 @@ export function withJitter(delayMs, random = Math.random) {
 /**
  * Hard display deadline for a still-usable same-day snapshot, or null when the
  * payload is not displayable (no clamp applies).
- * @param {object|null|undefined} data
- * @param {number} nowMs
  */
-function usableHardDeadlineMs(data, nowMs) {
+function usableHardDeadlineMs(data: unknown, nowMs: number): number | null {
   if (!isUsableBusinessDaySnapshot(data, nowMs)) {
     return null;
   }
-  const staleUntil = Date.parse(data.stale_until);
+  const staleUntil = Date.parse((data as SnapshotFields).stale_until ?? "");
   return Math.max(0, staleUntil - nowMs);
 }
 
@@ -79,10 +83,18 @@ function usableHardDeadlineMs(data, nowMs) {
  * stale_until clamp (business deadline wins over rate-limit floors).
  */
 export function nextReloadDelay(
-  data,
-  { failureCount = 0, nowMs = Date.now(), random = Math.random } = {}
-) {
-  let base = null;
+  data: unknown,
+  {
+    failureCount = 0,
+    nowMs = Date.now(),
+    random = Math.random,
+  }: {
+    failureCount?: number;
+    nowMs?: number;
+    random?: (() => number) | null;
+  } = {}
+): number | null | undefined {
+  let base: number | null = null;
 
   if (failureCount > 0) {
     // Failure backoff always starts from the ladder; hard deadline clamps later
@@ -94,18 +106,19 @@ export function nextReloadDelay(
     // Cross-day, expired, or malformed snapshots must be revalidated promptly.
     base = MIN_FRESH_DELAY_MS;
   } else {
-    const partialCampuses = Array.isArray(data.partial_campuses)
-      ? data.partial_campuses
+    const snapshot = data as SnapshotFields;
+    const partialCampuses = Array.isArray(snapshot.partial_campuses)
+      ? snapshot.partial_campuses
       : [];
     if (
       partialCampuses.length > 0 ||
-      (data.error && !data.stale && data.error.type !== "client_refresh_failed")
+      (snapshot.error && !snapshot.stale && snapshot.error.type !== "client_refresh_failed")
     ) {
       base = PARTIAL_POLL_MS;
-    } else if (data.stale || data.error) {
+    } else if (snapshot.stale || snapshot.error) {
       base = STALE_POLL_MS;
     } else {
-      const expiresAt = Date.parse(data.expires_at);
+      const expiresAt = Date.parse(snapshot.expires_at ?? "");
       if (!Number.isFinite(expiresAt)) {
         base = STALE_POLL_MS;
       } else {

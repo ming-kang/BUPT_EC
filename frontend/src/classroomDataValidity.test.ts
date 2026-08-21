@@ -3,7 +3,7 @@ import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
 
 const now = Date.parse("2026-07-10T12:00:00+08:00");
 
-function snapshot(overrides = {}) {
+function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     date: "2026-07-10",
     stale_until: "2026-07-10T23:59:59.999+08:00",

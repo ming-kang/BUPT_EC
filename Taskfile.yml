@@ -61,6 +61,7 @@ tasks:
       - go mod verify
       - task: frontend:install
       - pnpm -C frontend lint
+      - pnpm -C frontend typecheck
       - pnpm -C frontend test
       - pnpm -C frontend audit:prod
       - pnpm -C frontend audit:dev

@@ -24,8 +24,8 @@ describe("applyDarkClass", () => {
     const classes = new Set();
     const el = {
       classList: {
-        add: (c) => classes.add(c),
-        remove: (c) => classes.delete(c),
+        add: (c: string) => classes.add(c),
+        remove: (c: string) => classes.delete(c),
       },
     };
 

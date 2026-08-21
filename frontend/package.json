@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint . --report-unused-disable-directives --max-warnings 0",
+    "typecheck": "tsc --noEmit",
     "preview": "vite preview",
     "test": "vitest run",
     "size": "node scripts/check-bundle-size.mjs",
@@ -35,6 +36,8 @@
     "globals": "^17.8.0",
     "jsdom": "^29.1.1",
     "rollup-plugin-visualizer": "^7.0.1",
+    "typescript": "~5.9",
+    "typescript-eslint": "~8",
     "vite": "^7.3.6",
     "vitest": "^3.2.7"
   },

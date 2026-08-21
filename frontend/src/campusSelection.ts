@@ -2,19 +2,32 @@
 export const PREFERRED_CAMPUS_NAME = "沙河";
 
 /**
+ * Minimal structural view of a campus payload. Real payloads come from the
+ * (validated) API types, but these helpers deliberately tolerate partial or
+ * malformed shapes, so fields stay `unknown` and are guarded at runtime.
+ */
+export interface CampusLike {
+  id?: unknown;
+  name?: unknown;
+  buildings?: unknown;
+  nodes?: unknown;
+}
+
+/**
  * True when a campus payload carries buildings or nodes that can drive the UI.
  * Empty placeholders used for cold partial failures return false.
  */
-export function hasCampusSnapshot(campus) {
-  if (!campus || typeof campus !== "object") {
+export function hasCampusSnapshot(campus: unknown): boolean {
+  const view = campus as CampusLike | null | undefined;
+  if (!view || typeof view !== "object") {
     return false;
   }
-  const buildings = Array.isArray(campus.buildings) ? campus.buildings : [];
-  const nodes = Array.isArray(campus.nodes) ? campus.nodes : [];
+  const buildings = Array.isArray(view.buildings) ? view.buildings : [];
+  const nodes = Array.isArray(view.nodes) ? view.nodes : [];
   return buildings.length > 0 || nodes.length > 0;
 }
 
-function normalizePartialIds(partialCampusIds) {
+function normalizePartialIds(partialCampusIds: unknown): Set<string> {
   if (!Array.isArray(partialCampusIds)) {
     return new Set();
   }
@@ -26,11 +39,17 @@ function normalizePartialIds(partialCampusIds) {
   );
 }
 
-function isPartialCampus(campus, partialIds) {
+function isPartialCampus(campus: CampusLike, partialIds: Set<string>): boolean {
   if (!campus) {
     return false;
   }
   return partialIds.has(String(campus.id));
+}
+
+export interface ChooseCampusIdOptions {
+  campuses?: CampusLike[] | null;
+  partialCampusIds?: unknown;
+  selectedCampusId?: unknown;
 }
 
 /**
@@ -46,7 +65,7 @@ export function chooseCampusId({
   campuses,
   partialCampusIds,
   selectedCampusId,
-} = {}) {
+}: ChooseCampusIdOptions = {}): string {
   const list = Array.isArray(campuses) ? campuses : [];
   if (list.length === 0) {
     return "";

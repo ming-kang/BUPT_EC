@@ -1,20 +1,25 @@
 /**
  * Single source of truth for dark mode: OS/browser prefers-color-scheme.
  * There is no in-app toggle; user preference is not persisted.
- *
- * @param {boolean} systemPrefersDark - result of matchMedia("(prefers-color-scheme: dark)").matches
- * @returns {boolean}
  */
-export function resolveDarkMode(systemPrefersDark) {
+
+/** True only for the literal boolean true (mirrors the JS `=== true` guard). */
+export function resolveDarkMode(systemPrefersDark: unknown): boolean {
   return systemPrefersDark === true;
+}
+
+interface ClassListLike {
+  add(name: string): void;
+  remove(name: string): void;
 }
 
 /**
  * Apply or remove the `dark` class on a document body element.
- * @param {boolean} isDark
- * @param {Element | null | undefined} [body]
  */
-export function applyDarkClass(isDark, body) {
+export function applyDarkClass(
+  isDark: boolean,
+  body?: { classList?: ClassListLike } | null
+): void {
   const el =
     body ?? (typeof document !== "undefined" ? document.body : null);
   if (!el || !el.classList) return;
@@ -25,13 +30,15 @@ export function applyDarkClass(isDark, body) {
   }
 }
 
+interface MatchMediaHost {
+  matchMedia?(query: string): { matches: boolean };
+}
+
 /**
  * Read the current system color-scheme preference.
  * Safe when matchMedia is missing.
- * @param {Window | null | undefined} [win]
- * @returns {boolean}
  */
-export function getSystemPrefersDark(win) {
+export function getSystemPrefersDark(win?: MatchMediaHost | null): boolean {
   const w = win ?? (typeof window !== "undefined" ? window : null);
   if (!w || typeof w.matchMedia !== "function") return false;
   return w.matchMedia("(prefers-color-scheme: dark)").matches;
