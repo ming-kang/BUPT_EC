@@ -573,3 +573,47 @@ Cleared the 3 remaining high-severity pnpm audit findings (brace-expansion 1.1.1
 ### Status
 
 [OK] **Completed**
+
+## Session 18: Create TS-migration parent task; complete utils-into-service
+
+**Date**: 2026-08-21
+**Task**: 08-21-utils-into-service (completed & archived); 08-21-frontend-typescript (parent shell created, --no-start)
+**Branch**: `main`
+
+### Summary
+
+Per remaining audit backlog, created two Trellis tasks then executed the lightweight one:
+1. **08-21-utils-into-service** (B-08, PRD-only lightweight): moved `utils/http.go` + tests into
+   `service/jw_http.go` / `service/jw_http_test.go`; deleted `utils/` package. Renames:
+   `NewHTTPClient`→`NewJWHTTPClient` (exported for composition root), `HttpGet`/`HttpPostForm`/
+   `HttpPostWithHeader`/`CheckRedirect` → unexported; `HTTPDoer` stays exported as the
+   `NewJWClient` injection seam. Behavior byte-identical (redirect rejection, 5 MiB cap,
+   transport timeouts). Synced AGENTS.md structure sentence, docs/development.md (tree +
+   composition root + redirect note), and `.trellis/spec/backend/directory-structure.md`
+   (layout tree, signatures block, Correct example, Service Package Ownership now lists jw_http.go).
+2. **08-21-frontend-typescript**: parent task created with --no-start; children to be split during
+   its planning phase (type generation / core modules / component layer / prop-types removal;
+   React 19 at the end).
+
+### Main Changes
+
+- Independent explorer review: 6/6 PASS (behavior diff vs HEAD:utils/http.go byte-identical apart
+  from renames + two additive doc comments; no residual utils references repo-wide; exported
+  surface minimal; spec/docs consistent; build/vet/gofmt/race green).
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `331c6b4` | refactor(service): absorb utils HTTP client into service as jw_http.go |
+| `210b0be`/`c01b8ab` | chore(task): archive 08-21-utils-into-service (+ add frontend-typescript parent dir) |
+
+### Testing
+
+- [OK] go test -race ./... all green (-count=1); go vet clean; gofmt clean
+- [OK] embed build verified: cp frontend/dist → web/dist + go build -tags embed_assets
+- [OK] rg confirms zero BUPT_EC/utils or utils.* helper references in live code/docs/spec
+
+### Status
+
+[OK] **Completed** — backlog 剩余：frontend-typescript（父任务已建，待规划拆子）、classroom-display-contract（需产品确认）、ETag/冷路径（按需/需批准）
