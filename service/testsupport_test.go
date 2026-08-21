@@ -17,7 +17,6 @@ import (
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service/model"
-	"BUPT_EC/utils"
 )
 
 func init() {
@@ -94,7 +93,7 @@ func newTestServiceWithOptions(t *testing.T, client JWClient, options ClassroomS
 
 func newHTTPJWClientForTest(t *testing.T, username, password string) JWClient {
 	t.Helper()
-	client, err := NewJWClient(username, password, utils.NewHTTPClient())
+	client, err := NewJWClient(username, password, NewJWHTTPClient())
 	if err != nil {
 		t.Fatalf("NewJWClient() error = %v", err)
 	}

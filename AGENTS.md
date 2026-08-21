@@ -2,7 +2,7 @@
 
 ## Project Structure & Architecture
 
-This repository is a Go 1.25.12+ service with a React/Vite frontend for BUPT empty-classroom queries. `main.go` composes configuration, HTTP, and JW clients. HTTP routes and handlers live in `router.go` and `handler.go`; core query, refresh, token, caching, and normalization logic lives in `service/`, with API models in `service/model/`. Shared packages are `config/`, `logs/`, and `utils/`.
+This repository is a Go 1.25.12+ service with a React/Vite frontend for BUPT empty-classroom queries. `main.go` composes configuration, HTTP, and JW clients. HTTP routes and handlers live in `router.go` and `handler.go`; core query, refresh, token, caching, and normalization logic lives in `service/`, with API models in `service/model/`. Shared packages are `config/` and `logs/`; JW outbound HTTP transport lives in `service/` (`jw_http.go`).
 
 The frontend is in `frontend/src/`; put reusable UI in `components/` and colocate component CSS. Deployment and release scripts are in `scripts/`; user-facing operational documentation is under `docs/`.
 

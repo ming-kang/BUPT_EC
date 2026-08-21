@@ -1,4 +1,4 @@
-package utils
+package service
 
 import (
 	"context"
@@ -32,12 +32,12 @@ func TestHTTPClientDoesNotFollowRedirectToDisallowedHost(t *testing.T) {
 	}))
 	t.Cleanup(origin.Close)
 
-	_, _, _, err := HttpGet(NewHTTPClient(), context.Background(), origin.URL)
+	_, _, _, err := httpGet(NewJWHTTPClient(), context.Background(), origin.URL)
 	if err == nil {
-		t.Fatal("HttpGet: expected error when server returns redirect")
+		t.Fatal("httpGet: expected error when server returns redirect")
 	}
 	if !strings.Contains(err.Error(), "redirect") {
-		t.Fatalf("HttpGet: error %q should mention redirect", err)
+		t.Fatalf("httpGet: error %q should mention redirect", err)
 	}
 
 	select {
@@ -66,14 +66,14 @@ func TestHTTPClientDoesNotFollow307WithTokenHeader(t *testing.T) {
 	}))
 	t.Cleanup(origin.Close)
 
-	_, _, _, err := HttpPostWithHeader(NewHTTPClient(), context.Background(), origin.URL, map[string]string{
+	_, _, _, err := httpPostWithHeader(NewJWHTTPClient(), context.Background(), origin.URL, map[string]string{
 		"token": "secret-jw-token",
 	})
 	if err == nil {
-		t.Fatal("HttpPostWithHeader: expected error when server returns 307")
+		t.Fatal("httpPostWithHeader: expected error when server returns 307")
 	}
 	if !strings.Contains(err.Error(), "redirect") {
-		t.Fatalf("HttpPostWithHeader: error %q should mention redirect", err)
+		t.Fatalf("httpPostWithHeader: error %q should mention redirect", err)
 	}
 
 	select {
@@ -103,12 +103,12 @@ func TestHTTPHelpersUseProvidedDoer(t *testing.T) {
 		}, nil
 	})
 
-	status, headers, body, err := HttpGet(doer, context.Background(), "https://example.test/path")
+	status, headers, body, err := httpGet(doer, context.Background(), "https://example.test/path")
 	if err != nil {
-		t.Fatalf("HttpGet() error = %v", err)
+		t.Fatalf("httpGet() error = %v", err)
 	}
 	if !called || status != http.StatusCreated || headers.Get("X-Test") != "ok" || string(body) != "response" {
-		t.Fatalf("HttpGet() result = called:%v status:%d headers:%v body:%q", called, status, headers, body)
+		t.Fatalf("httpGet() result = called:%v status:%d headers:%v body:%q", called, status, headers, body)
 	}
 }
 
@@ -121,20 +121,20 @@ func TestHTTPResponseBodyLimit(t *testing.T) {
 		}, nil
 	})
 
-	_, _, _, err := HttpGet(doer, context.Background(), "https://example.test/large")
+	_, _, _, err := httpGet(doer, context.Background(), "https://example.test/large")
 	if err == nil || !strings.Contains(err.Error(), "exceeds") {
-		t.Fatalf("HttpGet() body-limit error = %v", err)
+		t.Fatalf("httpGet() body-limit error = %v", err)
 	}
 }
 
-func TestNewHTTPClientPreservesTransportSettings(t *testing.T) {
-	first := NewHTTPClient()
-	second := NewHTTPClient()
+func TestNewJWHTTPClientPreservesTransportSettings(t *testing.T) {
+	first := NewJWHTTPClient()
+	second := NewJWHTTPClient()
 	if first == second {
-		t.Fatal("NewHTTPClient() returned the same client instance")
+		t.Fatal("NewJWHTTPClient() returned the same client instance")
 	}
 	if first.Transport == second.Transport {
-		t.Fatal("NewHTTPClient() returned clients sharing one transport instance")
+		t.Fatal("NewJWHTTPClient() returned clients sharing one transport instance")
 	}
 	transport, ok := first.Transport.(*http.Transport)
 	if !ok {
@@ -146,17 +146,17 @@ func TestNewHTTPClientPreservesTransportSettings(t *testing.T) {
 		t.Fatalf("unexpected HTTP transport settings: %#v", transport)
 	}
 	if transport.Proxy == nil {
-		t.Fatal("NewHTTPClient() is missing environment proxy support")
+		t.Fatal("NewJWHTTPClient() is missing environment proxy support")
 	}
 	if first.CheckRedirect == nil {
-		t.Fatal("NewHTTPClient() is missing redirect protection")
+		t.Fatal("NewJWHTTPClient() is missing redirect protection")
 	}
 }
 
 func TestHTTPHelpersRejectNilDoer(t *testing.T) {
-	_, _, _, err := HttpGet(nil, context.Background(), "https://example.test")
+	_, _, _, err := httpGet(nil, context.Background(), "https://example.test")
 	if err == nil {
-		t.Fatal("HttpGet() expected nil doer error")
+		t.Fatal("httpGet() expected nil doer error")
 	}
 }
 
@@ -166,7 +166,7 @@ func TestCheckRedirectRejectsAllTargets(t *testing.T) {
 		t.Fatal(err)
 	}
 	via := []*http.Request{req}
-	if err := CheckRedirect(req, via); err == nil {
-		t.Fatal("CheckRedirect: expected error for any redirect target")
+	if err := checkRedirect(req, via); err == nil {
+		t.Fatal("checkRedirect: expected error for any redirect target")
 	}
 }

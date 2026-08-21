@@ -1,4 +1,4 @@
-package utils
+package service
 
 import (
 	"bytes"
@@ -13,19 +13,24 @@ import (
 
 const maxResponseBodyBytes int64 = 5 << 20
 
+// HTTPDoer is the outbound HTTP seam injected into JWClient so tests can
+// substitute fake transports instead of real network calls.
 type HTTPDoer interface {
 	Do(*http.Request) (*http.Response, error)
 }
 
-// CheckRedirect rejects every redirect. JW traffic carries a custom token
+// checkRedirect rejects every redirect. JW traffic carries a custom token
 // header and login form bodies that must never be forwarded to an
 // unvalidated host; net/http would otherwise follow redirects and preserve
 // those credentials even across hosts.
-func CheckRedirect(req *http.Request, via []*http.Request) error {
+func checkRedirect(req *http.Request, via []*http.Request) error {
 	return fmt.Errorf("refusing redirect to %q: JW outbound HTTP does not follow redirects", req.URL.String())
 }
 
-func NewHTTPClient() *http.Client {
+// NewJWHTTPClient builds the *http.Client used for all JW outbound traffic.
+// It never follows redirects (see checkRedirect) and applies conservative
+// timeouts tuned for the JW endpoints.
+func NewJWHTTPClient() *http.Client {
 	return &http.Client{
 		Transport: &http.Transport{
 			Proxy:                 http.ProxyFromEnvironment,
@@ -36,15 +41,15 @@ func NewHTTPClient() *http.Client {
 			ResponseHeaderTimeout: 12 * time.Second,
 			ExpectContinueTimeout: 1 * time.Second,
 		},
-		CheckRedirect: CheckRedirect,
+		CheckRedirect: checkRedirect,
 	}
 }
 
-func HttpGet(client HTTPDoer, ctx context.Context, rawURL string) (int, http.Header, []byte, error) {
+func httpGet(client HTTPDoer, ctx context.Context, rawURL string) (int, http.Header, []byte, error) {
 	return httpRequest(client, ctx, http.MethodGet, rawURL, nil, nil, nil)
 }
 
-func HttpPostForm(client HTTPDoer, ctx context.Context, rawURL string, data map[string]string) (int, http.Header, []byte, error) {
+func httpPostForm(client HTTPDoer, ctx context.Context, rawURL string, data map[string]string) (int, http.Header, []byte, error) {
 	values := url.Values{}
 	for key, value := range data {
 		values.Set(key, value)
@@ -53,7 +58,7 @@ func HttpPostForm(client HTTPDoer, ctx context.Context, rawURL string, data map[
 	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, nil, []byte(values.Encode()))
 }
 
-func HttpPostWithHeader(client HTTPDoer, ctx context.Context, rawURL string, headers map[string]string) (int, http.Header, []byte, error) {
+func httpPostWithHeader(client HTTPDoer, ctx context.Context, rawURL string, headers map[string]string) (int, http.Header, []byte, error) {
 	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, nil, nil)
 }
 

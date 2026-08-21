@@ -108,12 +108,12 @@ service/
   runtime_status.go      RuntimeStatus for /readyz
   classroom_builder.go   JW rows → campuses/buildings/rooms normalization
   jw_error.go            error classification + SafeErrorMessage + Unicode-safe upstream sanitizer
+  jw_http.go             JW outbound HTTP transport (redirect rejection, body limits)
   crypto.go              AES password encryption for the JW login protocol
   urlutil.go             JW API URL validation and building
   model/                 JSON payload shapes
 config/                  immutable startup snapshot + dotenv/env validation
 logs/                    slog JSON setup + per-request log_id context
-utils/                   HTTP helpers
 frontend/src/            React app (Vite + Ant Design)
   selectionContext.js    selection state: reducer + useSelection hook
   SelectionProvider.jsx  context provider
@@ -132,9 +132,9 @@ There is one public API endpoint, `GET /api/get_data`, plus `/healthz` and `/rea
 2. `POST <api>/login` performs an AES-encrypted password login and yields a token, held in memory only.
 3. `POST <api>/todayClassrooms?campusId=01|04` fetches classroom rows for Xitucheng (`01`) and Shahe (`04`).
 
-All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` is the sole production composition root: it calls `config.Load`, applies the log settings, constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and `service.NewClassroomService`, then injects the resulting service into `NewHTTPServer` before route registration:
+All classroom-query runtime state lives on the `ClassroomService` struct. `main.go::Init` is the sole production composition root: it calls `config.Load`, applies the log settings, constructs `service.NewJWHTTPClient()`, `service.NewJWClient`, and `service.NewClassroomService`, then injects the resulting service into `NewHTTPServer` before route registration:
 
-- **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `NewJWClient` receives immutable username/password values plus an explicit `utils.HTTPDoer`; tests substitute `mockJWClient` or a fake doer.
+- **`JWClient`** (`jw_client.go`) is the stateless protocol layer — build request, call HTTP, parse and classify the response. `NewJWClient` receives immutable username/password values plus an explicit `service.HTTPDoer`; tests substitute `mockJWClient` or a fake doer.
 - **`TokenManager`** (`token_manager.go`) caches the token and API URL, records whether the current token came from the startup `JW_TOKEN` snapshot or login, and deduplicates login/API-URL work with `singleflight.DoChan`. Each shared operation has its own bounded context detached from the first waiter's cancellation, while every caller can still stop waiting through its own context. On an auth failure, `RefreshAfterAuthFailure` rechecks the failed token inside singleflight: a delayed request reuses any newer token instead of logging in again. The injected override is invalidated only when that actual override token is rejected; expiration of a login-issued token does not change override state.
 - **Refresh coordination** (`refresh_coordinator.go`) ensures at most one refresh runs at a time; concurrent requests wait on the same attempt. Internal outcomes explicitly distinguish full success, partial success, and total failure. Partial outcomes set a fixed 30-second soft backoff; consecutive total failures use a 30s → 1m → 2m → 5m base ladder with bounded injectable jitter (±10% of base, absolute cap ±5s). Full success clears the ladder. Partial results are cached with `partial_campuses`, a safe top-level `error`, and prior same-day data for failed campuses when available. Partial payloads still inside the fresh TTL trigger soft-stale revalidation (return data + background refresh) instead of waiting the full 5 minutes. A newer total failure overrides an older partial warning on stale responses. Business time comes from the optional injected `ClassroomServiceOptions.Clock` (shared with `TokenManager`); tests use a thread-safe fake clock rather than replacing an internal `now` function.
 - **Topology**: production is a single process-local instance; horizontal multi-app
@@ -143,7 +143,7 @@ All classroom-query runtime state lives on the `ClassroomService` struct. `main.
 `Shutdown` only after handlers are drained; the lifecycle cancel also stops
 in-flight JW refreshes/logins promptly. See [operations.md](operations.md#caching-behavior) for the operator view.
 - Rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)` are parsed in `classroom_builder.go`.
-- Outbound JW HTTP (`utils/http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-path handlers may wait up to the classroom refresh budget; HTTP `WriteTimeout` is set higher so near-limit successes are not cut off.
+- Outbound JW HTTP (`service/jw_http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-path handlers may wait up to the classroom refresh budget; HTTP `WriteTimeout` is set higher so near-limit successes are not cut off.
 
 Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.Load` and passed to `logs.Init`, and a custom wrapper adds the per-request `log_id` from the context to every record (`logs/`).
 

@@ -17,9 +17,8 @@ deployment/release tooling in `scripts/` and `docs/`.
 ├── Taskfile.yml               # local dev entry points (task build/test/check/vuln)
 ├── config/                    # environment loading and campus config
 ├── logs/                      # slog setup and per-request log_id context
-├── service/                   # JW client, token, refresh, day-cache, builder logic
+├── service/                   # JW client, outbound HTTP, token, refresh, day-cache, builder logic
 │   └── model/                 # JW and public API JSON structs
-├── utils/                     # shared small helpers
 ├── web/                       # frontend asset embedding (build-tag dual implementation)
 │   └── dist/                  # build staging area, git-ignored; copied from frontend/dist
 ├── frontend/                  # React/Vite application (vite builds into frontend/dist)
@@ -34,7 +33,7 @@ Internal imports use the module prefix, for example `"BUPT_EC/service"`,
 
 - `main.go` owns process lifetime and is the only production composition root.
   Its `Init()` loads one `config.RuntimeConfig`, applies log settings,
-  constructs `utils.NewHTTPClient()`, `service.NewJWClient`, and
+  constructs `service.NewJWHTTPClient()`, `service.NewJWClient`, and
   `service.NewClassroomService`, then injects the service plus the immutable
   credential predicate result into `NewHTTPServer`. `main()` runs the service
   lifecycle with `Run(appCtx)` on a goroutine, cancels it before HTTP shutdown,
@@ -95,8 +94,8 @@ type LookupEnv func(string) (string, bool)
 func config.Load(dotenvPath string, lookup config.LookupEnv) (config.RuntimeConfig, error)
 func (c config.RuntimeConfig) HasJWCredentials() bool
 
-func utils.NewHTTPClient() *http.Client
-func service.NewJWClient(username, password string, client utils.HTTPDoer) (service.JWClient, error)
+func service.NewJWHTTPClient() *http.Client
+func service.NewJWClient(username, password string, client service.HTTPDoer) (service.JWClient, error)
 func service.NewClassroomService(
     options service.ClassroomServiceOptions,
     client service.JWClient,
@@ -180,7 +179,7 @@ service := service.NewClassroomService(config.GetConfig(), client)
 
 ```go
 cfg, err := config.Load(".env", os.LookupEnv)
-httpClient := utils.NewHTTPClient()
+httpClient := service.NewJWHTTPClient()
 jwClient, err := service.NewJWClient(cfg.JW.Username, cfg.JW.Password, httpClient)
 classroomService, err := service.NewClassroomService(service.ClassroomServiceOptions{
     Campuses: cfg.Campuses, TokenOverride: cfg.JW.Token,
@@ -203,7 +202,8 @@ classroomService, err := service.NewClassroomService(service.ClassroomServiceOpt
   background-worker draining.
 - `token_manager.go` owns token/API URL caching and `singleflight` login/API URL
   deduplication.
-- `jw_client.go`, `crypto.go`, and `urlutil.go` own the JW HTTP protocol,
+- `jw_client.go`, `jw_http.go`, `crypto.go`, and `urlutil.go` own the JW HTTP protocol,
+  outbound HTTP transport (redirect rejection, body limits),
   password encryption, response parsing, and API URL validation.
 - `classroom_builder.go` converts JW rows into campuses, buildings, rooms,
   `free_nodes`, and `free_times`.

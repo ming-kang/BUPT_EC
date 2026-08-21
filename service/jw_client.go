@@ -10,7 +10,6 @@ import (
 	"net/url"
 
 	"BUPT_EC/service/model"
-	"BUPT_EC/utils"
 )
 
 // JWClient is the stateless protocol-level client for the JW system.
@@ -24,10 +23,10 @@ type JWClient interface {
 type defaultJWClient struct {
 	username string
 	password string
-	client   utils.HTTPDoer
+	client   HTTPDoer
 }
 
-func NewJWClient(username, password string, client utils.HTTPDoer) (JWClient, error) {
+func NewJWClient(username, password string, client HTTPDoer) (JWClient, error) {
 	if client == nil {
 		return nil, errors.New("JW HTTP client is required")
 	}
@@ -49,7 +48,7 @@ func (c *defaultJWClient) QueryCampus(ctx context.Context, apiURL string, campus
 	// Validated API URLs carry no query, so the campus filter is the only pair.
 	queryURL += "?" + url.Values{"campusId": {campusID}}.Encode()
 
-	code, _, body, err := utils.HttpPostWithHeader(c.client, requestCtx, queryURL, map[string]string{"token": token})
+	code, _, body, err := httpPostWithHeader(c.client, requestCtx, queryURL, map[string]string{"token": token})
 	if err != nil {
 		return nil, newJWError(jwErrorQuery, "jw query", err, "request failed")
 	}
@@ -88,7 +87,7 @@ func (c *defaultJWClient) Login(ctx context.Context, apiURL string) (string, err
 		"codeVal":     "",
 	}
 
-	code, _, body, err := utils.HttpPostForm(c.client, requestCtx, loginURL, req)
+	code, _, body, err := httpPostForm(c.client, requestCtx, loginURL, req)
 	if err != nil {
 		return "", newJWError(jwErrorLogin, "jw login", err, "request failed")
 	}
@@ -110,7 +109,7 @@ func (c *defaultJWClient) FetchAPIURL(ctx context.Context) (string, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, jwRequestTimeout)
 	defer cancel()
 
-	code, _, body, err := utils.HttpGet(c.client, requestCtx, ServerConfigURL)
+	code, _, body, err := httpGet(c.client, requestCtx, ServerConfigURL)
 	if err != nil {
 		slog.WarnContext(ctx, "serverconfig request failed; using default HTTPS API URL", "err", err)
 		return validateJWAPIURL(DefaultAPIURL)

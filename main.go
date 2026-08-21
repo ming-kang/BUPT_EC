@@ -15,7 +15,6 @@ import (
 	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
-	"BUPT_EC/utils"
 	"BUPT_EC/web"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -42,7 +41,7 @@ func Init() (*application, error) {
 		return nil, fmt.Errorf("init logging: %w", err)
 	}
 
-	httpClient := utils.NewHTTPClient()
+	httpClient := service.NewJWHTTPClient()
 	jwClient, err := service.NewJWClient(runtimeConfig.JW.Username, runtimeConfig.JW.Password, httpClient)
 	if err != nil {
 		return nil, fmt.Errorf("create JW client: %w", err)
