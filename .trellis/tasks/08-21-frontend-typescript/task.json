@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "08-21-ts-foundation",
-    "08-21-ts-data-layer"
+    "08-21-ts-data-layer",
+    "08-21-ts-components"
   ],
   "parent": null,
   "relatedFiles": [],

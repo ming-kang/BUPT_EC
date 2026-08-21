@@ -19,7 +19,7 @@ file lists live there, scoped by the map in prd.md.
       darkModeBootstrap, apiError, campusSelection, reloadSchedule.
 - [ ] Gates green → commit → archive child.
 
-### Child 2 — `ts-data-layer`
+### Child 2 — `ts-data-layer` ✅ DONE (commit 48f854c, review PASS, zero findings)
 - [ ] Create/start child with PRD.
 - [ ] Convert todayClassroomsResponse (+test): `normalizeResponse(input: unknown)` keeps runtime
       guards; return type becomes the discriminated typed result (design D3).
