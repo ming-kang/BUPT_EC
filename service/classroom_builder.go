@@ -11,6 +11,29 @@ import (
 
 var roomPattern = regexp.MustCompile(`^(.+)[(（](\d+)[)）]$`)
 
+var numericBuildingPattern = regexp.MustCompile(`^\d+$`)
+
+// buildingDisplayAliases single-sources the user-facing building labels that
+// used to be hardcoded in the frontend picker (F-07). Keys are raw upstream
+// names; BuildingInfo.Name stays raw so selection state and table filters
+// remain stable across alias changes.
+var buildingDisplayAliases = map[string]string{
+	"未来学习大楼": "主楼",
+}
+
+// buildingDisplayName mirrors the former frontend label rules: alias lookup
+// first, then purely numeric names get a 教 prefix (教1, 教12), else the raw
+// name passes through unchanged.
+func buildingDisplayName(name string) string {
+	if alias, ok := buildingDisplayAliases[name]; ok {
+		return alias
+	}
+	if numericBuildingPattern.MatchString(name) {
+		return "教" + name
+	}
+	return name
+}
+
 func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo) model.CampusInfo {
 	buildingMap := map[string]map[string]*roomAccumulator{}
 	nodeRooms := map[int]map[string]struct{}{}
@@ -85,8 +108,9 @@ func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo)
 			return rooms[i].DisplayName < rooms[j].DisplayName
 		})
 		buildings = append(buildings, model.BuildingInfo{
-			Name:  buildingName,
-			Rooms: rooms,
+			Name:        buildingName,
+			DisplayName: buildingDisplayName(buildingName),
+			Rooms:       rooms,
 		})
 	}
 

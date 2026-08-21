@@ -4,17 +4,6 @@ import { useSelection } from "../selectionContext";
 import { ToggleButtonGroup } from "./ToggleButtonGroup";
 import "./BuildingPicker.css";
 
-const BUILDING_ALIASES: Record<string, string> = {
-  未来学习大楼: "主楼",
-};
-
-function displayBuildingName(name: string): string {
-  if (typeof name !== "string") return name;
-  const trimmed = name.trim();
-  if (BUILDING_ALIASES[trimmed]) return BUILDING_ALIASES[trimmed];
-  return /^\d+$/.test(trimmed) ? `教${trimmed}` : name;
-}
-
 interface BuildingPickerProps {
   selectedCampusData?: CampusInfo | null;
 }
@@ -36,7 +25,9 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
       <ToggleButtonGroup
         options={buildings.map((building) => ({
           value: building.name,
-          label: displayBuildingName(building.name),
+          // Fall back to the raw name while a pre-deploy same-day cache is
+          // still serving payloads without the new field.
+          label: building.display_name || building.name,
         }))}
         selectedValues={selectedBuildings}
         onToggle={(name) => {

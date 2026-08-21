@@ -47,6 +47,8 @@ export interface RoomInfo {
 
 export interface BuildingInfo {
   name: string;
+  /** Backend-normalized label (alias/numeric-prefix rules live in the builder). */
+  display_name: string;
   rooms: RoomInfo[];
 }
 

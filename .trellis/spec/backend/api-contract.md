@@ -135,11 +135,22 @@ Each campus contains:
 - `buildings`: normalized building groups.
 - `nodes`: class-period summaries for that campus.
 
+Each building contains:
+
+- `name`: raw upstream building name; selection state and table filters key on it.
+- `display_name`: user-facing label normalized server-side (alias table such as
+  未来学习大楼→主楼, numeric names prefixed 教). Mirrors the `RoomInfo.display_name`
+  precedent in `classroom_builder.go`.
+
 Each room contains:
 
 - `name`: room name without the building prefix.
 - `display_name`: stable building-room label such as `教学实验综合楼-N104`.
-- `capacity`: parsed integer capacity.
+- `capacity`: parsed integer capacity. Wire guarantee: always ≥ 1 — JW CLASSROOMS
+  tokens carry a positive `(N)` suffix (live-guarded by
+  `TestJWRoomTokensCarryPositiveCapacitySuffix`). A 0 can only appear as parse
+  degradation for a malformed suffix-less token, which also lands in the 未分组
+  building; the frontend's 未知 fallback is intended for exactly that case.
 - `free_nodes`: integer class-period numbers.
 - `free_times`: `{node,time}` pairs corresponding to `free_nodes`.
 
@@ -156,7 +167,7 @@ The frontend calls only `/api/get_data` for classroom data. Important consumers:
   endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.js:21`), validates
   the response shape inside its fetcher, and derives the UI envelope at render
   time.
-- `frontend/src/components/BuildingPicker.jsx` reads campus `buildings`.
+- `frontend/src/components/BuildingPicker.tsx` reads campus `buildings`.
 - `frontend/src/components/ClassTimePicker.jsx` reads campus `nodes`.
 - `frontend/src/components/TodayClassroomTable.jsx` filters rooms by selected
   building and selected class periods.

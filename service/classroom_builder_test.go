@@ -59,3 +59,43 @@ func TestBuildCampusInfoDeduplicatesRooms(t *testing.T) {
 		t.Fatalf("expected one deduplicated free time, got %#v", room.FreeTimes)
 	}
 }
+
+func TestBuildingDisplayNameNormalization(t *testing.T) {
+	cases := []struct {
+		raw  string
+		want string
+	}{
+		{"未来学习大楼", "主楼"}, // alias table (F-07)
+		{"1", "教1"},      // numeric prefix rule
+		{"12", "教12"},
+		{"教学实验综合楼", "教学实验综合楼"}, // passthrough
+	}
+	for _, tc := range cases {
+		if got := buildingDisplayName(tc.raw); got != tc.want {
+			t.Errorf("buildingDisplayName(%q) = %q, want %q", tc.raw, got, tc.want)
+		}
+	}
+}
+
+func TestBuildCampusInfoEmitsBuildingDisplayName(t *testing.T) {
+	campus := buildCampusInfo(config.CampusConfig{ID: "04", Name: "沙河"}, []model.JWClassInfo{
+		{
+			NodeName:   "1",
+			NodeTime:   "08:00-08:45",
+			Classrooms: "未来学习大楼-N104(229),1-101(40)",
+		},
+	})
+
+	want := map[string]string{
+		"未来学习大楼": "主楼",
+		"1":      "教1",
+	}
+	if len(campus.Buildings) != len(want) {
+		t.Fatalf("expected %d buildings, got %#v", len(want), campus.Buildings)
+	}
+	for _, b := range campus.Buildings {
+		if want[b.Name] != b.DisplayName {
+			t.Errorf("building %q display_name = %q, want %q", b.Name, b.DisplayName, want[b.Name])
+		}
+	}
+}

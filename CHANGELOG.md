@@ -10,6 +10,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Added
 
+- Building entries in `/api/get_data` now include a normalized `display_name`
+  label (alias and numeric-prefix rules moved from the frontend into the
+  backend builder); `name` remains the raw upstream identifier.
+
 - `/readyz` now includes a `version` field, and the startup log records the
   same build version (`dev` for local builds without injection).
 - The frontend error state now shows the request `log_id` when the server

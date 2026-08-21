@@ -48,8 +48,9 @@ type RoomInfo struct {
 }
 
 type BuildingInfo struct {
-	Name  string     `json:"name"`
-	Rooms []RoomInfo `json:"rooms"`
+	Name        string     `json:"name"`
+	DisplayName string     `json:"display_name"`
+	Rooms       []RoomInfo `json:"rooms"`
 }
 
 type CampusInfo struct {

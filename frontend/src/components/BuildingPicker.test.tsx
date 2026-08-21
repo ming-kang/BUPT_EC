@@ -14,7 +14,10 @@ import BuildingPicker from "./BuildingPicker";
 const CAMPUS = {
   id: "04",
   name: "沙河",
-  buildings: [{ name: "1" }, { name: "未来学习大楼" }],
+  buildings: [
+    { name: "1", display_name: "教1" },
+    { name: "未来学习大楼", display_name: "主楼" },
+  ],
 };
 
 // antd inserts a space between two-CJK-character button labels.
@@ -61,6 +64,25 @@ describe("BuildingPicker aria-pressed (R12)", () => {
     // "1" renders through the numeric alias as 教1, 未来学习大楼 as 主楼.
     expect(pressedOf("教1")).toBe("true");
     expect(pressedOf(MAIN_BUILDING)).toBe("false");
+  });
+
+  it("falls back to the raw name when display_name is absent (stale cache)", () => {
+    // Payloads cached before the display_name deploy lack the field; the
+    // picker must degrade to the raw name instead of rendering nothing.
+    const staleCampus = {
+      ...CAMPUS,
+      buildings: [{ name: "未来学习大楼" }],
+    } as CampusInfo;
+    renderPicker({ state: makeState() });
+    cleanup();
+    render(
+      <SelectionContext.Provider
+        value={{ state: makeState(), dispatch: vi.fn() }}
+      >
+        <BuildingPicker selectedCampusData={staleCampus} />
+      </SelectionContext.Provider>
+    );
+    expect(screen.getByRole("button", { name: /未来学习大楼/ })).toBeTruthy();
   });
 
   it("flips aria-pressed when the store selection changes", () => {
