@@ -22,7 +22,7 @@ For frontend work, use `pnpm dev`, `pnpm build`, `pnpm lint`, and `pnpm test` fr
 
 ## Style and Testing
 
-Follow `gofmt`; use short lowercase Go package names, imports rooted at `BUPT_EC/...`, and export APIs only when another package needs them. Keep mutable runtime state on `ClassroomService`; do not introduce package-level state. React components use PascalCase filenames (for example, `BuildingPicker.jsx`), hooks and ES modules, and two-space indentation. Component files should export components only.
+Follow `gofmt`; use short lowercase Go package names, imports rooted at `BUPT_EC/...`, and export APIs only when another package needs them. Keep mutable runtime state on `ClassroomService`; do not introduce package-level state. The frontend is strict TypeScript (`pnpm typecheck`; wired into CI). React components use PascalCase filenames (for example, `BuildingPicker.tsx`), hooks and ES modules, and two-space indentation. Component files should export components only.
 
 Add focused Go tests beside implementation as `*_test.go`. Use injected fakes (`mockJWClient`, test clocks) and the white-box seams in `service/export_test.go` rather than shared state or real JW requests. Frontend tests use Vitest and should cover behavior changes, especially response handling and selection state.
 

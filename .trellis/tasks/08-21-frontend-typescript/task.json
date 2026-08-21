@@ -21,7 +21,8 @@
   "children": [
     "08-21-ts-foundation",
     "08-21-ts-data-layer",
-    "08-21-ts-components"
+    "08-21-ts-components",
+    "08-21-ts-cleanup-protypes"
   ],
   "parent": null,
   "relatedFiles": [],

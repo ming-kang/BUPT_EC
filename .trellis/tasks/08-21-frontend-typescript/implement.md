@@ -27,7 +27,7 @@ file lists live there, scoped by the map in prd.md.
       error tracks; fetcher pair typed against api types.
 - [ ] Gates green → commit → archive child.
 
-### Child 3 — `ts-components`
+### Child 3 — `ts-components` ✅ DONE (commit ef4ce29, review PASS after index.html fix)
 - [ ] Create/start child with PRD.
 - [ ] Convert leaf components first: icons, ToggleButtonGroup, CampusButtonGroup, BuildingPicker,
       GlobalEmpty, Footer, ErrorBoundary (class component), then ClassTimePicker,

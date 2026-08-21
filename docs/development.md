@@ -89,7 +89,7 @@ Integration tests in `service/integration_test.go` hit the real JW system and co
 
 Unit tests never touch the network: they inject a `mockJWClient` (implementing the `JWClient` interface) into a fresh `ClassroomService`, which owns its own in-memory day cache — see `newTestService` in `service/testsupport_test.go`.
 
-Frontend behavior tests use Vitest and focus on API envelope normalization, selection-state transitions, preference persistence, and a jsdom lifecycle harness for `useTodayClassrooms` (`src/*.lifecycle.test.jsx`, via `@testing-library/react`). Pure helper tests stay on the default `node` environment. Run them with `pnpm test` from `frontend/`. `pnpm audit:prod` rejects moderate-or-higher production dependency advisories; `pnpm audit:dev` rejects high-or-critical findings across the full frontend toolchain.
+Frontend behavior tests use Vitest and focus on API envelope normalization, selection-state transitions, preference persistence, and a jsdom lifecycle harness for `useTodayClassrooms` (`src/*.lifecycle.test.tsx`, via `@testing-library/react`). Pure helper tests stay on the default `node` environment. Run them with `pnpm test` from `frontend/`. `pnpm audit:prod` rejects moderate-or-higher production dependency advisories; `pnpm audit:dev` rejects high-or-critical findings across the full frontend toolchain.
 
 Backend protocol tests cover AES password encryption known vectors (`service/crypto_test.go`) and offline JWClient request/response fixtures (`service/jw_protocol_test.go`). Real JW integration tests still skip cleanly without credentials.
 
@@ -114,12 +114,13 @@ service/
   model/                 JSON payload shapes
 config/                  immutable startup snapshot + dotenv/env validation
 logs/                    slog JSON setup + per-request log_id context
-frontend/src/            React app (Vite + Ant Design)
-  selectionContext.js    selection state: reducer + useSelection hook
-  SelectionProvider.jsx  context provider
-  useTodayClassrooms.js  SWR data fetching + auto-refresh on expires_at
-  todayClassroomsResponse.js  API envelope normalization helpers
-  components/            UI components (pickers, table, modal, ErrorBoundary)
+frontend/src/            React app in strict TypeScript (Vite + Ant Design)
+  api/types.ts           typed mirror of the Go public API structs (update both)
+  selectionContext.ts    selection state: reducer + useSelection hook
+  SelectionProvider.tsx  context provider
+  useTodayClassrooms.ts  SWR data fetching + auto-refresh on expires_at
+  todayClassroomsResponse.ts  API envelope normalization helpers
+  components/            UI components (.tsx; pickers, table, modal, ErrorBoundary)
 scripts/                 install.sh, release.sh, extract-changelog.sh
 .github/workflows/       ci.yml (PRs), release.yml (main pushes + tags), quality.yml (reusable gate)
 ```
@@ -159,6 +160,6 @@ Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.L
 ## Conventions
 
 - Format Go code with `gofmt`; imports use the `BUPT_EC/...` module prefix.
-- React components are PascalCase `.jsx` files with a matching `.css` beside them when needed; ESLint enforces the configured rules (`pnpm lint`).
+- React components are PascalCase `.tsx` files with a matching `.css` beside them when needed. The frontend is strict TypeScript (`pnpm typecheck`, enforced by Taskfile check and CI); API payload shapes are typed in `src/api/types.ts`, mirrored from `service/model/realtime_data.go` — update both sides together on contract changes. ESLint enforces the configured rules (`pnpm lint`).
 - Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `ci:`, `docs:`, `refactor:`); keep each commit scoped to one change.
 - User-visible changes should update the `[Unreleased]` section of [CHANGELOG.md](../CHANGELOG.md) in the same commit — see [release.md](release.md).
