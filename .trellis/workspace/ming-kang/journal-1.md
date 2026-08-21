@@ -617,3 +617,41 @@ Per remaining audit backlog, created two Trellis tasks then executed the lightwe
 ### Status
 
 [OK] **Completed** — backlog 剩余：frontend-typescript（父任务已建，待规划拆子）、classroom-display-contract（需产品确认）、ETag/冷路径（按需/需批准）
+
+## Session 19: Frontend TypeScript migration — full campaign complete
+
+**Date**: 2026-08-21
+**Task**: 08-21-frontend-typescript (parent) + children ts-foundation / ts-data-layer / ts-components / ts-cleanup-protypes — ALL COMPLETED & ARCHIVED
+**Branch**: `main`
+
+### Summary
+
+Executed the planned F-01 campaign end-to-end in four reviewable batches, each independently reviewed by an explorer subagent against HEAD baselines before commit:
+
+1. **ts-foundation** (`023b73a`): strict tsconfig (noEmit/bundler/allowJs), typescript-eslint additive in flat config, `typecheck` wired into package.json + Taskfile check + quality.yml; `src/api/types.ts` mirroring Go public structs + wire envelope; converted 7 pure helper modules (+tests). Review fixed LOW finding: scoped tseslint configs to ts/tsx so JS keeps espree.
+2. **ts-data-layer** (`48f854c`): todayClassroomsResponse/selectionContext/SelectionProvider/useTodayClassrooms (+4 test suites). normalizeResponse(payload: unknown) keeps every runtime guard verbatim; typed discriminated result; SWR fetcher throw ladder line-for-line preserved. SelectionProvider dropped PropTypes early (no TS declarations exist). Review: PASS zero findings.
+3. **ts-components** (`ef4ce29`): all 10 components + App/main + vitest setup → .tsx/.ts; src is now 100% TypeScript. ToggleButtonGroup made generic over option value type (formalizes numeric node values the old string-only PropTypes mis-declared). Review caught MEDIUM: index.html still pointed at main.jsx (worked only via Vite extension fallback) — fixed pre-commit.
+4. **ts-cleanup-protypes** (`ff1d829`): prop-types dependency removed (retained in lockfile only as eslint-plugin-react transitive); docs synced (development.md tree/conventions/tests section, AGENTS.md style line).
+
+### Key decisions honored from parent design
+
+D1 handwritten types over codegen; D2 strict day-one, no checkJs phase; D3 runtime guards stay verbatim at boundaries (types describe post-validation shapes); D4 dependency-order batches with tests traveling with subjects.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `023b73a` | feat(frontend): introduce strict TypeScript foundation and convert pure helpers |
+| `48f854c` | feat(frontend): convert data layer to strict TypeScript |
+| `ef4ce29` | feat(frontend): convert all components and entry points to strict TypeScript |
+| `ff1d829` | chore(frontend): remove unused prop-types dependency and sync docs |
+
+### Testing
+
+- [OK] Every batch: typecheck(strict)+lint(0 warn)+119 tests+build green; bundle 209,683 B gzip vs 230,888 budget (net −711 B vs pre-campaign)
+- [OK] go build/vet/test green throughout; embed_assets build verified twice
+- [OK] Zero behavior change: all pre-existing assertions byte-identical except mechanical annotations/casts; no new runtime deps
+
+### Status
+
+[OK] **Completed** — backlog 剩余：classroom-display-contract（需产品确认）、api-etag-preserialize（流量驱动）、cold-path-bounded-wait（需产品批准）；F-02 React 19 现已解锁（可独立立项）
