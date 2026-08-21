@@ -18,7 +18,9 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "08-21-ts-foundation"
+  ],
   "parent": null,
   "relatedFiles": [],
   "notes": "",
