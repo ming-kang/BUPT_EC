@@ -62,15 +62,15 @@ written when each child starts (progressive elaboration); this parent owns cross
 
 ## Acceptance Criteria (parent-level)
 
-- [ ] `frontend/src` contains only `.ts/.tsx` sources (tooling configs `vite.config.js`,
+- [x] `frontend/src` contains only `.ts/.tsx` sources (tooling configs `vite.config.js`,
       `eslint.config.js` excluded by design).
-- [ ] `pnpm typecheck` (tsc --noEmit, strict) passes and runs in Taskfile check + CI quality.yml.
-- [ ] `pnpm lint --max-warnings 0`, `pnpm test`, `pnpm build` all green at every batch boundary.
-- [ ] Bundle size within 230,888 B budget after final build (expect unchanged ≈210 KB).
-- [ ] `prop-types` absent from package.json dependencies; zero PropTypes imports remain.
-- [ ] Zero behavior change: pre-existing test assertions unmodified (renames/imports excepted);
+- [x] `pnpm typecheck` (tsc --noEmit, strict) passes and runs in Taskfile check + CI quality.yml.
+- [x] `pnpm lint --max-warnings 0`, `pnpm test`, `pnpm build` all green at every batch boundary.
+- [x] Bundle size within 230,888 B budget after final build (expect unchanged ≈210 KB).
+- [x] `prop-types` absent from package.json dependencies; zero PropTypes imports remain.
+- [x] Zero behavior change: pre-existing test assertions unmodified (renames/imports excepted);
       no new runtime dependencies added.
-- [ ] Docs synced: `docs/development.md` (frontend section), AGENTS.md if it references frontend
+- [x] Docs synced: `docs/development.md` (frontend section), AGENTS.md if it references frontend
       file conventions, CHANGELOG only if any user-visible slip occurs (none expected).
 
 ## Out of Scope
