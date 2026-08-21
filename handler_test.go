@@ -203,8 +203,60 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 	if envelope.Data.Stale {
 		t.Fatal("GetData fresh cache response should not be stale")
 	}
+	if got := responseRecorder.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("success response Retry-After = %q, want empty", got)
+	}
 	if len(envelope.Data.Campuses) != 1 || envelope.Data.Campuses[0].ID != "01" {
 		t.Fatalf("GetData campuses = %#v, want campus 01", envelope.Data.Campuses)
+	}
+}
+
+func TestGetDataWarmingErrorsCarryRetryAfter(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+	}{
+		{"no cache yet", service.ErrNoTodayCache},
+		{"cold wait timeout", service.ErrRefreshWaitTimeout},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			httpServer := newTestHTTPServer(&fakeClassroomService{todayError: tc.err}, true)
+			handler := httpServer.Routes()
+
+			responseRecorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+			handler.ServeHTTP(responseRecorder, request)
+
+			if responseRecorder.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d", responseRecorder.Code, http.StatusServiceUnavailable)
+			}
+			if got := responseRecorder.Header().Get("Retry-After"); got != "5" {
+				t.Fatalf("Retry-After header = %q, want \"5\"", got)
+			}
+			if !strings.Contains(responseRecorder.Body.String(), service.SafeErrorMessage(tc.err)) {
+				t.Fatalf("body %q should contain safe copy %q",
+					responseRecorder.Body.String(), service.SafeErrorMessage(tc.err))
+			}
+		})
+	}
+}
+
+func TestGetDataNonWarmingErrorHasNoRetryAfter(t *testing.T) {
+	// A generic upstream failure is transient too, but it is not a cold-start
+	// warming state; the retry hint must not mask real misconfiguration.
+	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: errors.New("raw upstream detail")}, true)
+	handler := httpServer.Routes()
+
+	responseRecorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+	handler.ServeHTTP(responseRecorder, request)
+
+	if responseRecorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d", responseRecorder.Code, http.StatusServiceUnavailable)
+	}
+	if got := responseRecorder.Header().Get("Retry-After"); got != "" {
+		t.Fatalf("Retry-After header = %q, want empty for non-warming 503", got)
 	}
 }
 

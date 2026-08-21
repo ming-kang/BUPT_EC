@@ -78,10 +78,11 @@ func Init() (*application, error) {
 }
 
 // httpWriteTimeout bounds how long the server may spend writing a response,
-// including any handler wait. It must stay greater than
-// service.ClassroomRefreshLimit so cold-path classroom refreshes that finish
-// near the refresh budget are not cut off before JSON is written.
-const httpWriteTimeout = 45 * time.Second
+// including any handler wait. The only handler that can wait on JW work is
+// /api/get_data, and its wait is bounded by service.DefaultColdWaitTimeout
+// (cold misses fail fast while the refresh continues in the background), so
+// this stays well under the old refresh-budget-sized value.
+const httpWriteTimeout = 15 * time.Second
 
 // gracefulShutdownTimeout covers HTTP draining plus any shared refresh worker
 // that was already running when shutdown began.

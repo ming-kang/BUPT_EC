@@ -126,7 +126,7 @@ func normalizeOutcome(outcome string) string {
 
 func normalizeCacheState(state string) string {
 	switch state {
-	case "fresh", "stale", "partial", "miss":
+	case "fresh", "stale", "partial", "miss", "wait_timeout":
 		return state
 	default:
 		return "miss"

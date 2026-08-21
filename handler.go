@@ -52,6 +52,12 @@ func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 
 	todayData, err := server.classroomService.GetTodayClassrooms(ctx)
 	if err != nil {
+		// Cold-start / in-flight-refresh failures are transient by design;
+		// tell clients when to come back. Other 503 causes (config, auth)
+		// stay header-free so retry hints never mask real misconfiguration.
+		if errors.Is(err, service.ErrNoTodayCache) || errors.Is(err, service.ErrRefreshWaitTimeout) {
+			w.Header().Set("Retry-After", "5")
+		}
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"code":   http.StatusServiceUnavailable,
 			"msg":    service.SafeErrorMessage(err),

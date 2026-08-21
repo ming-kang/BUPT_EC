@@ -98,7 +98,12 @@ both paths are correlatable against server logs and the `X-Log-Id` header):
 }
 ```
 
-Failure responses use HTTP 503 and this envelope:
+Failure responses use HTTP 503 and this envelope. When the failure is a
+cold-start warming state — `service.ErrNoTodayCache` or
+`service.ErrRefreshWaitTimeout` (the bounded cold-miss wait expired while the
+background refresh kept running) — the response also carries
+`Retry-After: 5`. Other 503 causes (config/auth failures) carry no
+`Retry-After`:
 
 ```json
 {

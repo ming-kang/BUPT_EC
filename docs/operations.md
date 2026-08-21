@@ -55,8 +55,9 @@ are intentionally ordered:
 
 | Layer | Budget | Role |
 | --- | --- | --- |
-| JW / classroom refresh context | 30s | shared upstream work bound |
-| Go HTTP `WriteTimeout` | 45s | allows the handler to finish after refresh |
+| Cold-miss wait (`DefaultColdWaitTimeout`) | 5s | handler fails fast with `503` + `Retry-After`; the refresh continues in the background |
+| JW / classroom refresh context | 30s | shared upstream work bound (background only) |
+| Go HTTP `WriteTimeout` | 15s | headroom over the cold-wait bound for marshal + transfer |
 | Nginx `/api/` `proxy_read_timeout` | 60s | leaves transfer margin for the JSON response |
 
 SPA/`/` proxy read timeout stays at 30s. If clients see proxy 504s only on cold

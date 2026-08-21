@@ -21,6 +21,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- Cold-start requests to `/api/get_data` now fail fast with `503` +
+  `Retry-After: 5` after waiting at most 5 seconds for the first classroom
+  refresh, instead of blocking for up to 30 seconds; the refresh continues in
+  the background and the next poll succeeds. The HTTP `WriteTimeout` drops
+  from 45s to 15s accordingly.
+
 - `/readyz` no longer exposes runtime internals (login/refresh/cache
   diagnostics) by default; the body now carries only `status` and `version`.
   Set `READYZ_DIAGNOSTICS=1` (environment or `/etc/bupt-ec/bupt-ec.env`) to

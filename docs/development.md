@@ -144,7 +144,7 @@ All classroom-query runtime state lives on the `ClassroomService` struct. `main.
 `Shutdown` only after handlers are drained; the lifecycle cancel also stops
 in-flight JW refreshes/logins promptly. See [operations.md](operations.md#caching-behavior) for the operator view.
 - Rooms like `教学实验综合楼-N104(229)` and merged rooms like `未来学习大楼-202-203(60)` are parsed in `classroom_builder.go`.
-- Outbound JW HTTP (`service/jw_http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-path handlers may wait up to the classroom refresh budget; HTTP `WriteTimeout` is set higher so near-limit successes are not cut off.
+- Outbound JW HTTP (`service/jw_http.go`) does not follow redirects (custom `token` / login bodies must not leave the intended host). Default `APP_ADDR` is loopback (`127.0.0.1:8080`). Cold-start requests wait at most 5s (`service.DefaultColdWaitTimeout`) for the in-flight refresh and then return `503` + `Retry-After: 5` while the refresh continues in the background; HTTP `WriteTimeout` (15s) keeps headroom over that bound.
 
 Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.Load` and passed to `logs.Init`, and a custom wrapper adds the per-request `log_id` from the context to every record (`logs/`).
 

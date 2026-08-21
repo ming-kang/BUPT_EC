@@ -66,9 +66,19 @@ func TestPrometheusMetricsIsolatedRegistryLoginSeries(t *testing.T) {
 	// Existing families remain registered and writable.
 	metrics.ObserveRefresh("full", time.Second)
 	metrics.ObserveCacheServe("fresh")
+	// wait_timeout must survive normalization as its own enum value —
+	// collapsing it into "miss" would hide cold-start pressure (B-03 R4).
+	metrics.ObserveCacheServe("wait_timeout")
+	if got := counterValue(t, metrics.registry, "bupt_ec_cache_serves_total", map[string]string{
+		"state": "wait_timeout",
+	}); got != 1 {
+		t.Fatalf("cache_serves_total{state=wait_timeout} = %v, want 1", got)
+	}
 	metrics.ObserveCampusFailure("01", string(jwErrorAuth))
 	metrics.ObserveRefreshSuppressed()
 	metrics.SetRefreshInFlight(true)
+
+	metrics.ObserveCacheServe("wait_timeout")
 
 	families := gatherFamilies(t, metrics.registry)
 	for _, name := range []string{

@@ -69,7 +69,7 @@ func SafeErrorMessage(err error) string {
 	if err == nil {
 		return ""
 	}
-	if errors.Is(err, ErrNoTodayCache) {
+	if errors.Is(err, ErrNoTodayCache) || errors.Is(err, ErrRefreshWaitTimeout) {
 		return "暂无可用的今日空教室数据，请稍后重试"
 	}
 	switch classifyError(err) {

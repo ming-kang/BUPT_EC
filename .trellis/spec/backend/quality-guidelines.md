@@ -509,7 +509,7 @@ The seven stages are ordered and must not be interleaved:
    `nginx -t` and reload Nginx even for first-install site removal. Preserve
    root-only recovery files when rollback itself is incomplete.
 8. Generated Nginx `/api/` `proxy_read_timeout` must be 60s (SPA `/` may stay
-   30s) so it exceeds the 30s classroom refresh and 45s Go write budgets.
+   30s) so it exceeds the backend stack (5s cold-wait bound, 15s Go write timeout).
 
 Production paths are fixed constants. Environment variables must not redirect
 them. Tests opt into a temporary root only by sourcing the script and calling

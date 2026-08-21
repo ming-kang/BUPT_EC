@@ -17,14 +17,20 @@ const (
 	jwRequestTimeout  = 12 * time.Second
 	classroomFreshTTL = 5 * time.Minute
 	// ClassroomRefreshLimit is the max duration for a shared JW classroom refresh.
-	// HTTP WriteTimeout in main must exceed this so a cold-path handler that
-	// blocks until refresh finishes can still write the JSON response.
+	// Budget for one background refresh attempt. HTTP handlers never wait this
+	// long: cold misses return after DefaultColdWaitTimeout while the refresh
+	// continues here in the background.
 	ClassroomRefreshLimit = 30 * time.Second
 	staleRefreshWait      = 300 * time.Millisecond
 	staleRefreshBackoff   = 30 * time.Second
 )
 
 var ErrNoTodayCache = errors.New("no today classroom cache")
+
+// ErrRefreshWaitTimeout is returned when a cold-miss request waited
+// ColdWaitTimeout for the refresh it started and the refresh had not finished.
+// The refresh itself keeps running; the next poll typically succeeds.
+var ErrRefreshWaitTimeout = errors.New("refresh still running after cold wait timeout")
 
 const partialCampusErrorMessage = "部分校区数据刷新失败，已展示可用数据"
 
@@ -74,6 +80,8 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 		}
 		return nil, ErrNoTodayCache
 	}
+	timer := time.NewTimer(s.coldWaitTimeout)
+	defer timer.Stop()
 	select {
 	case <-attempt.done:
 		if attempt.result.kind == refreshPartial {
@@ -84,6 +92,12 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 			s.metrics.ObserveCacheServe("miss")
 		}
 		return classroomResponseFromRefresh(attempt.result)
+	case <-timer.C:
+		// Deliberately do NOT cancel the attempt: the shared refresh keeps
+		// running so the next poll (frontend retry ladder rung 1 is 10s)
+		// finds fresh data instead of restarting from scratch (design D3).
+		s.metrics.ObserveCacheServe("wait_timeout")
+		return nil, ErrRefreshWaitTimeout
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}

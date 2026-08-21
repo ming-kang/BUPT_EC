@@ -63,6 +63,9 @@ type ClassroomService struct {
 	lifecycleCancel context.CancelFunc // set by Run; canceled by Run/Shutdown under backgroundMu
 	schedulerDone   chan struct{}      // closed when the Run scheduler goroutine exits
 	warmupJitter    func() time.Duration
+	// coldWaitTimeout bounds the cache-miss wait in GetTodayClassrooms.
+	// Always positive after construction (default or injected).
+	coldWaitTimeout time.Duration
 
 	statusMu sync.RWMutex
 	status   RuntimeStatus
@@ -87,7 +90,21 @@ type ClassroomServiceOptions struct {
 	// WarmupJitter is optional; nil uses the randomized production jitter added
 	// to the warmup midnight rollover wait (randomWarmupJitter).
 	WarmupJitter func() time.Duration
+	// ColdWaitTimeout bounds how long a cache-miss request waits for the
+	// in-flight cold-start refresh before returning ErrRefreshWaitTimeout.
+	// Zero or negative values resolve to defaultColdWaitTimeout. The refresh
+	// itself keeps running; only the wait is bounded.
+	ColdWaitTimeout time.Duration
 }
+
+// defaultColdWaitTimeout covers a typical login + two-campus query (~1-3s)
+// with headroom, while failing fast enough that cold-start users see a clear
+// error instead of a 30s spinner.
+// DefaultColdWaitTimeout is the production cold-miss wait bound used when
+// ClassroomServiceOptions.ColdWaitTimeout is zero or negative.
+const DefaultColdWaitTimeout = 5 * time.Second
+
+const defaultColdWaitTimeout = DefaultColdWaitTimeout
 
 func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*ClassroomService, error) {
 	if client == nil {
@@ -109,17 +126,22 @@ func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*Cla
 	if warmupJitter == nil {
 		warmupJitter = randomWarmupJitter
 	}
+	coldWaitTimeout := options.ColdWaitTimeout
+	if coldWaitTimeout <= 0 {
+		coldWaitTimeout = defaultColdWaitTimeout
+	}
 	metrics := options.Metrics
 	if metrics == nil {
 		metrics = NoopMetrics{}
 	}
 	s := &ClassroomService{
-		campuses:      append([]config.CampusConfig(nil), options.Campuses...),
-		jwClient:      client,
-		clock:         clock,
-		backoffRandom: backoffRandom,
-		warmupJitter:  warmupJitter,
-		metrics:       metrics,
+		campuses:        append([]config.CampusConfig(nil), options.Campuses...),
+		jwClient:        client,
+		clock:           clock,
+		backoffRandom:   backoffRandom,
+		warmupJitter:    warmupJitter,
+		metrics:         metrics,
+		coldWaitTimeout: coldWaitTimeout,
 	}
 	s.tokenManager = &TokenManager{
 		jwClient:       client,
