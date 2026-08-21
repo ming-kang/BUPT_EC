@@ -62,7 +62,7 @@ task build   # frontend build + embed + Go build → ./bupt-ec (bupt-ec.exe on W
 
 `go run ./` also works but compiles without the `embed_assets` build tag, so it serves the API plus a placeholder page instead of the UI; the native equivalent of `task build` is `cd frontend && pnpm install && pnpm build && cd .. && rm -rf web/dist && cp -r frontend/dist web/dist && go build -tags embed_assets -o bupt-ec ./` — without the `-trimpath -ldflags "-s -w -X main.version=..."` that `task build` adds, so the binary reports version `dev`.
 
-Requires Go 1.25.12+ (or Go 1.26.5+), Node 22, pnpm 9.15.x, [Task](https://taskfile.dev) for the `task` entry points, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
+Requires Go 1.25.13+ (or a current Go 1.26 patch release), Node 22, pnpm 9.15.x, [Task](https://taskfile.dev) for the `task` entry points, and JW credentials from the process environment or an optional `.env` (see `.env.example`). Full guide including tests and an architecture tour: [docs/development.md](docs/development.md).
 
 ## Documentation
 

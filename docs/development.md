@@ -4,7 +4,7 @@ Local development setup, testing, and a tour of the architecture.
 
 ## Requirements
 
-- Go 1.25.12+ (per `go.mod`); Go 1.26 users need 1.26.5 or newer
+- Go 1.25.13+ (per `go.mod`); Go 1.26 users need a current patch release
 - Node.js 22 LTS
 - pnpm 9.15.x — `corepack enable && corepack prepare pnpm@9.15.0 --activate`
 - A valid BUPT teaching affairs account (only for integration tests and running against the real JW system; unit tests run without one)
@@ -68,7 +68,7 @@ go test ./...              # unit tests always run; integration tests skip
 go test -race ./...        # what CI and `task test` run
 go vet ./...
 gofmt -l .                 # must print nothing
-GOTOOLCHAIN=go1.25.12 go mod tidy -diff   # go.mod/go.sum match the import graph
+GOTOOLCHAIN=go1.25.13 go mod tidy -diff   # go.mod/go.sum match the import graph
 go mod verify
 cd frontend && pnpm lint && pnpm test && pnpm build
 cd frontend && pnpm size    # gzip budget over dist/, CI runs it after the build

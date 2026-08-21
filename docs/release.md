@@ -96,7 +96,7 @@ bupt-ec-linux-${arch}/
 
 Pinned via the workflows and `go.mod`; no Dependabot — bump by hand:
 
-- Go 1.25.12 (`go.mod`, `actions/setup-go`; Go 1.26 users need 1.26.5+)
+- Go 1.25.13 (`go.mod`, `actions/setup-go`; Go 1.26 users need a current patch release)
 - Node 22 LTS (`actions/setup-node`)
 - pnpm 9.15.x (`corepack prepare`, lockfile v9)
 
