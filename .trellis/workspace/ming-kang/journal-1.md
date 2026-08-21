@@ -552,3 +552,24 @@ Raised the Go security floor to 1.25.12, patched quic-go, refreshed the Vite and
 ### Status
 
 [OK] **Completed** — backlog 剩余：frontend-typescript（L 级）、classroom-display-contract（需产品确认）、utils-into-service（S）、ETag/冷路径（按需/需批准）
+
+
+## Session 17: Fix devDependency audit findings via lockfile patch bumps
+
+**Date**: 2026-08-21
+**Task**: Fix devDependency audit findings via lockfile patch bumps
+**Branch**: `main`
+
+### Summary
+
+Cleared the 3 remaining high-severity pnpm audit findings (brace-expansion 1.1.18, js-yaml 4.3.1, nanoid 3.3.18) via scoped pnpm update within declared semver ranges - lockfile-only change, no overrides, no source changes. All gates green: audit/audit:prod/audit:dev zero vulns, lint clean, 119 frontend tests pass, build ok, bundle 210394 B within budget (unchanged). Independent explorer review PASS on all 5 items. audit:dev no longer needs manual skipping in task check.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d7af573` | (see git log) |
+
+### Status
+
+[OK] **Completed**
