@@ -698,3 +698,37 @@ Pre-task research (two parallel explorers) settled ground truth for F-05/F-07 an
 ### Status
 
 [OK] **Completed** — backlog 剩余：api-etag-preserialize（挂起，研究结论见任务归档）、cold-path-bounded-wait（需产品批准）、React 19（已解锁）、低优先级杂项
+
+## Session 21: cold-path-bounded-wait — 5s bounded wait + Retry-After
+
+**Date**: 2026-08-21
+**Task**: 08-21-cold-path-bounded-wait (completed & archived)
+**Branch**: `main`
+
+### Summary
+
+B-03 implemented per the approved planning artifacts (prd/design/implement):
+- `ClassroomServiceOptions.ColdWaitTimeout` (default `service.DefaultColdWaitTimeout` = 5s, ≤0→default); cold-miss select gains a `time.NewTimer` arm returning new sentinel `ErrRefreshWaitTimeout` with `ObserveCacheServe("wait_timeout")`; refresh deliberately never cancelled (D3, worker runs on WithoutCancel context).
+- Handler sets `Retry-After: 5` only when errors.Is matches ErrNoTodayCache/ErrRefreshWaitTimeout; SafeErrorMessage maps both to the existing 暂无 copy.
+- httpWriteTimeout 45s→15s; main-package invariant tests rewritten against DefaultColdWaitTimeout (premise changed: handlers no longer hold sockets for the refresh budget).
+- Frontend untouched (retry ladder rung 1 = 10s > Retry-After).
+
+### Review findings fixed in-commit
+- HIGH: normalizeCacheState allowlist coerced "wait_timeout"→"miss", silently defeating R4 observability — added to enum + Prometheus test asserting the label survives.
+- MEDIUM/LOW doc sweep: operations.md budget table rewritten (cold-wait layer added), main.go + ClassroomRefreshLimit comments de-staled, quality-guidelines.md 45s number updated, success-path Retry-After absence asserted.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `28e5f2f` | feat(api): bound cold-start wait at 5s with 503 + Retry-After |
+| `04fd7d1` | chore(task): archive 08-21-cold-path-bounded-wait |
+
+### Testing
+
+- [OK] New: TestColdMissWaitTimesOutThenConverges (gated refresh, timeout → convergence), TestColdWaitTimeoutDefaultsToFiveSeconds, Retry-After polarity handler tests ×3, Prometheus wait_timeout label test
+- [OK] go test -race ./... -count=1 all green; vet/gofmt clean; embed build green; frontend 120 tests green (untouched)
+
+### Status
+
+[OK] **Completed** — backlog 剩余：React 19（已解锁）、api-etag-preserialize（挂起待流量）、E-03′/E-06/F-04/B-05（条件触发）
