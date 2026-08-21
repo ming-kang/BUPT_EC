@@ -1,11 +1,33 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, type Dispatch } from "react";
 
-export const SelectionContext = createContext(null);
+export interface SelectionState {
+  selectedCampus: string;
+  selectedBuildings: string[];
+  selectedClassTimes: number[];
+  showClassTime: boolean;
+  canSelectAllDay: boolean;
+}
+
+export type SelectionAction =
+  | { type: "SET_CAMPUS"; id: string }
+  | { type: "SET_BUILDINGS"; buildings: string[] }
+  | { type: "SET_CLASS_TIMES"; times: number[] }
+  | { type: "SET_SHOW_CLASS_TIME"; value: boolean }
+  | { type: "SET_CAN_SELECT_ALL_DAY"; value: boolean };
+
+export interface SelectionContextValue {
+  state: SelectionState;
+  dispatch: Dispatch<SelectionAction>;
+}
+
+export const SelectionContext = createContext<SelectionContextValue | null>(
+  null
+);
 
 export const SHOW_CLASS_TIME_KEY = "showClassTime";
 export const CAN_SELECT_ALL_DAY_KEY = "canSelectAllDay";
 
-function readLocalStorage(key) {
+function readLocalStorage(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -13,7 +35,7 @@ function readLocalStorage(key) {
   }
 }
 
-export function writeLocalStorage(key, value) {
+export function writeLocalStorage(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -21,7 +43,7 @@ export function writeLocalStorage(key, value) {
   }
 }
 
-export function initSelectionState() {
+export function initSelectionState(): SelectionState {
   return {
     selectedCampus: "",
     selectedBuildings: [],
@@ -32,7 +54,10 @@ export function initSelectionState() {
 }
 
 /** Pure reducer — no I/O. Persistence lives in SelectionProvider. */
-export function selectionReducer(state, action) {
+export function selectionReducer(
+  state: SelectionState,
+  action: SelectionAction
+): SelectionState {
   switch (action.type) {
     case "SET_CAMPUS":
       return {
@@ -54,7 +79,7 @@ export function selectionReducer(state, action) {
   }
 }
 
-export function useSelection() {
+export function useSelection(): SelectionContextValue {
   const ctx = useContext(SelectionContext);
   if (!ctx) {
     throw new Error("useSelection must be used within SelectionProvider");

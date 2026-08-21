@@ -173,10 +173,10 @@ describe("mergeFetchResult", () => {
     const merged = mergeFetchResult(goodPrev, hardError, now);
 
     expect(merged.code).toBe(0);
-    expect(merged.data.campuses).toEqual(goodPrev.data.campuses);
-    expect(merged.data.date).toBe(goodPrev.data.date);
-    expect(merged.data.stale).toBe(true);
-    expect(merged.data.error).toEqual({
+    expect(merged.data!.campuses).toEqual(goodPrev.data.campuses);
+    expect(merged.data!.date).toBe(goodPrev.data.date);
+    expect(merged.data!.stale).toBe(true);
+    expect(merged.data!.error).toEqual({
       type: "client_refresh_failed",
       message: "网络中断",
     });
@@ -186,8 +186,10 @@ describe("mergeFetchResult", () => {
     const merged = mergeFetchResult(goodPrev, serviceError, now);
 
     expect(merged.code).toBe(0);
-    expect(merged.data.campuses).toHaveLength(1);
-    expect(merged.data.error.message).toBe("教务系统暂时不可用");
+    expect(merged.data!.campuses).toHaveLength(1);
+    expect((merged.data!.error as { message: string }).message).toBe(
+      "教务系统暂时不可用"
+    );
   });
 
   it("uses a hard empty error envelope when there was no prior good snapshot", () => {
@@ -245,7 +247,11 @@ describe("mergeFetchResult", () => {
   });
 
   it("replaces prior state with a successful payload", () => {
-    const next = {
+    const next: {
+      code: number;
+      msg: string;
+      data: Record<string, unknown>;
+    } = {
       code: 0,
       msg: "fresh",
       data: {

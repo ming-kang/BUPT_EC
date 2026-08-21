@@ -1,5 +1,4 @@
-import PropTypes from "prop-types";
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, type ReactNode } from "react";
 import {
   CAN_SELECT_ALL_DAY_KEY,
   SelectionContext,
@@ -9,7 +8,7 @@ import {
   writeLocalStorage,
 } from "./selectionContext";
 
-export default function SelectionProvider({ children }) {
+export default function SelectionProvider({ children }: { children?: ReactNode }) {
   const [state, dispatch] = useReducer(
     selectionReducer,
     undefined,
@@ -46,7 +45,3 @@ export default function SelectionProvider({ children }) {
     </SelectionContext.Provider>
   );
 }
-
-SelectionProvider.propTypes = {
-  children: PropTypes.node,
-};

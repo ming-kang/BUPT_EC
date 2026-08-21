@@ -9,6 +9,8 @@ import {
   loadingResponse,
   normalizeResponse,
   readJson,
+  type Envelope,
+  type PayloadView,
 } from "./todayClassroomsResponse";
 
 /**
@@ -28,8 +30,21 @@ export const FOCUS_THROTTLE_MS = 15_000;
 
 const EXPIRED_SNAPSHOT_MESSAGE = "当前缓存已失效，正在重新获取";
 
+/** Hook-facing envelope: normalized shape plus the optional client log id. */
+export type HookEnvelope = Envelope & { logId?: string };
+
+/** Structural view for pure helpers that run before shapes are trusted. */
+export interface EnvelopeView {
+  code?: unknown;
+  msg?: unknown;
+  data?: unknown;
+}
+
 /** True when the response can still drive the classroom UI. */
-export function hasUsableClassroomData(resp, nowMs = Date.now()) {
+export function hasUsableClassroomData(
+  resp?: EnvelopeView | null,
+  nowMs: number = Date.now()
+): boolean {
   return (
     resp?.code === 0 &&
     isUsableBusinessDaySnapshot(resp?.data, nowMs)
@@ -40,7 +55,7 @@ export function hasUsableClassroomData(resp, nowMs = Date.now()) {
  * Full-page Spin only for initial load / manual retry without usable data.
  * Background auto-reload never takes over the whole page.
  */
-export function shouldFullPageSpin(isBackground, hasUsableData) {
+export function shouldFullPageSpin(isBackground: boolean, hasUsableData: boolean): boolean {
   if (isBackground) {
     return false;
   }
@@ -52,10 +67,21 @@ export function shouldFullPageSpin(isBackground, hasUsableData) {
  * On failure after a successful snapshot, keep campuses and attach a soft error
  * (reuses the existing stale/error Alert). Hard-empty only with no prior good data.
  */
-export function mergeFetchResult(prev, next, nowMs = Date.now()) {
+/** Loose envelope shape returned by the merge (fields read by tests/UI). */
+export interface MergedEnvelope {
+  code: number;
+  msg: string;
+  data: Record<string, unknown> | null;
+}
+
+export function mergeFetchResult(
+  prev?: EnvelopeView | null,
+  next?: EnvelopeView | null,
+  nowMs: number = Date.now()
+): MergedEnvelope {
   const nextIsSuccessfulEnvelope = next?.code === 0 && next.data != null;
   if (hasUsableClassroomData(next, nowMs)) {
-    return next;
+    return next as unknown as MergedEnvelope;
   }
 
   const msg =
@@ -66,9 +92,9 @@ export function mergeFetchResult(prev, next, nowMs = Date.now()) {
   if (hasUsableClassroomData(prev, nowMs)) {
     return {
       code: 0,
-      msg: typeof prev.msg === "string" ? prev.msg : "",
+      msg: typeof prev!.msg === "string" ? prev!.msg : "",
       data: {
-        ...prev.data,
+        ...(prev!.data as object),
         stale: true,
         error: {
           type: "client_refresh_failed",
@@ -86,7 +112,7 @@ export function mergeFetchResult(prev, next, nowMs = Date.now()) {
   };
 }
 
-function errorEnvelope(message, code = 500, logId = "") {
+function errorEnvelope(message: string, code = 500, logId = "") {
   return {
     code,
     msg: message || fallbackErrorMessage,
@@ -100,7 +126,7 @@ function errorEnvelope(message, code = 500, logId = "") {
  * when the transport failed, otherwise the non-zero business code carried by
  * an HTTP-2xx service error envelope, and 500 only as the last resort.
  */
-function errorAsEnvelope(error) {
+function errorAsEnvelope(error: unknown): HookEnvelope {
   if (error instanceof ApiError) {
     const status = Number.isFinite(error.status) ? error.status : null;
     const businessCode =
@@ -123,7 +149,7 @@ function errorAsEnvelope(error) {
  * SWR then keeps the previous data on its data track ("failure preserves the
  * last snapshot") and routes scheduling through onErrorRetry.
  */
-export async function fetchTodayClassrooms(url) {
+export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
   let response;
   try {
     response = await fetch(url, {
@@ -131,20 +157,21 @@ export async function fetchTodayClassrooms(url) {
       signal: AbortSignal.timeout(CLIENT_FETCH_TIMEOUT_MS),
     });
   } catch (error) {
-    if (error?.name === "TimeoutError") {
+    if ((error as { name?: string } | undefined)?.name === "TimeoutError") {
       throw new ApiError(CLIENT_FETCH_TIMEOUT_MESSAGE, {});
     }
     throw error;
   }
 
   const payload = await readJson(response);
-  const logId = payload?.log_id || response.headers?.get("X-Log-Id") || "";
-  const businessCode = Number(payload?.code);
+  const record = payload as PayloadView | null;
+  const logId = record?.log_id || response.headers?.get("X-Log-Id") || "";
+  const businessCode = Number(record?.code);
   const code = Number.isFinite(businessCode) ? businessCode : undefined;
 
   if (!response.ok) {
     throw new ApiError(
-      extractMessage(payload) || `请求失败 (${response.status})`,
+      extractMessage(record) || `请求失败 (${response.status})`,
       { status: response.status, code, logId }
     );
   }
@@ -166,7 +193,7 @@ export async function fetchTodayClassrooms(url) {
     // Success envelope with cross-day/expired/malformed cache metadata fails
     // closed as a client failure (code 500) so the retry ladder, not the 1s
     // poll floor, paces the next attempt (Nginx 30 req/min budget).
-    throw new ApiError(extractMessage(payload) || fallbackErrorMessage, {
+    throw new ApiError(extractMessage(record) || fallbackErrorMessage, {
       logId,
     });
   }
@@ -181,9 +208,14 @@ export async function fetchTodayClassrooms(url) {
  * wrapper. SWR passes the cached fetcher value (the envelope), the schedule
  * pipeline wants the inner snapshot.
  */
-export function pollingInterval(latest) {
+export function pollingInterval(latest?: EnvelopeView | null): number {
   const delay = nextReloadDelay(latest?.data, { failureCount: 0 });
   return Math.max(1, delay ?? MIN_FRESH_DELAY_MS);
+}
+
+export interface RetryScheduleOptions {
+  nowMs?: number;
+  random?: (() => number) | null;
 }
 
 /**
@@ -192,9 +224,23 @@ export function pollingInterval(latest) {
  * nextReloadDelay also clamps the ladder to a still-displayable snapshot's
  * stale_until hard deadline (contract: wake at stale_until even mid-backoff).
  */
-export function retryDelayFor(retryCount, latestData, options = {}) {
+export function retryDelayFor(
+  retryCount: number,
+  latestData: unknown,
+  options: RetryScheduleOptions = {}
+): number | null | undefined {
   return nextReloadDelay(latestData, { ...options, failureCount: retryCount });
 }
+
+interface RetryCacheEntry {
+  data?: { data?: unknown };
+}
+
+interface RetryConfigView {
+  cache?: { get(key: string): RetryCacheEntry | undefined };
+}
+
+type RevalidateFn = (opts?: object) => void | Promise<unknown>;
 
 /**
  * Custom onErrorRetry: ladder + stale_until clamp via retryDelayFor, and a
@@ -205,9 +251,15 @@ export function retryDelayFor(retryCount, latestData, options = {}) {
  * (SWR's own isActive precondition), which pauses the ladder as the old
  * scheduler did.
  */
-export function retryOnError(_error, key, config, revalidate, opts) {
-  const cached = config?.cache?.get?.(key);
-  const delay = retryDelayFor(opts.retryCount, cached?.data?.data);
+export function retryOnError(
+  _error: unknown,
+  key: string,
+  config: unknown,
+  revalidate?: RevalidateFn,
+  opts?: { retryCount: number }
+): void {
+  const cached = (config as RetryConfigView | undefined)?.cache?.get?.(key);
+  const delay = retryDelayFor(opts!.retryCount, cached?.data?.data);
   if (delay == null || !Number.isFinite(delay)) {
     return;
   }
@@ -218,7 +270,7 @@ export function retryOnError(_error, key, config, revalidate, opts) {
     ) {
       return;
     }
-    revalidate(opts);
+    revalidate!(opts);
   }, delay);
 }
 
@@ -227,7 +279,11 @@ export default function useTodayClassrooms() {
   // reload so the spin policy can tell it apart from background revalidation.
   const [manualReload, setManualReload] = useState(false);
 
-  const { data, error, isValidating, mutate } = useSWR(
+  const { data, error, isValidating, mutate } = useSWR<
+    Envelope,
+    unknown,
+    string
+  >(
     TODAY_CLASSROOMS_KEY,
     fetchTodayClassrooms,
     {
@@ -262,14 +318,14 @@ export default function useTodayClassrooms() {
   const isBackground = !neverResolved && !manualReload;
   const spinning = isValidating && shouldFullPageSpin(isBackground, hasUsable);
 
-  let resp;
+  let resp: HookEnvelope;
   if (spinning || neverResolved) {
     // Full-page spin implies no usable data: reset to the loading envelope,
     // exactly like the old hook did before a foreground request.
     resp = loadingResponse;
   } else if (error) {
     const failed = errorAsEnvelope(error);
-    const merged = mergeFetchResult(data ?? null, failed, nowMs);
+    const merged = mergeFetchResult(data ?? null, failed, nowMs) as HookEnvelope;
     // mergeFetchResult rebuilds hard-empty envelopes without logId; re-attach
     // it so the error UI can surface it (stale-snapshot merges keep code 0
     // and never show the hard error card).
@@ -278,7 +334,7 @@ export default function useTodayClassrooms() {
         ? { ...merged, logId: failed.logId }
         : merged;
   } else if (hasUsable) {
-    resp = data;
+    resp = data as Envelope;
   } else {
     // code-0 cache crossed midnight or stale_until between revalidations:
     // clear the campuses while the clamped reload is in flight.

@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  *
  * Real mount/unmount harness for the SWR-backed useTodayClassrooms. Pure
- * helper cases stay in useTodayClassrooms.test.js.
+ * helper cases stay in useTodayClassrooms.test.ts.
  *
  * Harness notes (spike-verified):
  * - Every case wraps the probe in SWRConfig with `provider: () => new Map()`
@@ -22,8 +22,8 @@
  *   clamped to 1ms). Upstream artifact of swr@2.4.2, not a test bug.
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SWRConfig } from "swr";
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { SWRConfig, type SWRConfiguration } from "swr";
 import useTodayClassrooms, {
   CLIENT_FETCH_TIMEOUT_MESSAGE,
   CLIENT_FETCH_TIMEOUT_MS,
@@ -38,7 +38,9 @@ function shanghaiToday() {
   }).format(new Date());
 }
 
-function usablePayload(overrides = {}) {
+function usablePayload(
+  overrides: { data?: Record<string, unknown>; [key: string]: unknown } = {}
+) {
   const date = shanghaiToday();
   const { data: dataOverrides = {}, ...topOverrides } = overrides;
   return {
@@ -82,7 +84,7 @@ function HookProbe() {
   );
 }
 
-function renderProbe(config = {}) {
+function renderProbe(config: Partial<SWRConfiguration> = {}) {
   return render(
     <SWRConfig value={{ provider: () => new Map(), ...config }}>
       <HookProbe />
@@ -91,8 +93,8 @@ function renderProbe(config = {}) {
 }
 
 function deferred() {
-  let resolve;
-  let reject;
+  let resolve: (value?: unknown) => void = () => {};
+  let reject: (reason?: unknown) => void = () => {};
   const promise = new Promise((res, rej) => {
     resolve = res;
     reject = rej;
@@ -114,18 +116,18 @@ function stubAbortSignalTimeout() {
 }
 
 describe("useTodayClassrooms lifecycle", () => {
+  let fetchMock: Mock;
+
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(() =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          json: async () => usablePayload(),
-        })
-      )
+    fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => usablePayload(),
+      })
     );
+    vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
@@ -143,7 +145,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    expect(fetch).toHaveBeenCalledWith(
+    expect(fetchMock).toHaveBeenCalledWith(
       "/api/get_data",
       expect.objectContaining({
         headers: { Accept: "application/json" },
@@ -155,24 +157,24 @@ describe("useTodayClassrooms lifecycle", () => {
 
   it("ignores late responses after unmount without aborting the fetch", async () => {
     const pending = deferred();
-    let seenSignal;
-    fetch.mockImplementation((_url, init) => {
+    let seenSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((_url, init) => {
       seenSignal = init.signal;
       return pending.promise;
     });
 
     const view = renderProbe();
     await waitFor(() => {
-      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     });
     // The fetcher always attaches its 40s timeout budget signal.
     expect(seenSignal).toBeInstanceOf(AbortSignal);
-    expect(seenSignal.aborted).toBe(false);
+    expect(seenSignal!.aborted).toBe(false);
 
     view.unmount();
     // SWR does not abort in-flight requests on unmount (the timeout signal
     // still bounds them); it only ignores the late result.
-    expect(seenSignal.aborted).toBe(false);
+    expect(seenSignal!.aborted).toBe(false);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
@@ -188,7 +190,7 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("manual retry issues a second request and clears full-page error", async () => {
-    fetch
+    fetchMock
       .mockImplementationOnce(async () => ({
         ok: false,
         status: 503,
@@ -212,13 +214,13 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId("is-error").textContent).toBe("false");
   });
 
   it("keeps last good data when a later background reload fails", async () => {
     const soon = new Date(Date.now() + 1_500).toISOString();
-    fetch
+    fetchMock
       .mockImplementationOnce(async () => ({
         ok: true,
         status: 200,
@@ -246,7 +248,7 @@ describe("useTodayClassrooms lifecycle", () => {
     });
 
     await waitFor(() => {
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
     });
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("true");
@@ -261,17 +263,17 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    const callsAfterLoad = fetch.mock.calls.length;
+    const callsAfterLoad = fetchMock.mock.calls.length;
     cleanup();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
-    expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
   });
 
   it("times out hanging fetches with a safe message", async () => {
     const timeoutSpy = stubAbortSignalTimeout();
-    fetch.mockImplementation(
+    fetchMock.mockImplementation(
       (_url, init) =>
         new Promise((_resolve, reject) => {
           const signal = init?.signal;
@@ -302,10 +304,10 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("keeps the real HTTP status and body log_id in the error envelope", async () => {
-    fetch.mockImplementation(async () => ({
+    fetchMock.mockImplementation(async () => ({
       ok: false,
       status: 404,
-      headers: { get: (name) => (name === "X-Log-Id" ? "header-log-id" : null) },
+      headers: { get: (name: string) => (name === "X-Log-Id" ? "header-log-id" : null) },
       json: async () => ({
         code: 404,
         msg: "接口不存在",
@@ -325,10 +327,10 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("falls back to the X-Log-Id header when the error body has no log_id", async () => {
-    fetch.mockImplementation(async () => ({
+    fetchMock.mockImplementation(async () => ({
       ok: false,
       status: 502,
-      headers: { get: (name) => (name === "X-Log-Id" ? "header-log-id" : null) },
+      headers: { get: (name: string) => (name === "X-Log-Id" ? "header-log-id" : null) },
       json: async () => null,
     }));
 
@@ -345,7 +347,7 @@ describe("useTodayClassrooms lifecycle", () => {
     // Guards the SWR chain-death trap: a falsy refreshInterval return would
     // silently end all future polling; nextReloadDelay(undefined) is null.
     vi.spyOn(Math, "random").mockReturnValue(0);
-    fetch.mockImplementation(async () => ({
+    fetchMock.mockImplementation(async () => ({
       ok: true,
       status: 200,
       json: async () => usablePayload({ data: { stale: true } }),
@@ -355,7 +357,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    const callsAfterLoad = fetch.mock.calls.length;
+    const callsAfterLoad = fetchMock.mock.calls.length;
 
     // Stale payload → 15s base poll. The ~1s bootstrap tick is deduped; the
     // chain then re-arms from the real snapshot.
@@ -363,7 +365,7 @@ describe("useTodayClassrooms lifecycle", () => {
       await vi.advanceTimersByTimeAsync(17_000);
     });
     await waitFor(() => {
-      expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     });
   });
 
@@ -372,7 +374,7 @@ describe("useTodayClassrooms lifecycle", () => {
       configurable: true,
       get: () => "hidden",
     });
-    fetch.mockImplementation(async () => ({
+    fetchMock.mockImplementation(async () => ({
       ok: true,
       status: 200,
       json: async () =>
@@ -385,11 +387,11 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    const callsAfterLoad = fetch.mock.calls.length;
+    const callsAfterLoad = fetchMock.mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
-    expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
   });
 
   it("abandons an armed failure retry while hidden and recovers on focus", async () => {
@@ -402,7 +404,7 @@ describe("useTodayClassrooms lifecycle", () => {
       configurable: true,
       get: () => visibility,
     });
-    fetch
+    fetchMock
       .mockImplementationOnce(async () => {
         throw new Error("network down");
       })
@@ -416,7 +418,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
-    const callsAfterError = fetch.mock.calls.length;
+    const callsAfterError = fetchMock.mock.calls.length;
 
     // The 10s ladder timer was armed while visible; hide before it fires.
     await act(async () => {
@@ -427,7 +429,7 @@ describe("useTodayClassrooms lifecycle", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
     // Timer fired but gave up: hidden tabs never fetch.
-    expect(fetch.mock.calls.length).toBe(callsAfterError);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterError);
 
     // Becoming visible again revalidates promptly and clears the error.
     await act(async () => {
@@ -437,7 +439,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    expect(fetch.mock.calls.length).toBe(callsAfterError + 1);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterError + 1);
   });
 
   it("restarts the failure ladder at 10s after an intervening successful payload", async () => {
@@ -456,7 +458,7 @@ describe("useTodayClassrooms lifecycle", () => {
           data: { expires_at: new Date(Date.now() + 3_000).toISOString() },
         }),
     });
-    fetch
+    fetchMock
       .mockImplementationOnce(async () => shortLived())
       .mockImplementationOnce(async () => {
         throw new Error("network down");
@@ -478,7 +480,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("true");
     });
-    const afterFirstFailure = fetch.mock.calls.length;
+    const afterFirstFailure = fetchMock.mock.calls.length;
     expect(afterFirstFailure).toBe(2);
 
     // Backoff window stays quiet: SWR's polling loop skips fetching while the
@@ -486,7 +488,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(8_000);
     });
-    expect(fetch.mock.calls.length).toBe(afterFirstFailure);
+    expect(fetchMock.mock.calls.length).toBe(afterFirstFailure);
 
     // Rung 1 (10s) fires and succeeds → the failure count must reset.
     await act(async () => {
@@ -495,7 +497,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("false");
     });
-    expect(fetch.mock.calls.length).toBe(afterFirstFailure + 1);
+    expect(fetchMock.mock.calls.length).toBe(afterFirstFailure + 1);
 
     // The next poll fails again, starting a brand new error chain.
     await act(async () => {
@@ -504,14 +506,14 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("true");
     });
-    const afterSecondFailure = fetch.mock.calls.length;
+    const afterSecondFailure = fetchMock.mock.calls.length;
     expect(afterSecondFailure).toBe(afterFirstFailure + 2);
 
     // Still silent 9s after failure #2 …
     await act(async () => {
       await vi.advanceTimersByTimeAsync(7_500);
     });
-    expect(fetch.mock.calls.length).toBe(afterSecondFailure);
+    expect(fetchMock.mock.calls.length).toBe(afterSecondFailure);
 
     // … and retried by ~11s: rung 1 again. Had the count carried over, rung 2
     // (20s) would keep this window silent too.
@@ -519,7 +521,7 @@ describe("useTodayClassrooms lifecycle", () => {
       await vi.advanceTimersByTimeAsync(2_000);
     });
     await waitFor(() => {
-      expect(fetch.mock.calls.length).toBe(afterSecondFailure + 1);
+      expect(fetchMock.mock.calls.length).toBe(afterSecondFailure + 1);
     });
   });
 
@@ -535,7 +537,7 @@ describe("useTodayClassrooms lifecycle", () => {
     // Short remaining lifetime so we can cross the hard deadline while hidden.
     const staleUntil = new Date(Date.now() + 2_000).toISOString();
     let fetchCount = 0;
-    fetch.mockImplementation(async () => {
+    fetchMock.mockImplementation(async () => {
       fetchCount += 1;
       // First response is near expiry; later reloads return a long-lived day.
       if (fetchCount === 1) {
@@ -564,7 +566,7 @@ describe("useTodayClassrooms lifecycle", () => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
-    const callsAfterLoad = fetch.mock.calls.length;
+    const callsAfterLoad = fetchMock.mock.calls.length;
 
     // Hide: the polling chain keeps re-arming but never fetches while hidden.
     await act(async () => {
@@ -574,7 +576,7 @@ describe("useTodayClassrooms lifecycle", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
-    expect(fetch.mock.calls.length).toBe(callsAfterLoad);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
     // Stale snapshot may still be in state while hidden.
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
 
@@ -592,13 +594,13 @@ describe("useTodayClassrooms lifecycle", () => {
     });
 
     await waitFor(() => {
-      expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_000);
     });
     // Exactly one reload after resume (no ordinary 15s stale poll thrash).
-    expect(fetch.mock.calls.length).toBe(callsAfterLoad + 1);
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
       expect(screen.getByTestId("campus-count").textContent).toBe("1");

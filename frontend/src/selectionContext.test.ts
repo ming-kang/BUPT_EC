@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initSelectionState, selectionReducer } from "./selectionContext";
 
-function createMemoryLocalStorage(initialValues = {}) {
+function createMemoryLocalStorage(initialValues: Record<string, string> = {}) {
   const storage = new Map(Object.entries(initialValues));
   return {
-    getItem(key) {
+    getItem(key: string) {
       return storage.has(key) ? storage.get(key) : null;
     },
-    setItem(key, value) {
+    setItem(key: string, value: string) {
       storage.set(key, String(value));
     },
-    removeItem(key) {
+    removeItem(key: string) {
       storage.delete(key);
     },
     clear() {
