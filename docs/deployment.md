@@ -51,11 +51,9 @@ Renewal stays the responsibility of your certificate manager (for example Certbo
 
 ## One-command install
 
-**Production:** prefer an immutable stable tag (or GitHub `latest` stable). On
-a first install with no explicit or saved release choice, the fallback remains
-the rolling `nightly` prerelease (edge / freshest `main`).
-
-Stable release (recommended for production):
+**Production:** prefer an immutable stable tag (or GitHub `latest` stable).
+Stable releases are the only channel; a first install with no explicit or saved
+release choice resolves to `latest`.
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
@@ -63,17 +61,10 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.6/install.sh | sudo VERSION=v0.1.6 bash
 ```
 
-Rolling nightly (edge):
-
-```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
-```
-
-The installer stores the selected `latest`, `nightly`, or fixed `vX.Y.Z` value
+The installer stores the selected `latest` or fixed `vX.Y.Z` value
 as `RELEASE_VERSION` in `/etc/bupt-ec/bupt-ec.env`. Rerunning it without an
 explicit `VERSION` keeps that channel or pinned tag; an explicit `VERSION`
-always overrides the saved value. A first-time install with no `VERSION` keeps
-the historical `nightly` default.
+always overrides the saved value.
 
 The script asks interactively for:
 

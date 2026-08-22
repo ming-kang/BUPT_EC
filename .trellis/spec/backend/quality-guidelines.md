@@ -204,11 +204,17 @@ Generate and verify `frontend/pnpm-lock.yaml` with pnpm 9.15.x.
   the tag.
 - Release binaries build with
   `go build -trimpath -tags embed_assets -ldflags "-s -w -X main.version=<value>"`;
-  the version value is the tag name for tag builds and `nightly-<short-sha>`
+  the version value is the tag name for tag builds and `main-<short-sha>`
   otherwise. Keep the `-X` target in sync with the `version` variable in
   `main.go` (see api-contract.md "Health and Readiness" for the injection
   gotchas) and keep `task build` in `Taskfile.yml` aligned with the same
   flag set.
+- `release.yml` publishes on `v*` tag pushes only. Pushes to `main` and manual
+  dispatches run the *identical* pack / checksum / attest path and upload the
+  result as workflow artifacts without publishing. Do not "optimize" the
+  dry-run by skipping those steps: exercising the packaging path on every
+  merge is the only thing that catches a broken tarball or checksum step
+  before release day.
 
 **Why**: The pinning rule is a supply-chain gate; the artifact contract spans
 two workflow files and breaks silently when only one side is renamed; the
@@ -386,8 +392,10 @@ assets or installer behavior, update `scripts/release.sh`, `scripts/install.sh`,
 ### 1. Scope / Trigger
 
 Apply this contract whenever installer version defaults, release URLs,
-deployment commands, or persisted installer metadata change. It prevents a
-stable installer URL from silently downloading the rolling nightly package.
+deployment commands, or persisted installer metadata change. Stable `vX.Y.Z`
+tags are the only release channel: this contract keeps every documented
+installer command explicit about which stable release it selects, and keeps the
+unattended fallback on a published stable release rather than an inferred one.
 
 ### 2. Signatures
 
@@ -402,8 +410,14 @@ resolve_download_base_url <repo> <version> <override-url>
 - `VERSION`: optional command environment value; highest precedence.
 - `RELEASE_VERSION`: saved in `/etc/bupt-ec/bupt-ec.env`; reused when
   `VERSION` is absent.
-- First install with neither value uses `nightly`.
-- Valid values are `latest`, `nightly`, or `vMAJOR.MINOR.PATCH`.
+- First install with neither value uses `latest`.
+- Valid values are `latest` or `vMAJOR.MINOR.PATCH`.
+- `nightly` was a valid value through v0.2.0 and is **rejected** as of v0.3.0.
+  Rejection is the migration path, not a compatibility shim: `validate_version`
+  runs on the *resolved* version, so a host still carrying
+  `RELEASE_VERSION=nightly` fails there and its error must name
+  `VERSION=latest` as the fix. Never silently remap `nightly` to `latest` —
+  that would upgrade a machine across channels without the operator saying so.
 - `latest` maps to `/releases/latest/download`; other valid values map to
   `/releases/download/<version>`.
 - Default download base is always official GitHub (`github.com`). Reachability
@@ -424,8 +438,9 @@ resolve_download_base_url <repo> <version> <override-url>
 
 | Input | Result |
 | --- | --- |
-| `latest` / `nightly` | accepted |
+| `latest` | accepted |
 | `v0.1.4` | accepted |
+| `nightly` | non-zero validation failure; error must include the `VERSION=latest` migration command |
 | empty final value, path separators, whitespace, shell punctuation | non-zero validation failure |
 | GitHub unreachable and no `DOWNLOAD_BASE_URL` | non-zero failure before download/snapshot |
 | HTTP mirror without explicit insecure opt-in | non-zero validation failure |
@@ -435,17 +450,18 @@ resolve_download_base_url <repo> <version> <override-url>
 ### 5. Good/Base/Bad Cases
 
 - Good: latest installer command passes `sudo VERSION=latest bash`.
-- Base: no explicit or saved version resolves to `nightly`.
+- Base: no explicit or saved version resolves to `latest`.
 - Bad: download `releases/latest/download/install.sh` and invoke `sudo bash`;
   the script cannot infer which URL supplied its stdin.
 
 ### 6. Tests Required
 
 - `bash scripts/install_test.sh` asserts precedence, accepted/rejected values,
-  GitHub URL mapping, and custom mirror preservation.
+  GitHub URL mapping, and custom mirror preservation. `nightly` is asserted
+  both as a rejected value and for the content of its migration message.
 - Both CI quality gates must execute the behavior test before shellcheck.
-- Search README and `docs/` for stable/nightly installer commands without a
-  matching explicit `VERSION`.
+- Search README and `docs/` for installer commands without a matching explicit
+  `VERSION`, and for any surviving reference to a non-stable channel.
 
 ### 7. Wrong vs Correct
 

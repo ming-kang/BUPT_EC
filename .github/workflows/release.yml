@@ -56,7 +56,7 @@ jobs:
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
             version="${GITHUB_REF_NAME}"
           else
-            version="nightly-$(git rev-parse --short HEAD)"
+            version="main-$(git rev-parse --short HEAD)"
           fi
           mkdir -p "build/bupt-ec-linux-${GOARCH}"
           go build -trimpath -tags embed_assets -ldflags "-s -w -X main.version=${version}" \
@@ -118,8 +118,11 @@ jobs:
             release/checksums.txt
             release/install.sh
 
+      # Only `v*` tag pushes publish. Pushes to main and manual dispatches run
+      # the identical pack/checksum/attest path as a dry-run so a broken
+      # packaging step surfaces on merge, not on release day.
       - name: Upload dry-run release assets
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' || github.ref_type == 'branch'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-assets-dry-run
@@ -146,29 +149,3 @@ jobs:
             release/bupt-ec-linux-arm64.tar.gz
             release/checksums.txt
             release/install.sh
-
-      - name: Publish nightly release (main push, clobber assets)
-        if: github.event_name == 'push' && github.ref_type == 'branch'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          assets=(
-            release/bupt-ec-linux-amd64.tar.gz
-            release/bupt-ec-linux-arm64.tar.gz
-            release/checksums.txt
-            release/install.sh
-          )
-          notes="nightly build of main @ ${GITHUB_SHA}"
-          # Move the rolling nightly tag to this commit first. Never delete
-          # the release: assets stay downloadable while --clobber replaces
-          # them, so consumers never hit a 404 window.
-          git tag -f nightly "$GITHUB_SHA"
-          git push origin -f refs/tags/nightly
-          if gh release view nightly >/dev/null 2>&1; then
-            gh release edit nightly --notes "${notes}"
-            gh release upload nightly "${assets[@]}" --clobber
-          else
-            gh release create nightly "${assets[@]}" \
-              --title nightly --generate-notes --prerelease
-          fi

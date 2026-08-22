@@ -3,7 +3,7 @@
   "name": "drop-nightly",
   "title": "废除 nightly 发布轨道并将默认频道改为 latest",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

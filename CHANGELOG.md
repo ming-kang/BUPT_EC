@@ -15,6 +15,22 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   server. `/api/get_data` carries that version on both its success and failure
   envelopes; the row is omitted when the server does not report one.
 
+### Removed
+
+- **The `nightly` release channel.** Stable `vX.Y.Z` tags are now the only
+  published release; pushes to `main` still build and pack the same assets, but
+  as a CI dry-run that publishes nothing. A first install without `VERSION` now
+  resolves to `latest` instead of the rolling prerelease.
+
+  **If a server is currently on nightly**, the installer will refuse to run and
+  print the fix: rerun it with `VERSION=latest`, which installs the latest
+  stable release and rewrites the saved `RELEASE_VERSION` in
+  `/etc/bupt-ec/bupt-ec.env`. `VERSION=nightly` is rejected rather than
+  silently remapped, so no machine changes channel without being told.
+
+  Unreleased `main` builds now report `main-<short-sha>` in `/readyz` and the
+  settings dialog, replacing `nightly-<short-sha>`.
+
 ## [0.2.0] - 2026-08-22
 
 ### Added

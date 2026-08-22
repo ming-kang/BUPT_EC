@@ -29,18 +29,13 @@ Endpoints:
 
 One command on a Debian/Ubuntu server with a domain and TLS certificate already in place.
 
-**Production** — prefer a stable release:
-
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 ```
 
-**Edge** — rolling `nightly` (freshest `main`; also the first-install fallback
-when neither `VERSION` nor a saved release choice exists):
-
-```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
-```
+Stable `vX.Y.Z` tags are the only release channel. Pass `VERSION=vX.Y.Z` instead
+of `latest` to pin an immutable release; with no `VERSION` and no saved choice a
+first install resolves to `latest`.
 
 The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command (pin a stable tag in production).
 

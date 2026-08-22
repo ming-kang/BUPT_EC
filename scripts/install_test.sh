@@ -429,17 +429,34 @@ assert_enabled_target() {
 }
 
 test_version_policy() {
-  assert_eq "nightly" "$(resolve_release_version "" "")" "first install defaults to nightly"
-  assert_eq "latest" "$(resolve_release_version "latest" "nightly")" "explicit version wins"
+  assert_eq "latest" "$(resolve_release_version "" "")" "first install defaults to latest"
+  assert_eq "latest" "$(resolve_release_version "latest" "v0.1.4")" "explicit version wins"
   assert_eq "v0.1.4" "$(resolve_release_version "" "v0.1.4")" "saved version is reused"
 
   local version
-  for version in latest nightly v0.1.4; do
+  for version in latest v0.1.4; do
     validate_version "${version}"
   done
-  for version in "" latest/asset v1 v1.2 v1.2.3.4 'v1.2.3;rm'; do
+  for version in "" nightly latest/asset v1 v1.2 v1.2.3.4 'v1.2.3;rm'; do
     assert_invalid_version "${version}"
   done
+
+  # The nightly channel was removed; a machine still carrying
+  # RELEASE_VERSION=nightly must fail with the migration command, not a bare
+  # "invalid value" that leaves the operator guessing.
+  local status output_file
+  output_file="${TEST_TMP}/nightly-rejected.log"
+  set +e
+  validate_version nightly >"${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "removed nightly channel was accepted by validate_version"
+  fi
+  assert_contains "${output_file}" "VERSION must be latest or a stable tag" \
+    "nightly rejection states the accepted values"
+  assert_contains "${output_file}" "rerun with VERSION=latest" \
+    "nightly rejection gives the migration command"
 
   host_reachable() { return 0; }
   assert_eq \
@@ -447,24 +464,19 @@ test_version_policy() {
     "$(resolve_download_base_url "ming-kang/BUPT_EC" "latest" "")" \
     "latest release URL"
   assert_eq \
-    "https://github.com/ming-kang/BUPT_EC/releases/download/nightly" \
-    "$(resolve_download_base_url "ming-kang/BUPT_EC" "nightly" "")" \
-    "nightly release URL"
-  assert_eq \
     "https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4" \
     "$(resolve_download_base_url "ming-kang/BUPT_EC" "v0.1.4" "")" \
     "stable tag release URL"
   assert_eq \
     "https://mirror.example/releases/v0.1.4" \
-    "$(resolve_download_base_url "ignored/repo" "nightly" "https://mirror.example/releases/v0.1.4/")" \
+    "$(resolve_download_base_url "ignored/repo" "v0.1.4" "https://mirror.example/releases/v0.1.4/")" \
     "custom download URL"
 
-  local status output_file
   output_file="${TEST_TMP}/github-unreachable.log"
   set +e
   (
     host_reachable() { return 1; }
-    resolve_download_base_url "ming-kang/BUPT_EC" "nightly" ""
+    resolve_download_base_url "ming-kang/BUPT_EC" "latest" ""
   ) >"${output_file}" 2>&1
   status=$?
   set -e
@@ -484,7 +496,7 @@ test_version_policy() {
   set +e
   (
     host_reachable() { return 0; }
-    resolve_download_base_url "ignored/repo" "nightly" "https://mirror.example/releases/v0.1.4/"
+    resolve_download_base_url "ignored/repo" "v0.1.4" "https://mirror.example/releases/v0.1.4/"
   ) >"${output_file}" 2>&1
   status=$?
   set -e
@@ -616,7 +628,7 @@ test_download_base_url_secret_redaction() {
   output_file="${TEST_TMP}/secret-resolve.log"
   set +e
   (
-    resolve_download_base_url "ignored/repo" "nightly" \
+    resolve_download_base_url "ignored/repo" "v0.1.4" \
       "https://user:s3cret-pass@mirror.example/releases?token=tok_LIVE_secret"
   ) >"${output_file}" 2>&1
   status=$?
@@ -675,7 +687,7 @@ test_checksum_failures_preserve_targets() {
     esac
 
     set +e
-    (download_release "ming-kang/BUPT_EC" "nightly" amd64 "${work_dir}" "https://mirror.example/nightly") > "${output}" 2>&1
+    (download_release "ming-kang/BUPT_EC" "v0.1.4" amd64 "${work_dir}" "https://mirror.example/v0.1.4") > "${output}" 2>&1
     status=$?
     set -e
     if (( status == 0 )); then
@@ -701,7 +713,7 @@ test_staging_failures_preserve_targets() {
   mkdir -p "${work_dir}"
   set +e
   prepare_staging "${MISSING_BINARY_ARCHIVE}" "${work_dir}" "${staging_dir}" \
-    "ming-kang/BUPT_EC" nightly classroom.example.com /cert /key user password "" \
+    "ming-kang/BUPT_EC" latest classroom.example.com /cert /key user password "" \
     "127.0.0.1:8080" "" > "${output}" 2>&1
   status=$?
   set -e
@@ -723,7 +735,7 @@ test_staging_failures_preserve_targets() {
   export MOCK_CHOWN_FAIL_PATTERN="${staging_dir}/bupt-ec.env"
   set +e
   prepare_staging "${VALID_ARCHIVE}" "${work_dir}" "${staging_dir}" \
-    "ming-kang/BUPT_EC" nightly classroom.example.com /cert /key user password "" \
+    "ming-kang/BUPT_EC" latest classroom.example.com /cert /key user password "" \
     "127.0.0.1:8080" "" > "${output}" 2>&1
   status=$?
   set -e

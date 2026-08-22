@@ -508,7 +508,7 @@ cache exists. Its body includes:
 - `status`: HTTP status text;
 - `version`: build version string (`main.version`, default `"dev"`; injected at
   release time via `go build -ldflags "-X main.version=<value>"` — release tag
-  for tag builds, `nightly-<short-sha>` for nightly builds);
+  for tag builds, `main-<short-sha>` for unreleased `main` builds);
 - `jw_credentials_configured`: result of the injected immutable
   `config.RuntimeConfig.HasJWCredentials()` predicate;
 - `runtime`: `service.RuntimeStatus` diagnostics.

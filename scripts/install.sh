@@ -185,16 +185,20 @@ resolve_release_version() {
   elif [[ -n "${current_version}" ]]; then
     printf "%s" "${current_version}"
   else
-    printf "nightly"
+    printf "latest"
   fi
 }
 
 validate_version() {
   local version="$1"
-  if [[ "${version}" == "latest" || "${version}" == "nightly" || "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ "${version}" == "latest" || "${version}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     return
   fi
-  echo "VERSION must be latest, nightly, or a stable tag such as v0.1.4: ${version}" >&2
+  echo "VERSION must be latest or a stable tag such as v0.1.4: ${version}" >&2
+  if [[ "${version}" == "nightly" ]]; then
+    echo "The nightly channel was removed in v0.3.0; rerun with VERSION=latest." >&2
+    echo "That also rewrites the saved RELEASE_VERSION in ${ENV_FILE}." >&2
+  fi
   return 1
 }
 
@@ -518,7 +522,7 @@ resolve_download_base_url() {
     echo "GitHub (${GITHUB_HOST}) is not reachable." >&2
     echo "The installer no longer auto-selects third-party proxies." >&2
     echo "Mirror the release assets to an HTTPS location you control, then rerun with:" >&2
-    echo "  DOWNLOAD_BASE_URL=https://your-mirror.example/path VERSION=<latest|nightly|vX.Y.Z>" >&2
+    echo "  DOWNLOAD_BASE_URL=https://your-mirror.example/path VERSION=<latest|vX.Y.Z>" >&2
     echo "Package and checksums.txt must both be present under that base URL." >&2
     exit 1
   fi
@@ -1120,7 +1124,7 @@ main() {
 
   repo="${REPO:-${CURRENT_RELEASE_REPO:-${DEFAULT_REPO}}}"
   # Explicit VERSION wins; otherwise preserve the installed channel/tag. A
-  # first-time install keeps the historical rolling-nightly default.
+  # first-time install falls back to the latest stable release.
   version="$(resolve_release_version "${VERSION:-}" "${CURRENT_RELEASE_VERSION}")"
 
   echo "BUPT_EC installer"

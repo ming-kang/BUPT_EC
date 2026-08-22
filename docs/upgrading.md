@@ -8,9 +8,7 @@ Rerun the installer — the same command used for installation.
 
 **Production upgrades** should pin a stable tag (or use GitHub `latest` stable).
 Existing installations reuse their saved `RELEASE_VERSION`; older installations
-without that field fall back to `nightly` unless the command passes `VERSION`.
-
-Stable:
+without that field fall back to `latest` unless the command passes `VERSION`.
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
@@ -18,17 +16,16 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.6/install.sh | sudo VERSION=v0.1.6 bash
 ```
 
-Nightly (edge):
-
-```bash
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/download/nightly/install.sh | sudo VERSION=nightly bash
-```
+> The `nightly` channel was removed in v0.3.0. A server still carrying
+> `RELEASE_VERSION=nightly` fails the installer's version check with a message
+> pointing at `VERSION=latest`; rerunning with that value both installs the
+> stable release and rewrites the saved `RELEASE_VERSION`.
 
 Existing configuration from `/etc/bupt-ec/bupt-ec.env` is offered back as defaults, so pressing Enter at each prompt keeps the current values. Secrets (password/token) are kept by pressing Enter at their prompts. The installer downloads and verifies the archive, renders every candidate file before touching the installation, snapshots the current targets, then atomically replaces the binary, env, systemd unit, and Nginx site.
 
 The selected release channel or tag is stored as `RELEASE_VERSION`. Rerunning
 the installer without `VERSION` reuses it; pass an explicit value to switch
-between `latest`, `nightly`, or a pinned `vX.Y.Z` release.
+between `latest` and a pinned `vX.Y.Z` release.
 
 See [CHANGELOG.md](../CHANGELOG.md) for what changed between versions.
 
@@ -62,7 +59,7 @@ sudo journalctl -u bupt-ec -n 50 --no-pager
 
 `/healthz` should return `{"status":"ok"}` immediately. `/readyz` returns 200 once the first classroom refresh has succeeded (this may take a few seconds after a restart while the warmup login runs). `/readyz` shows only `status`+`version` by default; set `READYZ_DIAGNOSTICS=1` if you need the full diagnostics body for deeper checks (or read `journalctl -u bupt-ec`).
 
-Confirm the running build is the one you just installed: the `/readyz` body carries a `version` field that must equal the installed tag (for example `v0.1.6`), or `nightly-<short-sha>` on the nightly channel. If it still shows the previous version, the service was not restarted or a different artifact was installed — recheck `systemctl status bupt-ec` and rerun the installer with an explicit `VERSION`.
+Confirm the running build is the one you just installed: the `/readyz` body carries a `version` field that must equal the installed tag (for example `v0.1.6`). If it still shows the previous version, the service was not restarted or a different artifact was installed — recheck `systemctl status bupt-ec` and rerun the installer with an explicit `VERSION`.
 
 Then open `https://<your-domain>/` in a browser and confirm the page loads today's data.
 

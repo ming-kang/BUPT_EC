@@ -2,25 +2,23 @@
 
 How versioning, the changelog, and the release pipeline work, and how to cut a release.
 
-## Release flavors
+## Release channel and assets
 
-| Flavor | Trigger | Audience |
-|---|---|---|
-| `nightly` prerelease | every push to `main` (automatic) | freshest `main` build; first-install fallback when no release choice exists (edge); notes may be GitHub-generated |
-| `vX.Y.Z` stable release | pushing a `v*` tag via `scripts/release.sh` | immutable, reproducible production deployments (recommended) |
+Stable `vX.Y.Z` tags are the only published release channel. A tag pushed by
+`scripts/release.sh` produces an immutable, reproducible release; pushes to
+`main` build and pack the same assets as a dry-run but publish nothing.
 
-Both flavors publish the same four assets, which the installer depends on by exact name:
+A release publishes four assets, which the installer depends on by exact name:
 
 - `bupt-ec-linux-amd64.tar.gz`
 - `bupt-ec-linux-arm64.tar.gz`
 - `checksums.txt`
 - `install.sh`
 
-Installer commands select the release explicitly: production latest uses
-`VERSION=latest`, edge uses `VERSION=nightly`, and immutable deployments use a
-matching `VERSION=vX.Y.Z`. The installer persists that choice as
-`RELEASE_VERSION`; only a first-time install without either value falls back to
-`nightly`.
+Installer commands select the release explicitly: `VERSION=latest` tracks the
+newest stable release, and immutable deployments use a matching
+`VERSION=vX.Y.Z`. The installer persists that choice as `RELEASE_VERSION`; a
+first-time install without either value falls back to `latest`.
 
 Versioning follows [Semantic Versioning](https://semver.org/). While the project is pre-1.0, minor bumps may contain breaking changes.
 
@@ -35,7 +33,7 @@ Versioning follows [Semantic Versioning](https://semver.org/). While the project
 - Write bullets for operators and users, not for reviewers: what changed and why it matters, not how it was implemented.
 - Don't edit released sections; corrections go in a new release.
 
-The `[Unreleased]` section becomes the release notes verbatim, so keeping it clean is what makes releases cheap. Stable `v*` tag releases publish that extracted section only (`body_path`); they do not append GitHub auto-generated notes. Nightly prereleases may use GitHub-generated notes and are not the stable contract.
+The `[Unreleased]` section becomes the release notes verbatim, so keeping it clean is what makes releases cheap. Stable `v*` tag releases publish that extracted section only (`body_path`); they do not append GitHub auto-generated notes.
 
 PR CI and the release workflow both call the reusable quality gate in
 `.github/workflows/quality.yml` so the frontend, Go, audit, installer, and
@@ -74,13 +72,14 @@ Runs the full quality gate on every PR to `main`: frontend production/toolchain 
 Three jobs in sequence:
 
 1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`); the frontend it builds is uploaded as the `frontend-dist` artifact.
-2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `nightly-<commit>` on `main` pushes).
+2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `main-<commit>` on `main` pushes).
 3. **release** — packs each binary with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
-   - **main push**: clobbers the rolling `nightly` prerelease assets in place
-     (`gh release upload --clobber` after force-moving the `nightly` tag), so
-     asset URLs never 404 between builds.
-   - **manual dispatch**: a dry-run — assets are uploaded as workflow artifacts, nothing is published.
+   - **main push** and **manual dispatch**: a dry-run — the identical pack /
+     checksum / attest path runs and the assets are uploaded as workflow
+     artifacts, but nothing is published. This is deliberate: the packaging
+     path is exercised on every merge, so a broken tarball or checksum step
+     surfaces then instead of on release day.
 
 Release assets keep this layout (the installer depends on it):
 

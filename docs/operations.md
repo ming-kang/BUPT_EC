@@ -107,7 +107,7 @@ return the full diagnostics block for troubleshooting:
 }
 ```
 
-- `version`: build version string. Release binaries get the tag (or `nightly-<short-sha>`) injected via `-ldflags "-X main.version=..."`; locally built binaries report `dev`.
+- `version`: build version string. Release binaries get the tag injected via `-ldflags "-X main.version=..."` (`main-<short-sha>` for unreleased `main` builds); locally built binaries report `dev`.
 - The troubleshooting table below references `runtime` fields — those require
   `READYZ_DIAGNOSTICS=1`, or use the structured logs (`journalctl -u bupt-ec`),
   which always carry the same diagnostics with a `log_id`.
