@@ -1,0 +1,28 @@
+{
+  "id": "react-19",
+  "name": "react-19",
+  "title": "Migrate frontend to React 19",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "frontend",
+  "package": null,
+  "priority": "P2",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-08-22",
+  "completedAt": "2026-08-22",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {
+    "complexity": "M"
+  }
+}

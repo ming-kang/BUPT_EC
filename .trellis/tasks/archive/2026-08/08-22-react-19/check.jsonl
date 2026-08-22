@@ -1,0 +1,4 @@
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Verify dependency scope, line-lock changes, frozen install, warning/test gates, fixed bundle budget, audits, and repository integration checks."}
+{"file":".trellis/tasks/08-22-react-19/research/react-19-compatibility.md","reason":"Compare final versions, peer graph, warning classes, source impact, and bundle delta against the documented React 18 baseline."}
+{"file":".trellis/tasks/archive/2026-08/08-07-project-audit-optimize/research/audit-frontend.md","reason":"Confirm F-02 is completed without pulling in React features, antd 6, or the separate F-04 optimization scope."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check that compatibility wiring stays minimal and does not introduce unnecessary wrappers or abstractions."}
