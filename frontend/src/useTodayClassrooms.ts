@@ -5,6 +5,7 @@ import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
 import { MIN_FRESH_DELAY_MS, nextReloadDelay } from "./reloadSchedule";
 import {
   extractMessage,
+  extractVersion,
   fallbackErrorMessage,
   loadingResponse,
   normalizeResponse,
@@ -112,12 +113,15 @@ export function mergeFetchResult(
   };
 }
 
-function errorEnvelope(message: string, code = 500, logId = "") {
+function errorEnvelope(message: string, code = 500, logId = "", version = "") {
   return {
     code,
     msg: message || fallbackErrorMessage,
     data: null,
     logId,
+    // Same rule as normalizeResponse: absent rather than empty, so envelope
+    // shape is unchanged when no version is known.
+    ...(version ? { version } : {}),
   };
 }
 
@@ -134,7 +138,8 @@ function errorAsEnvelope(error: unknown): HookEnvelope {
     return errorEnvelope(
       error.message,
       status ?? businessCode ?? 500,
-      error.logId
+      error.logId,
+      error.version
     );
   }
   return errorEnvelope(
@@ -166,13 +171,16 @@ export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
   const payload = await readJson(response);
   const record = payload as PayloadView | null;
   const logId = record?.log_id || response.headers?.get("X-Log-Id") || "";
+  // Rides along on every throw so the settings dialog can still name the build
+  // while the UI is in its error state.
+  const version = extractVersion(record);
   const businessCode = Number(record?.code);
   const code = Number.isFinite(businessCode) ? businessCode : undefined;
 
   if (!response.ok) {
     throw new ApiError(
       extractMessage(record) || `请求失败 (${response.status})`,
-      { status: response.status, code, logId }
+      { status: response.status, code, logId, version }
     );
   }
 
@@ -182,12 +190,17 @@ export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
       status: response.status,
       code,
       logId,
+      version,
     });
   }
   if (normalized.resp.code !== 0) {
     // Legitimate service error envelope over HTTP 2xx: the business code is
     // the envelope code (no status attached, 2xx would shadow it).
-    throw new ApiError(normalized.resp.msg, { code: normalized.resp.code, logId });
+    throw new ApiError(normalized.resp.msg, {
+      code: normalized.resp.code,
+      logId,
+      version,
+    });
   }
   if (!hasUsableClassroomData(normalized.resp)) {
     // Success envelope with cross-day/expired/malformed cache metadata fails
@@ -195,6 +208,7 @@ export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
     // poll floor, paces the next attempt (Nginx 30 req/min budget).
     throw new ApiError(extractMessage(record) || fallbackErrorMessage, {
       logId,
+      version,
     });
   }
   return normalized.resp;
@@ -318,6 +332,12 @@ export default function useTodayClassrooms() {
   const isBackground = !neverResolved && !manualReload;
   const spinning = isValidating && shouldFullPageSpin(isBackground, hasUsable);
 
+  // mergeFetchResult and errorEnvelope rebuild envelopes from scratch, so the
+  // envelope-level version does not survive them. Fall back to the last
+  // snapshot that carried one: the running build cannot change between polls,
+  // and the settings dialog is reachable from the empty state too.
+  const cachedVersion = (data as HookEnvelope | undefined)?.version || "";
+
   let resp: HookEnvelope;
   if (spinning || neverResolved) {
     // Full-page spin implies no usable data: reset to the loading envelope,
@@ -326,19 +346,21 @@ export default function useTodayClassrooms() {
   } else if (error) {
     const failed = errorAsEnvelope(error);
     const merged = mergeFetchResult(data ?? null, failed, nowMs) as HookEnvelope;
-    // mergeFetchResult rebuilds hard-empty envelopes without logId; re-attach
-    // it so the error UI can surface it (stale-snapshot merges keep code 0
-    // and never show the hard error card).
-    resp =
-      merged.code !== 0 && failed.logId
-        ? { ...merged, logId: failed.logId }
-        : merged;
+    const version = failed.version || cachedVersion;
+    // Re-attach what the rebuild dropped: logId only on the hard error card
+    // (stale-snapshot merges keep code 0 and never show it), version in any
+    // state that has one.
+    resp = {
+      ...merged,
+      ...(merged.code !== 0 && failed.logId ? { logId: failed.logId } : {}),
+      ...(version ? { version } : {}),
+    };
   } else if (hasUsable) {
     resp = data as Envelope;
   } else {
     // code-0 cache crossed midnight or stale_until between revalidations:
     // clear the campuses while the clamped reload is in flight.
-    resp = errorEnvelope(EXPIRED_SNAPSHOT_MESSAGE);
+    resp = errorEnvelope(EXPIRED_SNAPSHOT_MESSAGE, 500, "", cachedVersion);
   }
 
   return {

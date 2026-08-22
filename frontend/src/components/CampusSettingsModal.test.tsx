@@ -50,3 +50,34 @@ describe("CampusSettingsModal updated time (F-06)", () => {
     expect(screen.getByText(/未知/)).not.toBeNull();
   });
 });
+
+describe("CampusSettingsModal running version", () => {
+  it("renders the running build directly above the repository link", () => {
+    const todayData = { version: "v0.3.0", data: {} };
+    render(
+      <SelectionContext.Provider value={{ state: makeState(), dispatch: () => {} }}>
+        <CampusSettingsModal open todayData={todayData as Envelope} onClose={() => {}} />
+      </SelectionContext.Provider>
+    );
+
+    const versionRow = screen.getByText(/当前运行版本：v0\.3\.0/);
+    const repositoryRow = screen.getByText(/项目已开源/);
+    // Order only, not structure: the row must precede the repository link.
+    expect(
+      versionRow.compareDocumentPosition(repositoryRow) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it("omits the row when the server sent no version", () => {
+    // Pre-0.3.0 backend: an empty "未知" would tell the user nothing, and the
+    // row appears on its own once the server is upgraded.
+    const todayData = { data: {} };
+    render(
+      <SelectionContext.Provider value={{ state: makeState(), dispatch: () => {} }}>
+        <CampusSettingsModal open todayData={todayData as Envelope} onClose={() => {}} />
+      </SelectionContext.Provider>
+    );
+    expect(screen.queryByText(/当前运行版本/)).toBeNull();
+  });
+});

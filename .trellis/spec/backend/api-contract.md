@@ -88,12 +88,14 @@ must get valid Prometheus text after a single decompress. Public Nginx keeps
 ## `/api/get_data` Response Shape
 
 Success responses use this envelope (log_id mirrors the failure envelope so
-both paths are correlatable against server logs and the `X-Log-Id` header):
+both paths are correlatable against server logs and the `X-Log-Id` header;
+`version` is the running build, `dev` for local builds without injection):
 
 ```json
 {
   "code": 0,
   "log_id": "20260706120000ABCDEF...",
+  "version": "v0.3.0",
   "data": { "date": "2026-07-06", "campuses": [] }
 }
 ```
@@ -110,9 +112,16 @@ background refresh kept running) — the response also carries
   "code": 503,
   "msg": "数据获取失败，请稍后重试",
   "log_id": "20260706120000ABCDEF...",
+  "version": "v0.3.0",
   "data": null
 }
 ```
+
+`version` is envelope metadata, not part of the cached snapshot: it must stay
+out of `data` so the business payload keeps a single meaning. It rides on both
+paths because the settings dialog is reachable from the empty state
+(`CampusButtonGroup` renders its trigger when the campus list is empty), so a
+failing page must still be able to name the build it is running.
 
 The message must come from `service.SafeErrorMessage`. Do not return raw JW
 errors, upstream response bodies, URLs, credentials, or tokens to clients.
@@ -169,7 +178,7 @@ full-width parentheses, and room deduplication.
 The frontend calls only `/api/get_data` for classroom data. Important consumers:
 
 - `frontend/src/useTodayClassrooms.ts` owns the single `useSWR` call for the
-  endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.ts:21`), validates
+  endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.ts:24`), validates
   the response shape inside its fetcher, and derives the UI envelope at render
   time.
 - `frontend/src/components/BuildingPicker.tsx` reads campus `buildings`.
@@ -276,12 +285,23 @@ counter, and success/non-retry revalidations reset it internally.
   over HTTP 2xx, and a success envelope whose cache metadata is not displayable.
   Anything it returns is a usable snapshot. `normalizeResponse` itself never
   throws — it returns a discriminated result, so parsing is not control flow.
-- `ApiError` carries the real HTTP `status`, the business envelope `code` and
-  the server `logId`. The derived envelope's `code` is `status ?? businessCode
-  ?? 500`, never a blanket 500 (`useTodayClassrooms.ts:103`).
+- `ApiError` carries the real HTTP `status`, the business envelope `code`, the
+  server `logId` and the running `version`. The derived envelope's `code` is
+  `status ?? businessCode ?? 500`, never a blanket 500
+  (`useTodayClassrooms.ts:140`).
 - `logId` comes from `payload.log_id` with the `X-Log-Id` response header as
-  fallback (`useTodayClassrooms.ts:141`). It rides on hard-error envelopes only
+  fallback (`useTodayClassrooms.ts:173`). It rides on hard-error envelopes only
   (`resp.logId`); code-0 stale merges never surface it.
+- `version` comes from `payload.version`, guarded by `extractVersion` exactly
+  like `extractMessage`: a non-string wire value degrades to absent, never into
+  rendered text. Unlike `logId` it must survive **every** UI state, because the
+  settings dialog is reachable from the empty state. `normalizeResponse` carries
+  it on success and service-error envelopes, `ApiError` carries it through the
+  throw, and the hook re-attaches it after `mergeFetchResult` / `errorEnvelope`
+  rebuild an envelope — falling back to the last snapshot that had one, since
+  the running build cannot change between polls. The key is **omitted rather
+  than set to `""`** when unknown, so envelope shape is unchanged against a
+  backend that predates the field.
 - `mergeFetchResult` keeps prior data after a client failure only while that
   snapshot remains displayable; otherwise it returns `data: null`. It runs at
   **render time** over SWR's separate `data`/`error` tracks (a throwing fetcher
@@ -304,7 +324,7 @@ counter, and success/non-retry revalidations reset it internally.
   never yield NaN delays.
 - Background retries never enable the full-page spinner. When a render observes
   a code-0 snapshot that has crossed midnight or `stale_until`, it clears the
-  campuses (`EXPIRED_SNAPSHOT_MESSAGE` envelope, `useTodayClassrooms.ts:285`)
+  campuses (`EXPIRED_SNAPSHOT_MESSAGE` envelope, `useTodayClassrooms.ts:363`)
   while the clamped reload is in flight.
 - Hidden tabs issue zero classroom requests. Three separate mechanisms carry
   that, and all three must stay in place:
@@ -318,13 +338,13 @@ counter, and success/non-retry revalidations reset it internally.
   3. An **already-armed** retry timer has no visibility gate inside SWR, so
      `retryOnError`'s own `setTimeout` callback re-checks
      `document.visibilityState` and abandons the attempt when hidden
-     (`useTodayClassrooms.ts:214-222`).
+     (`useTodayClassrooms.ts:280-288`).
 - Becoming visible after `stale_until` revalidates promptly instead of keeping
   yesterday's filters for a normal poll interval. `revalidateOnFocus` (which
   listens to both `visibilitychange` and `window.focus`) carries this, and it
   also re-issues the request that a hidden tab abandoned above.
   `focusThrottleInterval` is `FOCUS_THROTTLE_MS = 15_000`
-  (`useTodayClassrooms.ts:27`), aligned with `STALE_POLL_MS`: the 5s default
+  (`useTodayClassrooms.ts:30`), aligned with `STALE_POLL_MS`: the 5s default
   would let multi-tab switching exceed the Nginx 30 req/min budget, and the
   throttle is also what makes repeated visible events fire a single reload.
 - **Accepted semantic drift from the pre-SWR scheduler**: a focus-triggered
@@ -452,7 +472,7 @@ refreshInterval: (latest) => nextReloadDelay(latest?.data, { failureCount: 0 }),
 #### Correct
 
 ```js
-// Module-level identity + never-falsy floor (useTodayClassrooms.ts:184).
+// Module-level identity + never-falsy floor (useTodayClassrooms.ts:225).
 export function pollingInterval(latest) {
   const delay = nextReloadDelay(latest?.data, { failureCount: 0 });
   return Math.max(1, delay ?? MIN_FRESH_DELAY_MS);

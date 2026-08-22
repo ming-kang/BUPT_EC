@@ -12,12 +12,14 @@
  * types; never trust a fetch response for shape.
  */
 
-/** `handler.go` success envelope: {code, log_id, data}; failures add `msg`. */
+/** `handler.go` success envelope: {code, log_id, version, data}; failures add `msg`. */
 export interface ApiEnvelope<TData> {
   code: number;
   /** Present on service-error envelopes; absent (or empty) on success. */
   msg?: string;
   log_id?: string;
+  /** Running backend build version; present on both success and failure. */
+  version?: string;
   data: TData | null;
 }
 

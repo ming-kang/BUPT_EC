@@ -64,6 +64,14 @@ function CampusSettingsModal(props: CampusSettingsModalProps) {
             ? formatShanghaiDateTime(new Date(props.todayData.data.updated_at))
             : "未知"}
         </Typography.Text>
+        {/* Omit the row entirely when the server sent no version (pre-0.3.0
+            backend): an empty "未知" tells the user nothing, and an upgrade
+            makes the row appear on its own. */}
+        {props.todayData.version ? (
+          <Typography.Text type="secondary" style={{ display: "block", lineHeight: "1.9em" }}>
+            当前运行版本：{props.todayData.version}
+          </Typography.Text>
+        ) : null}
         <div
           style={{
             lineHeight: "1.9em",

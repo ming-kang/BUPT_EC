@@ -77,6 +77,7 @@ function HookProbe() {
       </div>
       <div data-testid="stale">{String(Boolean(resp.data?.stale))}</div>
       <div data-testid="log-id">{resp.logId || ""}</div>
+      <div data-testid="version">{resp.version || ""}</div>
       <button type="button" onClick={retry}>
         retry
       </button>
@@ -341,6 +342,64 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("code").textContent).toBe("502");
     expect(screen.getByTestId("msg").textContent).toBe("请求失败 (502)");
     expect(screen.getByTestId("log-id").textContent).toBe("header-log-id");
+  });
+
+  it("surfaces the build version on the hard error envelope", async () => {
+    // The settings dialog is reachable from the empty state (CampusButtonGroup
+    // renders its trigger with no campuses), so a failure must still name the
+    // running build.
+    fetchMock.mockImplementation(async () => ({
+      ok: false,
+      status: 503,
+      headers: { get: () => null },
+      json: async () => ({
+        code: 503,
+        msg: "暂无数据",
+        version: "v0.3.0",
+        data: null,
+      }),
+    }));
+
+    renderProbe();
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
+  });
+
+  it("keeps the build version across a stale-snapshot merge", async () => {
+    // mergeFetchResult rebuilds the envelope from scratch; without the
+    // re-attach the version would vanish exactly when the user is most likely
+    // to open the settings dialog to report a problem.
+    const soon = new Date(Date.now() + 1_500).toISOString();
+    fetchMock
+      .mockImplementationOnce(async () => ({
+        ok: true,
+        status: 200,
+        json: async () =>
+          usablePayload({ version: "v0.3.0", data: { expires_at: soon } }),
+      }))
+      .mockImplementationOnce(async () => {
+        throw new Error("network down");
+      });
+
+    // dedupingInterval 0 for the same reason as the last-good-data case: the
+    // background revalidation must issue a real second request.
+    renderProbe({ dedupingInterval: 0 });
+    await waitFor(() => {
+      expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("true");
+    });
+    // The transport failure carried no version of its own, so this can only
+    // come from the retained snapshot.
+    expect(screen.getByTestId("code").textContent).toBe("0");
+    expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
   });
 
   it("keeps background polling alive after the first load (no falsy chain death)", async () => {

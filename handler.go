@@ -59,18 +59,20 @@ func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Retry-After", "5")
 		}
 		writeJSON(w, http.StatusServiceUnavailable, map[string]any{
-			"code":   http.StatusServiceUnavailable,
-			"msg":    service.SafeErrorMessage(err),
-			"log_id": logs.GetLogIDFromContext(ctx),
-			"data":   nil,
+			"code":    http.StatusServiceUnavailable,
+			"msg":     service.SafeErrorMessage(err),
+			"log_id":  logs.GetLogIDFromContext(ctx),
+			"version": version,
+			"data":    nil,
 		})
 		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"code":   0,
-		"log_id": logs.GetLogIDFromContext(ctx),
-		"data":   todayData,
+		"code":    0,
+		"log_id":  logs.GetLogIDFromContext(ctx),
+		"version": version,
+		"data":    todayData,
 	})
 }
 

@@ -68,6 +68,60 @@ describe("normalizeResponse", () => {
   });
 });
 
+describe("normalizeResponse envelope version", () => {
+  it("passes the build version through on both success and failure envelopes", () => {
+    expect(
+      normalizeResponse({
+        code: 0,
+        msg: "ok",
+        version: "v0.3.0",
+        data: { date: "2026-07-06", campuses: [] },
+      })
+    ).toEqual({
+      ok: true,
+      resp: {
+        code: 0,
+        msg: "ok",
+        version: "v0.3.0",
+        data: { date: "2026-07-06", campuses: [] },
+      },
+    });
+
+    expect(
+      normalizeResponse({ code: 503, msg: "暂无数据", version: "v0.3.0" })
+    ).toEqual({
+      ok: true,
+      resp: {
+        code: 503,
+        msg: "暂无数据",
+        version: "v0.3.0",
+        data: null,
+      },
+    });
+  });
+
+  it("omits the key entirely rather than emitting an empty version", () => {
+    // A pre-0.3.0 backend sends no version; the envelope shape must be
+    // unchanged so the settings row is simply absent.
+    const result = normalizeResponse({
+      code: 0,
+      msg: "ok",
+      data: { campuses: [] },
+    });
+    expect(result.ok && "version" in result.resp).toBe(false);
+  });
+
+  it("drops a non-string wire version instead of rendering it", () => {
+    const result = normalizeResponse({
+      code: 0,
+      msg: "ok",
+      version: 123,
+      data: { campuses: [] },
+    });
+    expect(result.ok && "version" in result.resp).toBe(false);
+  });
+});
+
 describe("classroomWarningMessage", () => {
   it("names affected campuses and falls back to IDs", () => {
     expect(

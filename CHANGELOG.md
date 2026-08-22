@@ -8,6 +8,13 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Added
+
+- The settings dialog now shows the running backend version, so the deployed
+  build can be identified from the page itself instead of by logging into the
+  server. `/api/get_data` carries that version on both its success and failure
+  envelopes; the row is omitted when the server does not report one.
+
 ## [0.2.0] - 2026-08-22
 
 ### Added

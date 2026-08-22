@@ -303,6 +303,65 @@ func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 	}
 }
 
+// The settings dialog reads the running build off the envelope, and the empty
+// state still renders its trigger (CampusButtonGroup renders a settings button
+// when the campus list is empty), so the failure envelope must carry it too.
+func TestGetDataEnvelopesCarryBuildVersion(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name       string
+		service    *fakeClassroomService
+		wantStatus int
+	}{
+		{
+			name: "success",
+			service: &fakeClassroomService{
+				todayClassrooms: &model.TodayClassrooms{
+					Date:       now.Format("2006-01-02"),
+					UpdatedAt:  now,
+					ExpiresAt:  now.Add(time.Minute),
+					StaleUntil: now.Add(time.Hour),
+					Campuses:   []model.CampusInfo{{ID: "01", Name: "西土城"}},
+				},
+			},
+			wantStatus: http.StatusOK,
+		},
+		{
+			name:       "cold start failure",
+			service:    &fakeClassroomService{todayError: service.ErrNoTodayCache},
+			wantStatus: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := newTestHTTPServer(tc.service, true).Routes()
+
+			responseRecorder := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+			handler.ServeHTTP(responseRecorder, request)
+			if responseRecorder.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d", responseRecorder.Code, tc.wantStatus)
+			}
+
+			var envelope struct {
+				Version string `json:"version"`
+			}
+			if err := json.Unmarshal(responseRecorder.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode GetData response: %v", err)
+			}
+			// Compare against the package variable rather than a literal so the
+			// assertion keeps holding once -ldflags injects a real tag.
+			if envelope.Version != version {
+				t.Fatalf("GetData version = %q, want %q", envelope.Version, version)
+			}
+			if envelope.Version == "" {
+				t.Fatal("GetData envelope version should never be empty")
+			}
+		})
+	}
+}
+
 func TestNoRouteServesSPAFallback(t *testing.T) {
 	handler := newTestHTTPServer(nil, true).Routes()
 

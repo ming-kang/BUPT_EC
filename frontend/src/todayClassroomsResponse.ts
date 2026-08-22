@@ -12,6 +12,8 @@ export const fallbackErrorMessage = "数据获取失败，请稍后重试";
 export interface Envelope {
   code: number;
   msg: string;
+  /** Running backend build version, "" when the server did not send one. */
+  version?: string;
   data: TodayClassroomsData | null;
 }
 
@@ -24,6 +26,7 @@ export type PayloadView = {
   code?: unknown;
   msg?: unknown;
   log_id?: string;
+  version?: unknown;
   stale?: unknown;
   data?: unknown;
   error?: { message?: unknown } | null;
@@ -70,6 +73,17 @@ export function extractMessage(payload?: PayloadView | null): string {
 }
 
 /**
+ * Envelope-level build version. Guarded like `extractMessage` because the
+ * value reaches the settings dialog as rendered text; a non-string wire value
+ * degrades to "" (the row is then omitted) rather than into the DOM.
+ */
+export function extractVersion(payload?: PayloadView | null): string {
+  return typeof payload?.version === "string" && payload.version.trim() !== ""
+    ? payload.version.trim()
+    : "";
+}
+
+/**
  * Discriminated result, no throw-as-control-flow: `{ ok: true, resp }` for a
  * safe envelope (including legitimate non-zero service envelopes), or
  * `{ ok: false, reason }` for malformed payloads. Throwing is the caller's
@@ -87,12 +101,18 @@ export function normalizeResponse(payload: unknown): NormalizeResult {
     return { ok: false, reason: "服务返回状态异常" };
   }
 
+  // Written only when present: a bare `version: ""` would change the envelope
+  // shape for every pre-0.3.0 backend and for every test fixture built here.
+  const version = extractVersion(view);
+  const versionField = version ? { version } : {};
+
   if (code !== 0) {
     return {
       ok: true,
       resp: {
         code,
         msg: extractMessage(view) || fallbackErrorMessage,
+        ...versionField,
         data: null,
       },
     };
@@ -111,6 +131,7 @@ export function normalizeResponse(payload: unknown): NormalizeResult {
     resp: {
       code: 0,
       msg: extractMessage(view),
+      ...versionField,
       // Envelope-level fields are validated above; the snapshot body is
       // re-validated by isUsableBusinessDaySnapshot before the UI trusts it.
       data: { ...data, campuses: data.campuses } as TodayClassroomsData,
