@@ -732,3 +732,36 @@ B-03 implemented per the approved planning artifacts (prd/design/implement):
 ### Status
 
 [OK] **Completed** — backlog 剩余：React 19（已解锁）、api-etag-preserialize（挂起待流量）、E-03′/E-06/F-04/B-05（条件触发）
+
+## Session 22: React 19 compatibility migration
+
+**Date**: 2026-08-22
+**Task**: 08-22-react-19 (completed & archived)
+**Branch**: `main`
+
+### Summary
+
+Completed backlog item F-02 as a behavior-preserving compatibility migration:
+- React/React DOM 18.3.1 → 19.2.8; `@types/react` / `@types/react-dom` → 19.2.18 / 19.2.4. The pnpm graph resolves one React 19 runtime; lockfile package changes are limited to the expected runtime/types/scheduler replacements, official patch addition, and obsolete `@types/prop-types` removal.
+- Kept antd 5.29.3 and added official `@ant-design/v5-patch-for-react-19` 1.0.3. `main.tsx` imports it before rendering so Button waves/static overlays use React 19 `createRoot` compatibility.
+- Direct component tests bypass `main.tsx`, so jsdom setup awaits the same patch only when `window` exists. An initial static setup import was rejected because it loaded the full antd graph into pure node suites; the conditional import keeps those suites isolated.
+- No component/hook behavior or assertions changed. CHANGELOG, dependency-line spec, bundle baseline, and stale current `.js`/`.jsx` documentation paths were synchronized; unrelated stale success-`log_id` spec semantics remain deferred.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f1e63c` | chore(frontend): migrate to React 19 |
+| `0706fea` | chore(task): archive 08-22-react-19 |
+
+### Testing
+
+- [OK] Frontend frozen install, strict typecheck, lint, 18 files / 120 tests, production build (1,494 modules), size, audit:prod, and audit:dev.
+- [OK] Only the pre-migration `TimeoutNaNWarning` and jsdom pseudo-element `getComputedStyle` messages remain; no React/antd/act/ref/root/unmount warning was introduced.
+- [OK] Bundle 224,343 B gzip (+14,749 B), within unchanged 230,888 B budget (6,545 B headroom); `react-vendor` and `antd-vendor` topology preserved.
+- [OK] `task check`, `task test`, `task build`, tagless + embed `./...` builds, govulncheck with `GOTOOLCHAIN=go1.25.13`, installer tests, ShellCheck, and diff check.
+- [OK] Independent final review PASS. Trellis Pi subagents were unavailable (`spawn pi ENOENT`), so implementation/check used native fallback agents plus main-session verification.
+
+### Status
+
+[OK] **Completed** — backlog 剩余：api-etag-preserialize（挂起待流量）、E-03′/E-06/F-04/B-05（条件触发）
