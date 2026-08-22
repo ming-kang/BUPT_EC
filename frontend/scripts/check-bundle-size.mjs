@@ -10,6 +10,9 @@ import { gzipSync } from 'node:zlib';
 //   2026-07-27 measured total = 209,898 B
 //   (antd 5.29.3 / react 18.3.1 / vite 7.3.6, react-vendor + antd-vendor
 //   manual chunks, native table, inline icons)
+// Current React 18 baseline: 209,594 B (2026-08-22, same gzip -9 metric).
+// React 19 migration measurement: 224,343 B (2026-08-22, React 19.2.8
+// with the official antd v5 patch, same chunks and metric).
 // Pre-upgrade baseline for reference: 293,407 B (2026-07-27, antd 5.12.6 /
 // vite 6.4.3, same gzip -9 metric). If you exceed the budget intentionally,
 // update BUDGET_BYTES here with a justification.

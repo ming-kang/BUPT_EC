@@ -89,6 +89,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Dependencies
 
+- React 18.3 → 19.2, with the official `@ant-design/v5-patch-for-react-19` bridge
+  required for the existing Ant Design 5.29 frontend.
 - Ant Design 5.12 → 5.29, React 18.2 → 18.3, Vite 6.4 → 7.3, and the data layer
   now uses `swr`. The two remaining `@ant-design/icons` glyphs are inlined and
   that dependency is dropped, the main classroom table renders as a native

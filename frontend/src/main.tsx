@@ -1,3 +1,4 @@
+import "@ant-design/v5-patch-for-react-19";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
@@ -6,7 +7,7 @@ import "./index.css";
 
 // R13: last-resort boundary. The fallback is plain HTML with inline styles on
 // purpose — a crash can originate inside ConfigProvider/antd itself, so the
-// fallback must not depend on them. Component-level boundaries (App.jsx) still
+// fallback must not depend on them. Component-level boundaries (App.tsx) still
 // handle local degradation first.
 const rootFallback = (
   <div

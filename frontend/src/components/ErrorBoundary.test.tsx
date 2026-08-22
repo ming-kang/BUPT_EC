@@ -52,7 +52,7 @@ describe("ErrorBoundary", () => {
     expect(logged).toBeTruthy();
     expect(logged[1]).toBeInstanceOf(Error);
     expect(logged[1].message).toBe("boom");
-    // componentStack from the error info (string in React 18).
+    // componentStack from the error info remains a string in React 19.
     expect(typeof logged[2]).toBe("string");
   });
 

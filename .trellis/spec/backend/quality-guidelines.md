@@ -81,11 +81,11 @@ Local test patterns:
 - Login metric tests use a recording `RuntimeMetrics` (or Gather on an isolated
   registry) and assert one observation per shared network login, correct
   `source` provenance, non-negative duration, and no secret labels.
-- Frontend `*.lifecycle.test.jsx` and `components/*.test.jsx` files mount real
+- Frontend `*.lifecycle.test.tsx` and `components/*.test.tsx` files mount real
   hooks/components under jsdom via `@testing-library/react`, opting in with a
   file-level `@vitest-environment jsdom` directive; pure helper tests remain on
   the default node env configured in `vite.config.js:50`. Shared DOM-only stubs
-  (`matchMedia` for antd) live in `frontend/src/test/setup.js`, which guards on
+  (`matchMedia` for antd) live in `frontend/src/test/setup.ts`, which guards on
   `typeof window` so node-environment tests are unaffected.
 - Tests that mount the SWR-backed hook must isolate the module-global cache
   with `<SWRConfig value={{ provider: () => new Map() }}>`; see the SWR gotchas
@@ -159,7 +159,7 @@ dependencies, chunk splitting, or anything that lands in `dist/`.
 `node:zlib` only) and measures **gzip level 9 over every `js`/`css`/`html`/`svg`
 file under `frontend/dist`**. That metric is not Vite's console gzip column
 (zlib default level) — never mix the two when arguing about a regression. The
-budget is `BUDGET_BYTES = 230_888` (check-bundle-size.mjs:25), derived as
+budget is `BUDGET_BYTES = 230_888` (check-bundle-size.mjs:28), derived as
 `ceil(measured total × 1.10)` from the 209,898 B measured on 2026-07-27, with
 the 10% headroom absorbing dependency patch churn. Raising it requires editing
 that constant together with a recorded justification in the comment block above
@@ -223,7 +223,14 @@ own evaluated change with its own visual/behavior regression pass.
 
 - `antd` stays on `^5` (currently `^5.29.3`). antd 6 is a separate migration,
   not a dependency bump.
-- `react` / `react-dom` / `@types/react*` stay on the `^18.3` line.
+- `@ant-design/v5-patch-for-react-19` is required for the antd v5 React 19
+  bridge: React 19 removed the legacy dynamic-render path used by antd v5
+  Button waves and static overlays. Import the patch before rendering in
+  `frontend/src/main.tsx`. Direct component tests bypass that entrypoint, so
+  `frontend/src/test/setup.ts` must await the same patch when `window` exists;
+  do not statically load the antd graph into pure node tests. The Button/Modal
+  component suites are the compatibility regression gate.
+- `react` / `react-dom` / `@types/react*` stay on the `^19.2` line.
 - `vite` stays on `^7`, and `@vitejs/plugin-react` must stay on `^5`: its 6.x
   peer range is `vite ^8` only, so bumping the plugin alone silently drags the
   bundler major or breaks install resolution.
@@ -333,14 +340,14 @@ Backend API changes often require frontend changes because the React app reads
 the backend payload directly. Before changing `service/model/realtime_data.go`,
 `classroom_builder.go`, or `handler.go`, inspect these frontend files:
 
-- `frontend/src/useTodayClassrooms.js` for the SWR call, the fetch boundary and
+- `frontend/src/useTodayClassrooms.ts` for the SWR call, the fetch boundary and
   the render-time envelope derivation.
-- `frontend/src/todayClassroomsResponse.js` for API envelope normalization.
-- `frontend/src/apiError.js` for the structured fetch-boundary error
+- `frontend/src/todayClassroomsResponse.ts` for API envelope normalization.
+- `frontend/src/apiError.ts` for the structured fetch-boundary error
   (`status` / `code` / `logId`).
-- `frontend/src/components/BuildingPicker.jsx` for building assumptions.
-- `frontend/src/components/ClassTimePicker.jsx` for campus node assumptions.
-- `frontend/src/components/TodayClassroomTable.jsx` for `free_nodes` filtering.
+- `frontend/src/components/BuildingPicker.tsx` for building assumptions.
+- `frontend/src/components/ClassTimePicker.tsx` for campus node assumptions.
+- `frontend/src/components/TodayClassroomTable.tsx` for `free_nodes` filtering.
 
 Read api-contract.md's "Scenario: Frontend Snapshot Validity and Reload
 Backoff" **before** touching the data layer: SWR configuration, the retry

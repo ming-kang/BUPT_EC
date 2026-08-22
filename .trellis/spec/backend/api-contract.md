@@ -168,13 +168,13 @@ full-width parentheses, and room deduplication.
 
 The frontend calls only `/api/get_data` for classroom data. Important consumers:
 
-- `frontend/src/useTodayClassrooms.js` owns the single `useSWR` call for the
-  endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.js:21`), validates
+- `frontend/src/useTodayClassrooms.ts` owns the single `useSWR` call for the
+  endpoint (key `TODAY_CLASSROOMS_KEY`, `useTodayClassrooms.ts:21`), validates
   the response shape inside its fetcher, and derives the UI envelope at render
   time.
 - `frontend/src/components/BuildingPicker.tsx` reads campus `buildings`.
-- `frontend/src/components/ClassTimePicker.jsx` reads campus `nodes`.
-- `frontend/src/components/TodayClassroomTable.jsx` filters rooms by selected
+- `frontend/src/components/ClassTimePicker.tsx` reads campus `nodes`.
+- `frontend/src/components/TodayClassroomTable.tsx` filters rooms by selected
   building and selected class periods.
 
 Preserve these semantics unless the frontend is updated in the same change:
@@ -208,7 +208,7 @@ resp
 
 `logId` is a frontend-side field (it does not exist in the backend success
 envelope): the fetch boundary reads `payload.log_id`, falling back to the
-`X-Log-Id` response header, and `components/GlobalEmpty.jsx:19-23` renders it
+`X-Log-Id` response header, and `components/GlobalEmpty.tsx:19-23` renders it
 as a dim `log_id: …` line under the error description so a user can quote it
 in a bug report. Do not surface it on code-0 stale/partial envelopes — the
 warning Alert has no correlation-ID story and the success body carries no
@@ -228,28 +228,28 @@ faster than the backend can refresh.
 
 The data layer is `useSWR` plus pure glue: SWR owns transport, cache, dedupe,
 focus/reconnect revalidation and the retry chain; the repo owns the schedule
-math (`reloadSchedule.js`), the validity predicate
-(`classroomDataValidity.js`), and the render-time derivation that turns SWR's
+math (`reloadSchedule.ts`), the validity predicate
+(`classroomDataValidity.ts`), and the render-time derivation that turns SWR's
 `data`/`error` tracks back into the single `resp` envelope the UI consumes.
 
 ### 2. Signatures
 
 ```js
-// frontend/src/classroomDataValidity.js
+// frontend/src/classroomDataValidity.ts
 isUsableBusinessDaySnapshot(data, nowMs = Date.now())            // :7
 
-// frontend/src/reloadSchedule.js  (unchanged by the SWR migration)
+// frontend/src/reloadSchedule.ts  (unchanged by the SWR migration)
 failureRetryDelay(failureCount)                                  // :13
 withJitter(delayMs, random = Math.random)                        // :52
 nextReloadDelay(data, { failureCount = 0, nowMs = Date.now(), random = Math.random } = {})  // :81
 
-// frontend/src/todayClassroomsResponse.js
+// frontend/src/todayClassroomsResponse.ts
 normalizeResponse(payload) -> { ok: true, resp } | { ok: false, reason }   // :49
 
-// frontend/src/apiError.js
+// frontend/src/apiError.ts
 new ApiError(message, { status, code, logId })                   // :6
 
-// frontend/src/useTodayClassrooms.js — pure glue, all separately testable
+// frontend/src/useTodayClassrooms.ts — pure glue, all separately testable
 hasUsableClassroomData(resp, nowMs = Date.now())                 // :32
 shouldFullPageSpin(isBackground, hasUsableData)                  // :43
 mergeFetchResult(prev, next, nowMs = Date.now())                 // :55
@@ -278,9 +278,9 @@ counter, and success/non-retry revalidations reset it internally.
   throws — it returns a discriminated result, so parsing is not control flow.
 - `ApiError` carries the real HTTP `status`, the business envelope `code` and
   the server `logId`. The derived envelope's `code` is `status ?? businessCode
-  ?? 500`, never a blanket 500 (`useTodayClassrooms.js:103`).
+  ?? 500`, never a blanket 500 (`useTodayClassrooms.ts:103`).
 - `logId` comes from `payload.log_id` with the `X-Log-Id` response header as
-  fallback (`useTodayClassrooms.js:141`). It rides on hard-error envelopes only
+  fallback (`useTodayClassrooms.ts:141`). It rides on hard-error envelopes only
   (`resp.logId`); code-0 stale merges never surface it.
 - `mergeFetchResult` keeps prior data after a client failure only while that
   snapshot remains displayable; otherwise it returns `data: null`. It runs at
@@ -304,7 +304,7 @@ counter, and success/non-retry revalidations reset it internally.
   never yield NaN delays.
 - Background retries never enable the full-page spinner. When a render observes
   a code-0 snapshot that has crossed midnight or `stale_until`, it clears the
-  campuses (`EXPIRED_SNAPSHOT_MESSAGE` envelope, `useTodayClassrooms.js:285`)
+  campuses (`EXPIRED_SNAPSHOT_MESSAGE` envelope, `useTodayClassrooms.ts:285`)
   while the clamped reload is in flight.
 - Hidden tabs issue zero classroom requests. Three separate mechanisms carry
   that, and all three must stay in place:
@@ -318,13 +318,13 @@ counter, and success/non-retry revalidations reset it internally.
   3. An **already-armed** retry timer has no visibility gate inside SWR, so
      `retryOnError`'s own `setTimeout` callback re-checks
      `document.visibilityState` and abandons the attempt when hidden
-     (`useTodayClassrooms.js:214-222`).
+     (`useTodayClassrooms.ts:214-222`).
 - Becoming visible after `stale_until` revalidates promptly instead of keeping
   yesterday's filters for a normal poll interval. `revalidateOnFocus` (which
   listens to both `visibilitychange` and `window.focus`) carries this, and it
   also re-issues the request that a hidden tab abandoned above.
   `focusThrottleInterval` is `FOCUS_THROTTLE_MS = 15_000`
-  (`useTodayClassrooms.js:27`), aligned with `STALE_POLL_MS`: the 5s default
+  (`useTodayClassrooms.ts:27`), aligned with `STALE_POLL_MS`: the 5s default
   would let multi-tab switching exceed the Nginx 30 req/min budget, and the
   throttle is also what makes repeated visible events fire a single reload.
 - **Accepted semantic drift from the pre-SWR scheduler**: a focus-triggered
@@ -373,25 +373,25 @@ counter, and success/non-retry revalidations reset it internally.
 
 ### 6. Tests Required
 
-- `classroomDataValidity.test.js`: same-day, cross-day, expired, and malformed
+- `classroomDataValidity.test.ts`: same-day, cross-day, expired, and malformed
   required fields.
-- `reloadSchedule.test.js`: 10/20/30/60 cap, hard-empty retry, 30s partial /
+- `reloadSchedule.test.ts`: 10/20/30/60 cap, hard-empty retry, 30s partial /
   15s stale bases, single random sample, positive-only jitter bounds, invalid
   RNG fallbacks, and post-jitter `stale_until` clamp (including sample=1).
-- `todayClassroomsResponse.test.js`: `normalizeResponse` returning
+- `todayClassroomsResponse.test.ts`: `normalizeResponse` returning
   `{ ok: false, reason }` for every malformed shape (assert the discriminated
   result, never `toThrow`), safe normalization of non-zero service envelopes,
   the campus-name warning, and missing-field compatibility.
-- `apiError.test.js`: `status` / `code` / `logId` stay structured on the error
+- `apiError.test.ts`: `status` / `code` / `logId` stay structured on the error
   object, and `logId` defaults to `""` when no details are passed.
-- `useTodayClassrooms.test.js` (pure glue, node env): `hasUsableClassroomData`
+- `useTodayClassrooms.test.ts` (pure glue, node env): `hasUsableClassroomData`
   accept/reject matrix, `shouldFullPageSpin` quadrants, `pollingInterval`
   reading the snapshot out of the cached envelope and never returning a falsy
   interval, `retryDelayFor` mapping the 1-based `retryCount` onto the ladder and
   clamping to a displayable `stale_until`, and the six `mergeFetchResult`
   scenarios (preserve, non-ok envelope, hard-empty, cross-day/expired clear,
   fail-closed metadata, successful replace).
-- `useTodayClassrooms.lifecycle.test.jsx` (jsdom, 12+ cases): initial load; late
+- `useTodayClassrooms.lifecycle.test.tsx` (jsdom, 12+ cases): initial load; late
   responses after unmount being harmless (no abort); manual retry issuing a
   second request and clearing the full-page error; a failed background reload
   keeping the last good data; timer cleanup on unmount; the 40s timeout safe
@@ -401,16 +401,16 @@ counter, and success/non-retry revalidations reset it internally.
   an armed retry abandoning itself while hidden and recovering on focus; the
   ladder restarting at 10s after an intervening success; and hide → past
   deadline → visible → cleared snapshot with a single prompt reload.
-- `components/GlobalEmpty.test.jsx`: the `log_id` line renders for error
+- `components/GlobalEmpty.test.tsx`: the `log_id` line renders for error
   envelopes carrying one and is omitted when `logId` is empty or missing.
 - Component tests for the other consumers of this contract:
-  `components/TodayClassroomTable.test.jsx` (native `thead` with three
+  `components/TodayClassroomTable.test.tsx` (native `thead` with three
   `scope="col"` headers, `free_nodes` intersection filtering, capacity
   rendering, and the room modal following background refreshes without
-  closing), `components/ClassTimePicker.test.jsx`,
-  `components/BuildingPicker.test.jsx`,
-  `components/CampusButtonGroup.test.jsx` (derived selection and
-  `aria-pressed`), and `components/ErrorBoundary.test.jsx`.
+  closing), `components/ClassTimePicker.test.tsx`,
+  `components/BuildingPicker.test.tsx`,
+  `components/CampusButtonGroup.test.tsx` (derived selection and
+  `aria-pressed`), and `components/ErrorBoundary.test.tsx`.
 
 > **Gotcha (SWR test isolation)**: SWR's cache is a module global. Every test
 > that mounts the hook must wrap the probe in
@@ -422,7 +422,7 @@ counter, and success/non-retry revalidations reset it internally.
 > (bound `mutate()` bypasses deduping, so manual retry still works). Fake
 > timers cannot advance jsdom's internal `AbortSignal.timeout` clock, so the
 > timeout case rebuilds it on the patched global `setTimeout`
-> (`useTodayClassrooms.lifecycle.test.jsx:103-114`).
+> (`useTodayClassrooms.lifecycle.test.tsx:103-114`).
 
 ### 7. Wrong vs Correct
 
@@ -452,7 +452,7 @@ refreshInterval: (latest) => nextReloadDelay(latest?.data, { failureCount: 0 }),
 #### Correct
 
 ```js
-// Module-level identity + never-falsy floor (useTodayClassrooms.js:184).
+// Module-level identity + never-falsy floor (useTodayClassrooms.ts:184).
 export function pollingInterval(latest) {
   const delay = nextReloadDelay(latest?.data, { failureCount: 0 });
   return Math.max(1, delay ?? MIN_FRESH_DELAY_MS);

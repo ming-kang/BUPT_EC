@@ -1,11 +1,17 @@
-// Shared vitest setup. The default test environment stays node (pure helper
-// tests); component tests opt into jsdom via a file-level
-// `@vitest-environment jsdom` directive. Everything here must therefore be
-// guarded so it no-ops without a DOM.
+export {};
+
+// Shared vitest setup. Component tests bypass main.tsx, so jsdom environments
+// load the same antd React 19 renderer before their test modules. Pure node
+// tests skip the antd graph entirely.
+if (typeof window !== "undefined") {
+  await import("@ant-design/v5-patch-for-react-19");
+}
+
+// DOM-dependent stubs below remain guarded for jsdom-only use.
 
 // antd (responsiveObserver / rc-* internals) may call window.matchMedia when
-// components like Modal render; install a minimal always-false stub when the
-// DOM implementation lacks it so component tests cannot crash on it.
+// components like Modal render; install a minimal always-false stub when
+// the DOM implementation lacks it so component tests cannot crash on it.
 if (typeof window !== "undefined" && typeof window.matchMedia !== "function") {
   window.matchMedia = (query) => ({
     matches: false,

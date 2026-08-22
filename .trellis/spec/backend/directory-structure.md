@@ -226,8 +226,8 @@ API shapes:
   `RoomInfo`, `NodeInfo`, `FreeTime`, and `APIError`.
 
 When changing a public JSON tag or field, update the backend builder/handler,
-the frontend consumer in `frontend/src/useTodayClassrooms.js`, the envelope
-normalization helpers in `frontend/src/todayClassroomsResponse.js`, any affected
+the frontend consumer in `frontend/src/useTodayClassrooms.ts`, the envelope
+normalization helpers in `frontend/src/todayClassroomsResponse.ts`, any affected
 components, tests, docs, and `CHANGELOG.md` if the behavior is user-visible.
 
 ## Naming Conventions
