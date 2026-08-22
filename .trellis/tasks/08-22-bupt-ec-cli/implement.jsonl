@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "事务契约七阶段与快照目标清单；其中「no runtime helper beside install.sh」与本任务直接冲突，须按 PRD R8 显式修订"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "CLI 必须委托 install.sh，不得重新实现下载/校验/事务/回滚"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "logs 子命令涉及日志路径约定；该 spec 要求 install.sh 与 operations.md 同步更新"}

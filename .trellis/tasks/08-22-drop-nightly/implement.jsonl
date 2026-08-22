@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "含 Scenario: Installer Release Selection（本任务直接推翻其中 nightly 相关契约，必须同步改写）与 Convention: CI Workflow Editing Rules"}
+{"file": ".trellis/spec/backend/index.md", "reason": "项目形状与发布链路概览"}

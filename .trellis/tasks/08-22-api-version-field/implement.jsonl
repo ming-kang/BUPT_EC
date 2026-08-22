@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "信封契约与前端数据层规范（logId 透传路径、快照有效性）的权威定义，version 字段须与之一致"}
+{"file": ".trellis/spec/backend/index.md", "reason": "后端项目形状与前后端绑定规则概览"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 Go handler 与 React 组件两层，需按跨层清单检查数据流"}

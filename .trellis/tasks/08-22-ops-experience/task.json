@@ -1,0 +1,31 @@
+{
+  "id": "ops-experience",
+  "name": "ops-experience",
+  "title": "运维体验改进：bupt-ec CLI、安装器分模式、废除 nightly、版本可见性",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "ming-kang",
+  "assignee": "ming-kang",
+  "createdAt": "2026-08-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-22-api-version-field",
+    "08-22-drop-nightly",
+    "08-22-installer-modes",
+    "08-22-bupt-ec-cli"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
