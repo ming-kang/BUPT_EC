@@ -8,6 +8,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-22
+
 ### Added
 
 - Building entries in `/api/get_data` now include a normalized `display_name`
@@ -311,7 +313,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
 - Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
 
-[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.3...v0.1.4
