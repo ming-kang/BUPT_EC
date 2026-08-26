@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"BUPT_EC/logs"
@@ -23,19 +24,61 @@ func isAPIPath(path string) bool {
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// writeJSON writes v with the exact Content-Type and body bytes the
-// pre-rewrite handlers produced (Marshal, no trailing newline). Marshal
-// errors are impossible for the fixed envelope shapes and intentionally
-// dropped.
+// jsonBufPool avoids per-request buffer allocation for JSON encoding.
+// Each buffer is Reset before use and returned after the response is written.
+var jsonBufPool = sync.Pool{
+	New: func() any { return new(bytes.Buffer) },
+}
+
+// writeJSON encodes v as JSON into a pooled buffer and writes it as the HTTP
+// response body. The output is byte-compatible with the former json.Marshal
+// path (no trailing newline). Encode errors are unreachable for the typed
+// envelope structs used by all callers.
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	body, err := json.Marshal(v)
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	err := json.NewEncoder(buf).Encode(v)
 	if err != nil {
+		jsonBufPool.Put(buf)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
+	}
+	// json.Encoder.Encode appends '\n'; trim it to match the prior Marshal
+	// output that existing tests and the gzip byte-comparison assert on.
+	body := buf.Bytes()
+	if len(body) > 0 && body[len(body)-1] == '\n' {
+		body = body[:len(body)-1]
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
+	jsonBufPool.Put(buf)
+}
+
+// writePreserializedGetData writes a success /api/get_data response by
+// splicing pre-serialized "data" JSON into the envelope template. This
+// eliminates per-request reflection-based json.Marshal for the large
+// campus/room tree. The output is byte-identical to what writeJSON would
+// produce for a getDataSuccessResponse with the same data.
+func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver string, dataJSON []byte) {
+	buf := jsonBufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	// Build: {"code":0,"log_id":"...","version":"...","data":...}
+	// Use json.Marshal for the string fields to handle any escaping.
+	buf.WriteString(`{"code":0,"log_id":`)
+	logIDJSON, _ := json.Marshal(logID)
+	buf.Write(logIDJSON)
+	buf.WriteString(`,"version":`)
+	verJSON, _ := json.Marshal(ver)
+	buf.Write(verJSON)
+	buf.WriteString(`,"data":`)
+	buf.Write(dataJSON)
+	buf.WriteByte('}')
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
+	jsonBufPool.Put(buf)
 }
 
 // newGzipWrapper builds the production compression wrapper. It is shared with
@@ -188,10 +231,10 @@ func (server *HTTPServer) Routes() http.Handler {
 	// fallback to index.html.
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isAPIPath(r.URL.Path) {
-			writeJSON(w, http.StatusNotFound, map[string]any{
-				"code":   http.StatusNotFound,
-				"msg":    "not found",
-				"log_id": logs.GetLogIDFromContext(r.Context()),
+			writeJSON(w, http.StatusNotFound, &notFoundResponse{
+				Code:  http.StatusNotFound,
+				Msg:   "not found",
+				LogID: logs.GetLogIDFromContext(r.Context()),
 			})
 			return
 		}

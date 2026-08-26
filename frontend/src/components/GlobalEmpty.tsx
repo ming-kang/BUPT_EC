@@ -1,4 +1,5 @@
-import { Button, Card, Empty } from "antd";
+import { Button, Empty } from "antd";
+import Panel from "./Panel";
 import "./GlobalEmpty.css";
 
 import type { HookEnvelope } from "../useTodayClassrooms";
@@ -15,7 +16,7 @@ function GlobalEmpty(props: GlobalEmptyProps) {
   }
 
   return (
-    <Card className="global-empty responsive-card compact-card">
+    <Panel className="global-empty responsive-card compact-card">
       <Empty
         image={Empty.PRESENTED_IMAGE_SIMPLE}
         description={
@@ -36,7 +37,7 @@ function GlobalEmpty(props: GlobalEmptyProps) {
       >
         {props.isError ? <Button onClick={props.onRetry}>重试</Button> : null}
       </Empty>
-    </Card>
+    </Panel>
   );
 }
 

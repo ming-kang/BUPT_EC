@@ -1,5 +1,6 @@
-import { Card, Empty, Modal, Tag } from "antd";
+import { Empty, Modal } from "antd";
 import { useMemo, useState } from "react";
+import Panel from "./Panel";
 import "./TodayClassroomTable.css";
 
 /** Structural minimum the table reads off a campus payload. */
@@ -177,7 +178,7 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
   return (
     <div className="today-classroom-table">
       {showEmptyState ? (
-        <Card className="responsive-card compact-card">
+        <Panel className="responsive-card compact-card">
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description={
@@ -190,15 +191,11 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
                 : "没有符合条件的空教室"
             }
           />
-        </Card>
+        </Panel>
       ) : (
-        <Card
+        <Panel
           className="responsive-card"
-          styles={{
-            body: {
-              padding: 0,
-            },
-          }}
+          bodyStyle={{ padding: 0 }}
         >
           <div className="ec-table-wrap">
             <table className="ec-table">
@@ -234,9 +231,9 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
                       )
                         .filter((node) => selectedClassTimes.includes(node))
                         .map((node) => (
-                          <Tag key={node} bordered={false}>
+                          <span key={node} className="node-tag">
                             {String(node).padStart(2, "0")}
-                          </Tag>
+                          </span>
                         ))}
                     </td>
                   </tr>
@@ -244,7 +241,7 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
               </tbody>
             </table>
           </div>
-        </Card>
+        </Panel>
       )}
       {roomInfoModal}
     </div>

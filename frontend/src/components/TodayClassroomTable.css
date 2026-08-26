@@ -167,9 +167,28 @@ body.dark .ec-table td.room-info__empty {
         padding: 8px 4px;
     }
 
-    .today-classroom-table .ant-tag {
+    .today-classroom-table .node-tag {
         font-size: 0.8em;
         padding: 1px 6px;
-        border-radius: 4px;
     }
+}
+
+
+/* Node tag — lightweight replacement for antd Tag (borderless variant).
+   Matches antd's default Tag sizing: 4px border-radius, inline-block,
+   12px font-size, pill-like padding. Uses the primary blue from antd tokens. */
+.node-tag {
+    display: inline-block;
+    padding: 1px 8px;
+    font-size: 12px;
+    line-height: 20px;
+    border-radius: 4px;
+    background: rgba(22, 119, 255, 0.06);
+    color: var(--ant-color-primary, #1677ff);
+    margin: 1px 2px;
+    font-variant-numeric: tabular-nums;
+}
+
+body.dark .node-tag {
+    background: rgba(22, 119, 255, 0.15);
 }

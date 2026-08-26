@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -42,9 +43,14 @@ type ClassroomService struct {
 	// and cross-day rejection happens on read via the Date guard in
 	// getCachedTodayClassroomsAt, so no TTL/janitor is needed.
 	todayCache atomic.Pointer[model.TodayClassrooms]
-	campuses   []config.CampusConfig
-	jwClient   JWClient
-	clock      Clock
+	// cachedDataJSON holds the pre-serialized JSON bytes of the fresh
+	// TodayClassrooms value (Stale=false, Error=nil). Updated atomically
+	// alongside todayCache on every successful refresh. The handler uses
+	// these bytes on the hot path to skip per-request json.Marshal entirely.
+	cachedDataJSON atomic.Pointer[[]byte]
+	campuses       []config.CampusConfig
+	jwClient       JWClient
+	clock          Clock
 	// backoffRandom returns one sample in [0,1] for total-failure jitter.
 	// Always non-nil after construction (production or injected).
 	backoffRandom RandomSample
@@ -159,4 +165,48 @@ func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*Cla
 // TokenManager); the constructor guarantees a non-nil clock.
 func (s *ClassroomService) now() time.Time {
 	return s.clock.Now().In(businessLocation)
+}
+
+// updateCachedDataJSON pre-serializes the fresh TodayClassrooms value so the
+// handler can write it directly without per-request json.Marshal. Called once
+// per successful refresh, immediately after todayCache.Store. A marshal failure
+// (unreachable for the fixed model types) clears the cached bytes so the
+// handler falls back to runtime encoding gracefully.
+func (s *ClassroomService) updateCachedDataJSON(today *model.TodayClassrooms) {
+	// The handler's fast path serves the fresh variant (Stale=false, Error=nil).
+	// Build that exact shape so the JSON output is byte-identical to what
+	// writeJSON would produce for classroomResponse(cached, false, nil).
+	fresh := *today
+	fresh.Stale = false
+	fresh.Error = nil
+	data, err := json.Marshal(&fresh)
+	if err != nil {
+		// Unreachable: model types are fixed and always marshal cleanly.
+		s.cachedDataJSON.Store(nil)
+		return
+	}
+	s.cachedDataJSON.Store(&data)
+}
+
+// GetCachedDataJSON returns the pre-serialized fresh TodayClassrooms JSON and
+// true if a usable cached value exists for the current business day. Returns
+// nil, false when no cache is available, the cache is cross-day, or the
+// pre-serialized bytes were never computed.
+func (s *ClassroomService) GetCachedDataJSON() ([]byte, bool) {
+	cached, ok := s.getCachedTodayClassrooms()
+	if !ok {
+		return nil, false
+	}
+	// Only serve the pre-serialized fast path for the fully fresh, error-free
+	// case. Stale and partial responses have different Stale/Error fields and
+	// must fall back to runtime serialization.
+	now := s.now()
+	if cached.ExpiresAt.Before(now) || cached.Error != nil {
+		return nil, false
+	}
+	ptr := s.cachedDataJSON.Load()
+	if ptr == nil {
+		return nil, false
+	}
+	return *ptr, true
 }

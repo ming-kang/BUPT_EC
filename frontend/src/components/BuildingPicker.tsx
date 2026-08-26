@@ -1,7 +1,7 @@
-import { Card } from "antd";
 import type { CampusInfo } from "../api/types";
 import { useSelection } from "../selectionContext";
 import { ToggleButtonGroup } from "./ToggleButtonGroup";
+import Panel from "./Panel";
 import "./BuildingPicker.css";
 
 interface BuildingPickerProps {
@@ -21,7 +21,7 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
     : [];
 
   return (
-    <Card className="building-picker responsive-card">
+    <Panel className="building-picker responsive-card">
       <ToggleButtonGroup
         options={buildings.map((building) => ({
           value: building.name,
@@ -37,7 +37,7 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
           dispatch({ type: "SET_BUILDINGS", buildings: next });
         }}
       />
-    </Card>
+    </Panel>
   );
 }
 

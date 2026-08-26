@@ -1,11 +1,10 @@
-import { Typography, Button } from "antd";
+import { Button } from "antd";
 import { GithubIcon } from "./icons";
 
 function Footer() {
-  const { Text } = Typography;
   return (
     <div className="app-footer">
-      <Text type="secondary">© 2026~ ming-kang</Text>
+      <span className="text-secondary">© 2026~ ming-kang</span>
       <Button
         onClick={() =>
           window.open(

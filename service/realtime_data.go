@@ -267,6 +267,7 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 	// changing Stale/Error, and doRefresh only reads prev.Campuses. Cross-day
 	// expiry is enforced on read by the Date guard in getCachedTodayClassroomsAt.
 	s.todayCache.Store(today)
+	s.updateCachedDataJSON(today)
 	return classroomRefreshResult{
 		value:    today,
 		kind:     kind,

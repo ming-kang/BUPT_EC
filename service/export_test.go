@@ -20,6 +20,7 @@ func seedCache(t *testing.T, svc *ClassroomService, today *model.TodayClassrooms
 		t.Fatal("seedCache requires a payload with a business date")
 	}
 	svc.todayCache.Store(today)
+	svc.updateCachedDataJSON(today)
 }
 
 // completeRefresh drives finishClassroomRefresh exactly like a production

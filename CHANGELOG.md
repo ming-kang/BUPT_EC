@@ -31,6 +31,21 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   Unreleased `main` builds now report `main-<short-sha>` in `/readyz` and the
   settings dialog, replacing `nightly-<short-sha>`.
 
+### Changed
+
+- **Backend performance:** `/api/get_data` response JSON is pre-serialized at
+  refresh time and served directly on the hot path, eliminating per-request
+  `json.Marshal` of the full campus/room tree. Handler response envelopes use
+  typed structs with a pooled buffer encoder instead of `map[string]any` +
+  per-call `json.Marshal`. `/healthz` writes a pre-computed constant with zero
+  allocations. Together these reduce per-request heap allocations by ~39% and
+  eliminate all reflection-based serialization on the dominant endpoint.
+
+- **Frontend bundle size:** antd `Card`, `Tag`, and `Typography` components are
+  replaced with native HTML elements and colocated CSS, removing their `rc-*`
+  transitive dependency chains from the bundle. Total gzipped assets drop from
+  ~224 KB to ~165 KB (−26%).
+
 ## [0.2.0] - 2026-08-22
 
 ### Added

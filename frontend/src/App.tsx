@@ -1,5 +1,5 @@
 import "./App.css";
-import { Alert, ConfigProvider, Spin, Typography, theme } from "antd";
+import { Alert, ConfigProvider, Spin, theme } from "antd";
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import CampusButtonGroup from "./components/CampusButtonGroup";
 import BuildingPicker from "./components/BuildingPicker";
@@ -39,8 +39,6 @@ function AppContent() {
   const [isDark, setIsDark] = useState(() =>
     resolveDarkMode(getSystemPrefersDark())
   );
-
-  const { Title } = Typography;
 
   const campuses = useMemo(
     () =>
@@ -95,9 +93,9 @@ function AppContent() {
       <Spin spinning={spinning}>
         <div className="App">
           <div className="app-header">
-            <Title level={3} className="app-title">
+            <h3 className="app-title">
               BUPT 今日空教室
-            </Title>
+            </h3>
           </div>
           {resp.code === 0 && resp.data?.date ? (
             <div className="today-caption">

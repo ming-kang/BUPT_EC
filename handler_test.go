@@ -24,6 +24,7 @@ type fakeClassroomService struct {
 	todayError       error
 	runtimeStatus    service.RuntimeStatus
 	usableTodayCache bool
+	cachedDataJSON   []byte
 }
 
 func (classroomService *fakeClassroomService) GetTodayClassrooms(_ context.Context) (*model.TodayClassrooms, error) {
@@ -36,6 +37,13 @@ func (classroomService *fakeClassroomService) GetRuntimeStatus() service.Runtime
 
 func (classroomService *fakeClassroomService) HasUsableTodayCache() bool {
 	return classroomService.usableTodayCache
+}
+
+func (classroomService *fakeClassroomService) GetCachedDataJSON() ([]byte, bool) {
+	if classroomService.cachedDataJSON != nil {
+		return classroomService.cachedDataJSON, true
+	}
+	return nil, false
 }
 
 func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials bool) *HTTPServer {
@@ -556,6 +564,73 @@ func TestGzipWrapperSkipsAlreadyCompressedAssetTypes(t *testing.T) {
 		}
 		if !bytes.Equal(responseRecorder.Body.Bytes(), payload) {
 			t.Fatalf("%s body was altered by the wrapper", contentType)
+		}
+	}
+}
+
+// --- Benchmarks ---
+
+func BenchmarkGetDataSuccess(b *testing.B) {
+	now := time.Now()
+	todayData := largeTodayClassrooms(now)
+	// Pre-serialize the data JSON like the real service does at refresh time.
+	dataJSON, err := json.Marshal(todayData)
+	if err != nil {
+		b.Fatalf("pre-marshal: %v", err)
+	}
+	httpServer := newTestHTTPServer(&fakeClassroomService{
+		todayClassrooms: todayData,
+		cachedDataJSON:  dataJSON,
+	}, true)
+	handler := httpServer.Routes()
+	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		responseRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusOK {
+			b.Fatalf("status = %d", responseRecorder.Code)
+		}
+	}
+}
+
+func BenchmarkHealthz(b *testing.B) {
+	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
+	handler := http.HandlerFunc(httpServer.Healthz)
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		responseRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(responseRecorder, request)
+	}
+}
+
+func BenchmarkGetDataHandlerOnly(b *testing.B) {
+	now := time.Now()
+	todayData := largeTodayClassrooms(now)
+	dataJSON, err := json.Marshal(todayData)
+	if err != nil {
+		b.Fatalf("pre-marshal: %v", err)
+	}
+	httpServer := newTestHTTPServer(&fakeClassroomService{
+		todayClassrooms: todayData,
+		cachedDataJSON:  dataJSON,
+	}, true)
+	// Test the handler directly to isolate GetData from gzip/recovery/log middleware.
+	handler := http.HandlerFunc(httpServer.GetData)
+	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for range b.N {
+		responseRecorder := httptest.NewRecorder()
+		handler.ServeHTTP(responseRecorder, request)
+		if responseRecorder.Code != http.StatusOK {
+			b.Fatalf("status = %d", responseRecorder.Code)
 		}
 	}
 }

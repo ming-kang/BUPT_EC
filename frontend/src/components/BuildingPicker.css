@@ -2,18 +2,18 @@
     margin-bottom: 16px;
 }
 
-.building-picker .ant-card-body {
+.building-picker .panel__body {
     padding: 16px;
 }
 
 @media (max-width: 767px) {
-    .building-picker .ant-card-body {
+    .building-picker .panel__body {
         padding: 12px;
     }
 }
 
 @media (max-width: 479px) {
-    .building-picker .ant-card-body {
+    .building-picker .panel__body {
         padding: 10px;
     }
 }

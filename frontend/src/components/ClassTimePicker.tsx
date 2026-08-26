@@ -1,4 +1,3 @@
-import { Card } from "antd";
 import type { CampusInfo } from "../api/types";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -9,6 +8,7 @@ import {
 } from "../classTimeUtils";
 import { useSelection } from "../selectionContext";
 import { ToggleButton, ToggleButtonGroup } from "./ToggleButtonGroup";
+import Panel from "./Panel";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
@@ -138,7 +138,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
   }
 
   return (
-    <Card className="class-time-picker responsive-card">
+    <Panel className="class-time-picker responsive-card">
       <ToggleButtonGroup
         className="class-time-buttons"
         options={normalizedOptions.map((item) => ({
@@ -185,7 +185,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
       >
         {isAllChecked() ? "取消" : "全选"}
       </ToggleButton>
-    </Card>
+    </Panel>
   );
 }
 

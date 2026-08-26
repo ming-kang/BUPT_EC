@@ -1,0 +1,25 @@
+/* Panel — lightweight native replacement for antd Card.
+   Matches antd Card's default token values: 8px border-radius, 1px border,
+   24px body padding. Dark mode uses the same rgba alpha as antd's wireframe. */
+.panel {
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: var(--panel-bg, #fff);
+}
+
+body.dark .panel {
+  border-color: rgba(255, 255, 255, 0.08);
+  --panel-bg: #141414;
+}
+
+.panel__body {
+  padding: 24px;
+}
+
+/* Compact variant for empty-state cards that don't need full padding. */
+.compact-card .panel__body {
+  padding: 16px;
+}
+
+/* Match .responsive-card max-width behavior (antd Card had no max-width;
+   this class is typically combined with component-specific margins). */
