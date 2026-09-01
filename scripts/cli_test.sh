@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# shellcheck disable=SC1091,SC2034,SC2329 # sourced CLI calls test overrides dynamically
+# shellcheck disable=SC1091,SC2034,SC2317,SC2329 # sourced CLI calls test overrides dynamically
 set -euo pipefail
 
 CLI_TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

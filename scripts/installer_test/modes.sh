@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2030,SC2031,SC2034,SC2153
 
-# shellcheck disable=SC2329
+# shellcheck disable=SC2317,SC2329
 test_entrypoint_stdin_pipe_reaches_root_check() {
   # curl | bash feeds the script on stdin; with set -u the old BASH_SOURCE[0]
   # guard aborted before main. Expect a clean root/EUID failure instead.

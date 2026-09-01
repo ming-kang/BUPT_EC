@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2153,SC2329
+# shellcheck disable=SC2034,SC2153,SC2317,SC2329
 
 unset_deployment_invocation_environment() {
   local key

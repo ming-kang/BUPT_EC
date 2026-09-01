@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# shellcheck disable=SC2034,SC2329
+# shellcheck disable=SC2034,SC2317,SC2329
 
 test_version_policy() {
   assert_eq "latest" "$(resolve_release_version "" "")" "first install defaults to latest"
