@@ -48,18 +48,27 @@
 - [ ] **单一发布轨道**：仓库、脚本、文档、CI 中不再存在 nightly 的任何生产路径（CHANGELOG 历史条目除外）
 - [ ] **版本三处一致**：GitHub release tag、`/readyz` 的 `version`、设置弹窗显示的版本，在同一次部署后三者相同
 - [ ] **事务完整性**：CLI 与二进制在同一个原子事务中替换，任一步失败后回滚不残留半新半旧的组合
-- [ ] **文档同步**：`README.md`、`docs/deployment.md`、`docs/upgrading.md`、`docs/operations.md`、`docs/release.md` 与新行为一致，且不再推广 nightly
+- [x] **文档同步**：`README.md`、`docs/deployment.md`、`docs/upgrading.md`、`docs/operations.md`、`docs/release.md` 与新行为一致，且不再推广 nightly（本地审计：`research/2026-09-02-local-integration-audit.md`）
 - [ ] **质量门禁**：`task check`、`task test`、bundle 预算、embed + tagless 构建、`govulncheck`、`install_test.sh`、ShellCheck 全绿
-- [ ] **CHANGELOG**：`[Unreleased]` 覆盖全部四项用户可见变更，含 nightly 移除的迁移说明
+- [x] **CHANGELOG**：`[Unreleased]` 覆盖全部四项用户可见变更，含 nightly 移除的迁移说明（本地审计：`research/2026-09-02-local-integration-audit.md`）
 
 ## 最终集成评审（父任务直接负责）
 
-四个子任务归档后，父任务执行：
+四个子任务已全部归档。父任务执行：
 
 1. **端到端演练**：在干净环境验证「首装 → `bupt-ec update`」以及 CLI-bearing stable tag 间的版本选择；pre-v0.3 target 必须在联网前拒绝并验证 current/latest Installer 的兜底 rollback
 2. **破坏性变更盘点**：确认 CHANGELOG 的 `Removed` / `Changed` 段落完整覆盖 nightly 移除，并给出存量 nightly 机器的处置说明
-3. **发布 v0.3.0**：`scripts/release.sh v0.3.0`，验证 release 资产、release notes、`latest` 指向
-4. **删除 nightly 残留**：发布后删除 GitHub 上的 nightly release 与 `nightly` git tag（顺序在稳定版发布**之后**，避免出现无任何可用安装源的窗口）
+3. **发布前同步门**：本地 `main` 当前领先 `origin/main` 18 个提交；先推送 `main` 并要求对应的 release dry-run workflow 全绿，再运行要求 `HEAD == origin/main` 的发布脚本
+4. **发布 v0.3.0**：`scripts/release.sh v0.3.0`，验证 release 资产、release notes、`latest` 指向
+5. **删除 nightly 残留**：发布后删除 GitHub 上的 nightly release 与 `nightly` git tag（顺序在稳定版发布**之后**，避免出现无任何可用安装源的窗口）
+
+当前远程基线：`v0.2.0` 是 Latest；`nightly` prerelease 与同名远程 tag 仍存在；`v0.3.0` 尚不存在。证据见 `research/2026-09-01-integration-baseline.md`。
+
+## 发布安全决策与延期项
+
+- 用户决定当前阶段暂不执行真实 Linux 主机端到端演练。
+- 仓库 mocks、release-layout simulation 与完整质量门仍必须执行，但它们不能替代真实 systemd/Nginx/root 文件系统验证。
+- 安全默认是把真实端到端演练保留为 **v0.3.0 发布阻断项**：本阶段可以完成本地集成审计、发布准备及 `main` dry-run 验证；在演练完成，或用户以后明确接受跳过该门槛的发布风险之前，不推送 `v0.3.0` tag，也不删除 nightly release/tag。
 
 ## 非目标
 

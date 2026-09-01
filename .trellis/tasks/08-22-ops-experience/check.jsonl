@@ -1,2 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "跨子任务集成验收与 v0.3.0 发布前的门禁清单"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "独立终检对照本地/CI质量门、release workflow、toolchain 与 changelog hygiene"}
+{"file": ".trellis/spec/backend/installer-guidelines.md", "reason": "终检默认 Installer 兼容、原子 rollback、CLI floor、metadata 与发布资产边界"}
+{"file": ".trellis/spec/backend/api-contract.md", "reason": "终检 release tag、readyz/API/UI version 三处一致与公共响应契约"}
+{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-01-integration-baseline.md", "reason": "核对远程发布前后状态、nightly cleanup 顺序与 deferred E2E blocker"}

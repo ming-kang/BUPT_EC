@@ -3,7 +3,7 @@
   "name": "ops-experience",
   "title": "运维体验改进：bupt-ec CLI、安装器分模式、废除 nightly、版本可见性",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,
