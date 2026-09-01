@@ -157,15 +157,15 @@ Production currently calls `Run` before shutdown, which reduces immediate exposu
 
 ---
 
-### Medium 2 — timeout comments and source-backed toolchain guidance have drifted from executable policy
+### Medium 2 — timeout comments drifted from executable policy; toolchain guidance was corrected during closeout
 
 **Anchors:** `main.go:110-118`, `frontend/src/useTodayClassrooms.ts:17-21`, `scripts/install.sh:721-729`, `docs/operations.md:51-63`, `main_test.go:7-18`, `.trellis/spec/backend/quality-guidelines.md:273-282`, `go.mod:3`, `.github/workflows/quality.yml:71-80`
 
 The executable timeout contract is 5s cold wait, 15s Go `WriteTimeout`, 30s background refresh, and 60s Nginx API timeout. Comments in `main.go`, the frontend hook, and generated Nginx template still describe a cold handler waiting for the full 30s refresh and a 45s Go write timeout. The tests and operator documentation say the opposite.
 
-Separately, the source-backed quality spec still mandates Go 1.25.12 while `go.mod`, CI, AGENTS, README, and development docs use 1.25.13. This matters because future agents are explicitly instructed to treat the spec as canonical.
+At audit time, the source-backed quality spec also mandated Go 1.25.12 while `go.mod`, CI, AGENTS, README, and development docs used 1.25.13. Because future agents are instructed to treat the spec as canonical, the audit closeout synchronized the spec to 1.25.13. The stale timeout comments remain unresolved product-code/documentation work.
 
-**Preferred remedy:** make the operations timeout table and `go.mod`/CI version the canonical sources, remove duplicated numeric prose where possible, and update the generated template/spec in the same change.
+**Preferred remedy:** make the operations timeout table the canonical timeout source and remove duplicated numeric prose where possible; keep the quality spec synchronized with the `go.mod`/CI toolchain in the same change whenever that version moves.
 
 ---
 
@@ -200,6 +200,7 @@ More importantly, the benchmark fake supplies pre-serialized bytes directly; it 
 | `scripts/install_test.sh` | 1,104 | Blocking project-owned test source; split fixtures and scenario suites. |
 | `frontend/pnpm-lock.yaml` | 5,642 | Generated lockfile; justified exemption. |
 | `.pi/extensions/trellis/index.ts` | 1,976 | Managed/generated Trellis integration; outside product-code line review and justified exemption. |
+| `.kiro/hooks/inject-subagent-context.py` | 1,174 | Managed Trellis/Kiro context-injection hook introduced by the platform integration; outside product-code line review and justified exemption. |
 
 No Go or frontend production module approaches 1,000 lines. The largest frontend production source is `useTodayClassrooms.ts` at 373 lines; its complexity is concentrated but currently has substantial focused tests.
 

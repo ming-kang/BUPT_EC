@@ -9,7 +9,7 @@ Perform an unusually strict, repository-wide code-quality audit that identifies 
 - The repository is a Go service with a React/Vite frontend, shell-based deployment/release automation, GitHub Actions quality/release pipelines, and Trellis-managed development metadata.
 - The user explicitly selected an entire-repository review rather than a diff-only review.
 - Project-owned files over 1,000 lines currently include `scripts/install.sh` (1,218) and `scripts/install_test.sh` (1,104). These require explicit decomposition analysis under the supplied review standard.
-- Generated or managed files over 1,000 lines include `frontend/pnpm-lock.yaml` and `.pi/extensions/trellis/index.ts`; they are not treated as ordinary hand-maintained application modules, but their generation/ownership justification must be recorded.
+- Generated or managed files over 1,000 lines include `frontend/pnpm-lock.yaml`, `.pi/extensions/trellis/index.ts`, and `.kiro/hooks/inject-subagent-context.py`; they are not treated as ordinary hand-maintained application modules, but their generation/ownership justification must be recorded.
 - Planning exploration identified high-risk areas that require verification, including refresh/token concurrency, manually spliced JSON, frontend SWR/state reconciliation, installer transactions/config persistence, timeout/config policy drift, and local/CI quality-gate alignment. These are hypotheses until confirmed by direct audit evidence.
 
 ## In Scope
@@ -65,16 +65,16 @@ Create `.trellis/tasks/09-01-perf-quality-review/review.md`. For each significan
 
 ## Acceptance Criteria
 
-- [ ] Every in-scope subsystem is audited: backend, frontend, operations/release, tests/quality infrastructure, and cross-layer contracts.
-- [ ] All project-owned files above 1,000 lines are explicitly evaluated; generated/managed exemptions are justified.
-- [ ] Every blocker/high finding is independently verified against actual code and relevant tests/specs, not copied from exploratory hypotheses.
-- [ ] Findings are deduplicated and ordered by structural impact and severity; low-value style nits do not obscure major issues.
-- [ ] Each significant finding has precise anchors, observable impact, and an actionable preferred remedy.
-- [ ] Obvious code-judo opportunities are described concretely, including which concepts/branches/layers could disappear.
-- [ ] Relevant verification commands are run, with pass/fail/skip results recorded in `review.md`.
-- [ ] The report distinguishes correctness defects, maintainability blockers, non-blocking improvements, and uncertain/deferred risks.
-- [ ] The report ends with a clear approval decision under the supplied strict approval bar.
-- [ ] No product-code changes are made during this review-only task.
+- [x] Every in-scope subsystem is audited: backend, frontend, operations/release, tests/quality infrastructure, and cross-layer contracts.
+- [x] All project-owned files above 1,000 lines are explicitly evaluated; generated/managed exemptions are justified.
+- [x] Every blocker/high finding is independently verified against actual code and relevant tests/specs, not copied from exploratory hypotheses.
+- [x] Findings are deduplicated and ordered by structural impact and severity; low-value style nits do not obscure major issues.
+- [x] Each significant finding has precise anchors, observable impact, and an actionable preferred remedy.
+- [x] Obvious code-judo opportunities are described concretely, including which concepts/branches/layers could disappear.
+- [x] Relevant verification commands are run, with pass/fail/skip results recorded in `review.md`.
+- [x] The report distinguishes correctness defects, maintainability blockers, non-blocking improvements, and uncertain/deferred risks.
+- [x] The report ends with a clear approval decision under the supplied strict approval bar.
+- [x] No product-code changes are made during this review-only task.
 
 ## Key Decisions
 

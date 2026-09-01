@@ -17,6 +17,7 @@ Generated/managed files above the threshold:
 
 - `frontend/pnpm-lock.yaml`: generated dependency lockfile.
 - `.pi/extensions/trellis/index.ts`: managed Trellis platform extension.
+- `.kiro/hooks/inject-subagent-context.py`: managed Trellis/Kiro platform hook.
 
 The audit must assess the two shell files as presumptive decomposition blockers and explicitly document why generated/managed files are exempt from ordinary module-size rules.
 

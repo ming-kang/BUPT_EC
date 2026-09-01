@@ -271,14 +271,14 @@ lockfiles, lint configuration, or CI/release quality gates change.
 ### 2. Signatures
 
 ```bash
-GOTOOLCHAIN=go1.25.12 go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
+GOTOOLCHAIN=go1.25.13 go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
 pnpm --dir frontend audit:prod
 pnpm --dir frontend audit:dev
 ```
 
 ### 3. Contracts
 
-- `go.mod` and every `actions/setup-go` step use Go `1.25.12`; Go 1.26 users
+- `go.mod` and every `actions/setup-go` step use Go `1.25.13`; Go 1.26 users
   need `1.26.5` or newer.
 - `frontend/package.json` owns the audit thresholds: `audit:prod` checks
   production dependencies at `moderate`, while `audit:dev` checks the complete
@@ -332,7 +332,7 @@ with:
 
 ```yaml
 with:
-  go-version: "1.25.12"
+  go-version: "1.25.13"
 ```
 
 The Go build embeds the frontend only when built with `-tags embed_assets`,

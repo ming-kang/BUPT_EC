@@ -7,7 +7,7 @@ architecture changes.
 
 ## Project Shape
 
-The backend is a small Go 1.25.12+ service built around standard-library
+The backend is a small Go 1.25.13+ service built around standard-library
 `net/http` handlers (an `http.ServeMux` assembled in `router.go::Routes()`)
 and a single `service.ClassroomService` instance. It does not store classroom
 timetables in a database. Runtime data comes from the BUPT JW HTTP API, is
