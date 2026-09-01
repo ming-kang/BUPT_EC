@@ -27,7 +27,7 @@ func TestGetTodayClassroomsReturnsFreshCacheWithoutJWQuery(t *testing.T) {
 	}
 	classroomServiceUnderTest := newTestService(t, client)
 
-	now := time.Now()
+	now := time.Now().In(businessLocation)
 	seedCache(t, classroomServiceUnderTest, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now,
@@ -171,7 +171,7 @@ func TestGetTodayClassroomsReturnsStaleWhileRefreshContinues(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 
-	now := time.Now()
+	now := time.Now().In(businessLocation)
 	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),
@@ -342,7 +342,7 @@ func TestGetTodayClassroomsBacksOffAfterStaleRefreshFailure(t *testing.T) {
 	}
 	svc := newTestService(t, client)
 
-	now := time.Now()
+	now := time.Now().In(businessLocation)
 	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		UpdatedAt:  now.Add(-time.Hour),

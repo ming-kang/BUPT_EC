@@ -16,7 +16,7 @@ import (
 
 func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 	svc := newTestService(t, &mockJWClient{})
-	yesterday := time.Now().Add(-24 * time.Hour)
+	yesterday := time.Now().In(businessLocation).Add(-24 * time.Hour)
 	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       yesterday.Format("2006-01-02"),
 		ExpiresAt:  yesterday.Add(time.Hour),
@@ -27,7 +27,7 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 		t.Fatalf("expected cross-day cache miss, got %#v", cached)
 	}
 
-	now := time.Now()
+	now := time.Now().In(businessLocation)
 	seedCache(t, svc, &model.TodayClassrooms{
 		Date:       now.Format("2006-01-02"),
 		ExpiresAt:  now.Add(time.Hour),
