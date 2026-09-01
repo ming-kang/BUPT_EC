@@ -1,172 +1,379 @@
-# 设计：bupt-ec 运维 CLI
+# 设计：bupt-ec 运维 CLI、公共元数据与事务化分发
 
 任务：`08-22-bupt-ec-cli`
+前置：`08-22-installer-modes` 已归档
 
-## 职责边界
+## Architecture Overview
 
-CLI 是**薄分派层**，不含任何重逻辑：
+CLI 是薄运维入口，release archive 与生成式 Installer 仍是唯一部署引擎：
 
-| 能力 | 归属 |
-|---|---|
-| 下载、checksum 校验、解压 | `install.sh`（既有） |
-| 快照、原子替换、回滚 | `install.sh` 事务内核（既有，不动） |
-| 配置渲染（env / systemd / nginx） | `install.sh`（既有） |
-| 交互问答 | `install.sh --mode=reconfigure`（由 installer-modes 提供） |
-| **子命令分派、参数解析、信息展示、权限检查** | **CLI（本任务）** |
-
-一旦发现要在 CLI 里写第二遍下载或事务逻辑，就是设计跑偏的信号。
-
-## 组件关系
-
-```
-用户
- └─ bupt-ec (/usr/local/bin, shell, ~250 行)
-     ├─ update ──→ 下载新 install.sh ──→ bash install.sh --mode=update
-     ├─ config ──→ 下载新 install.sh ──→ bash install.sh --mode=reconfigure
-     ├─ status ─┬→ systemctl is-active / is-enabled
-     │          ├→ curl http://${APP_ADDR}/readyz  → version
-     │          └→ curl http://${APP_ADDR}/healthz
-     ├─ version ─→ env RELEASE_VERSION + /readyz version + CLI 自身版本
-     ├─ logs ────→ journalctl -u bupt-ec
-     └─ start/stop/restart ─→ systemctl
-```
-
-## 分发链路
-
-```
+```text
 scripts/bupt-ec-cli.sh
-   │ release.yml: Compose release assets
-   ↓
-bupt-ec-linux-${arch}/bupt-ec-cli          ← tarball 内，被 checksums.txt 覆盖
-   │ install.sh: stage_release
-   ↓
-${staging_dir}/bupt-ec-cli                 ← 暂存，未生效
-   │ install.sh: commit_installation（原子）
-   ↓
-/usr/local/bin/bupt-ec                     ← 生效，0755 root:root
+        │ release workflow 注入与 Go binary 同源的 build version
+        ▼
+bupt-ec-linux-${arch}/bupt-ec-cli
+        │ 整个 tarball 由 checksums.txt 校验
+        ▼
+current/latest install.sh
+        │ stage + snapshot + commit + validation/rollback
+        ├─ /opt/bupt-ec/bupt-ec             service binary
+        ├─ /usr/local/bin/bupt-ec            operations CLI
+        ├─ /etc/bupt-ec/deployment.meta      public non-secret metadata
+        └─ existing env/systemd/nginx targets
 ```
 
-## 关键设计决策
+Installed CLI command flow:
 
-### D1 tarball 内文件名必须是 `bupt-ec-cli`，不能是 `bupt-ec`
+```text
+bupt-ec
+├─ update ── safe private-config load ── fetch current/latest install.sh
+│                                      └─ VERSION=<target> --mode=update
+├─ config ── safe private-config load ── fetch current/latest install.sh
+│                                      └─ --mode=reconfigure
+├─ config show ── safe private-config load ── fixed registry + redaction
+├─ status/version/health ── strict public metadata ── local probes/systemctl
+├─ logs ── journalctl
+└─ start/stop/restart ── systemctl
+```
 
-`stage_release` 定位服务二进制的方式是：
+The generated `scripts/install.sh` remains self-contained. It never sources or
+executes the CLI; the CLI is an independently installed release product, not an
+Installer runtime dependency.
+
+## Responsibility Boundary
+
+| Capability | Owner |
+| --- | --- |
+| target release validation, archive download/checksum/extract | generated `install.sh` |
+| rendering, snapshot, atomic replacement/removal, rollback | generated `install.sh` |
+| interactive configuration | `install.sh --mode=reconfigure` |
+| noninteractive deployment update | `install.sh --mode=update` |
+| fetching the current/latest bootstrap installer | CLI only |
+| command parsing, privilege checks, probes and presentation | CLI only |
+
+The CLI must not implement release archive/checksum handling, package setup,
+staging, systemd/Nginx rendering, snapshots, or rollback.
+
+## CLI Source and Entrypoint
+
+Repository source: `scripts/bupt-ec-cli.sh`.
+Installed path: `/usr/local/bin/bupt-ec`, root-owned `0755`.
+
+Stable signatures:
 
 ```bash
-binary_path="$(find "${extract_dir}" -type f -name bupt-ec -print -quit)"
+cli_main [command [args...]]
+cli_usage
+configure_cli_test_root <absolute-root>        # sourced tests only
+require_cli_root <command...>
+load_private_deployment_config
+load_public_deployment_metadata
+fetch_current_installer <destination>
+run_update [target-version]
+run_reconfigure
+show_config
+show_status
+show_version
+show_health
+show_logs [-f] [-n N]
+control_service <start|stop|restart>
 ```
 
-`-print -quit` 取**首个**匹配。若 tarball 里同时存在 CLI 脚本 `bupt-ec` 和服务二进制 `bupt-ec`，`find` 的返回顺序不确定，可能把 shell 脚本装成服务二进制——systemd 会启动一个脚本，症状诡异且难排查。
+Like generated `install.sh`, direct execution calls `cli_main`; sourcing defines
+functions only. Production paths cannot be overridden through environment
+variables. Tests may redirect them only through `configure_cli_test_root` after
+sourcing.
 
-用 `bupt-ec-cli` 作为包内名、安装时改名为 `bupt-ec`，从根上消除这个歧义。
+No arguments, `-h`, or `--help` print usage and return 0. Unknown commands,
+extra arguments, duplicate log flags, invalid `-n`, or malformed update versions
+return usage status 2 before privileged or network work.
 
-### D2 `stage_release` 需要扩展（本任务的唯一内核触碰点）
+## Command Contracts
 
-`installer-modes` 任务把 `stage_release` 列为不可改；本任务则必须扩展它，新增 CLI 提取：
+### Privilege matrix
 
+| Command | Root required | Notes |
+| --- | :---: | --- |
+| `update`, `config`, `config show` | yes | private env is root-only |
+| `start`, `stop`, `restart` | yes | mutates systemd state |
+| `status`, `version`, `health`, `logs` | no | reads only public metadata/system APIs; journal policy may still deny logs |
+
+Privilege failure names the exact retry, for example
+`sudo bupt-ec update v0.3.1`, and occurs before private-file/network/system
+side effects.
+
+### Status and probe exit semantics
+
+`health` probes both `http://${APP_ADDR}/healthz` and `/readyz` with bounded
+connect/total timeouts, no proxy, and no redirects. It prints each HTTP status
+and readiness summary. It returns 0 only when both status codes are 2xx.
+
+`status` prints unit active/enabled state, configured release selector, running
+version, and both probe outcomes. It returns 0 only when the unit is active and
+both probes are 2xx. A normal post-restart readiness 503 is displayed as
+not-ready/degraded and returns nonzero.
+
+`version` prints configured selector, running build version parsed from the
+`/readyz` body, and injected CLI version. A 503 readiness response still carries
+the running version and is a successful version query when the body is valid;
+unreachable/invalid metadata returns nonzero with `unavailable`, never a guessed
+version.
+
+### Logs and service controls
+
+`logs` defaults to the latest 50 journal records and supports combinable `-f`
+and `-n <positive integer>` exactly once each. It executes `journalctl` with a
+fixed unit and propagates journalctl's status. It does not silently sudo.
+
+`start` / `stop` / `restart` delegate one operation to `systemctl` and report
+the resulting active state. They do not invoke strict full `status` immediately,
+so a successful restart is not misreported as a command failure merely because
+readiness warmup is still running.
+
+## Configuration Read Boundaries
+
+### Private deployment config
+
+Path: `/etc/bupt-ec/bupt-ec.env`, root-owned exact `0600`, regular non-symlink,
+inside a root-owned directory with no group/other write bits.
+
+The CLI duplicates only the small field registry and the security boundary
+needed before it can fetch an Installer. `load_private_deployment_config`:
+
+1. validates directory/file owner, type and mode;
+2. creates a mode-`0600` frame under fixed `/tmp` (never caller `TMPDIR`);
+3. evaluates the trusted env in an isolated child after unsetting registered
+   fields and one-shot controls;
+4. emits only the twelve registered fields in strict NUL framing;
+5. rejects source output/framing errors, clears state and removes the frame
+   without printing values.
+
+This is configuration transport, not a second deployment engine. The parent CLI
+process never sources the env, and installed content cannot activate
+`SKIP_CHECKSUM`, `ALLOW_INSECURE_DOWNLOAD_BASE_URL`, traps, or CLI dispatch.
+
+`config show` iterates the fixed registry only. `JW_PASSWORD` and `JW_TOKEN` are
+always rendered as `***` (including empty values); all other values are
+single-line shell-escaped so embedded controls/newlines cannot corrupt terminal
+output. It never echoes source stdout/stderr or unknown env statements.
+
+### Public metadata
+
+Path: `/etc/bupt-ec/deployment.meta`, root-owned exact `0644`, regular
+non-symlink, in the same secure directory. Exact format and order:
+
+```text
+RELEASE_VERSION=<latest-or-vX.Y.Z>
+APP_ADDR=<validated-host:port>
 ```
-find -name bupt-ec-cli → install -m 0755 到 ${staging_dir}/bupt-ec-cli
+
+It is rendered directly from validated `CFG_RELEASE_VERSION` and
+`CFG_APP_ADDR`, not copied from private env text. It contains no repo, mirror,
+domain, certificate path, JW field, logging/readiness flag, or one-shot control.
+
+`load_public_deployment_metadata` never sources the file. It checks the same
+parent ownership/non-writability boundary, exact file owner/mode/type, exactly
+one record for each registered key, no extras, and value shape. Missing or
+untrusted metadata is an explicit failure; read-only commands never fall back
+to the private env and never silently probe `127.0.0.1:8080` for a custom
+installation.
+
+## Installer Bootstrap and Version Policy
+
+### Control plane versus target release
+
+The CLI always fetches a current/latest compatible Installer implementation:
+
+| Saved source | Bootstrap Installer URL |
+| --- | --- |
+| official GitHub | `https://github.com/${RELEASE_REPO}/releases/latest/download/install.sh` |
+| explicit mirror | `${DOWNLOAD_BASE_URL}/install.sh` |
+
+A CLI-capable mirror must publish the self-contained `install.sh` beside its
+tarball and `checksums.txt`. Missing mirror Installer fails closed without
+falling back to GitHub or a third-party source; this preserves the operator's
+saved trust boundary.
+
+The requested/saved `VERSION` is passed to that Installer and selects the
+archive. It does not select an old Installer implementation. This preserves the
+current documented rollback pattern and avoids invoking v0.2.x installers that
+lack `--mode`.
+
+Bootstrap download uses a mode-`0700` fixed `/tmp` directory, bounded curl,
+protocol restrictions, and cleanup traps. Official downloads are HTTPS-only.
+A saved HTTP mirror is accepted only with the same exact one-shot
+`ALLOW_INSECURE_DOWNLOAD_BASE_URL=true`; it never widens to other protocols.
+The mirror URL came from the protected installed config but is still shape-
+checked without printing raw credential-bearing input. The downloaded script
+has the same HTTPS/operator-mirror trust model as the existing documented
+`curl | bash`; target tarballs remain checksum-verified by Installer.
+
+`config` verifies root and an interactive TTY before bootstrap network work,
+then invokes `--mode=reconfigure` and therefore retains the saved target
+selector. `update` accepts at most one `latest` or stable `vX.Y.Z` target, with
+command-line value over saved selector.
+
+### CLI-bearing release floor
+
+`v0.3.0` is the first CLI-bearing release. `bupt-ec update` rejects any explicit
+or saved stable target below `v0.3.0` before curl and prints the current/latest
+Installer fallback. CLI-supported update/rollback is therefore `latest` or
+stable tags `>= v0.3.0`.
+
+Direct current/latest Installer invocation retains its pre-existing ability to
+select v0.2.x. This requires Installer staging to represent two target states:
+
+| Target selector | Expected archive | CLI/metadata candidate action |
+| --- | --- | --- |
+| `latest` or stable `>= v0.3.0` | `bupt-ec` + `bupt-ec-cli` | install/replace both |
+| stable `< v0.3.0` | legacy archive without CLI | remove both |
+
+Thus a direct rollback to v0.2.x leaves the target release internally
+consistent and removes the command introduced in v0.3. A failed transaction
+restores the previous CLI and metadata.
+
+## Release Composition and Version Injection
+
+Architecture tarball layout becomes:
+
+```text
+bupt-ec-linux-${arch}/
+  bupt-ec
+  bupt-ec-cli
+  .env.example
+  README.md
+  install.sh
 ```
 
-**这是本任务对事务内核的唯一改动**，且是纯增量（新增一个提取动作，既有二进制提取路径不变）。必须同步补测试：CLI 缺失时的报错、CLI 权限、CLI 属主。
+Top-level published assets remain the two tarballs, `checksums.txt`, and
+self-contained `install.sh`; there is no top-level CLI asset. Installer source
+fragments and test modules remain repository-only.
 
-### D3 事务目标从 6 个扩到 7 个
+`scripts/bupt-ec-cli.sh` contains one explicit build-version marker that reports
+`dev` in a checkout. The release composition step validates exactly one marker
+and substitutes the same value used by Go `-ldflags`: tag name for tag builds,
+`main-<short-sha>` for dry runs. Both architecture packages receive byte-identical
+CLI content for a given workflow run. Exact tar member assertions and installer
+byte-parity checks remain release gates.
 
-```
-binary          /opt/bupt-ec/bupt-ec
-cli             /usr/local/bin/bupt-ec      ← 新增
-env             /etc/bupt-ec/bupt-ec.env
-service         /etc/systemd/system/bupt-ec.service
-systemd_enabled /etc/systemd/system/multi-user.target.wants/bupt-ec.service
-nginx_site      /etc/nginx/sites-available/bupt-ec.conf
-nginx_enabled   /etc/nginx/sites-enabled/bupt-ec.conf
-```
+## Staging and Transaction Integration
 
-`snapshot_installation` / `rollback_installation` / `commit_installation` 都基于 `transaction_targets` 迭代，因此**新增一行即自动获得快照与回滚能力**——这正是既有设计的价值所在，不需要为 CLI 写任何专用回滚代码。
+New production constants:
 
-需确认：`restore_snapshot_target` 对「快照时不存在、需要回滚为删除」的情况已有处理（首装 CLI 的场景）。既有 nginx_enabled 目标已覆盖同类语义，复用其路径。
-
-### D4 update 的自举：总是下载新脚本
-
-```
-读 env → 定版本 → 下载该版本 install.sh → bash 新脚本 --mode=update
+```text
+CLI_FILE=/usr/local/bin/bupt-ec
+DEPLOYMENT_METADATA_FILE=/etc/bupt-ec/deployment.meta
+CLI_MIN_RELEASE=v0.3.0
 ```
 
-**放弃的替代方案**：
+`stage_release` keeps the existing unambiguous `find ... -name bupt-ec` binary
+path and separately searches exact `bupt-ec-cli`. For CLI-bearing targets,
+missing CLI fails before snapshot; candidate is root-owned `0755`. For legacy
+targets, absence is expected.
 
-| 方案 | 否决理由 |
-|---|---|
-| 用本地 `/opt/bupt-ec/install.sh` | 自举失败：升级逻辑自身的修复永远用不上 |
-| 下载 tarball 校验后取出内部 install.sh | `install.sh` 随后会再下载一次 tarball，重复传输；收益仅是给脚本本身加校验，而现状 `curl \| bash` 同样没有 |
+`render_deployment_metadata(destination)` reads validated `CFG_*`, writes the
+strict two-record format, and sets root ownership / `0644` only for a
+CLI-bearing target. Staging writes a protected internal action marker
+(`install` or `remove`) so commit does not infer behavior from an accidentally
+missing candidate.
 
-信任模型与今天的 `curl -fsSL ... | sudo bash` 逐字节一致，不新增攻击面。
+`transaction_targets` adds `cli` and `metadata` unconditionally. Existing
+`snapshot_installation` / `rollback_installation` iteration then handles prior
+presence and first-install absence without CLI-specific rollback code.
+`commit_installation` validates the action marker and either atomically installs
+both candidates or unlinks both legacy-inapplicable targets, checking every
+failure. Any later service/Nginx/health failure uses the existing transaction
+rollback path.
 
-### D5 URL 规则的重复实现
+Only these transaction-adjacent functions should require behavioral changes:
+`stage_release`, `prepare_staging`, `transaction_targets`, and
+`commit_installation`, plus a new metadata renderer/version-floor helper.
+Record current function hashes before implementation and require all unrelated
+transaction function bodies to remain byte-identical.
 
-`install.sh` 的 `resolve_download_base_url` 区分两种形态：
+## Test Architecture
 
+### Dedicated CLI suite
+
+Add `scripts/cli_test.sh` (and focused modules under `scripts/cli_test/` if the
+entrypoint would approach 1,000 lines). It sources `scripts/bupt-ec-cli.sh`,
+redirects fixed paths through the explicit test seam, and injects mock
+`curl`/`systemctl`/`journalctl` behavior.
+
+Coverage:
+
+- help/default/unknown/extra argument parsing;
+- root matrix and exact sudo guidance;
+- strict public metadata type/owner/mode/directory/shape validation;
+- private config isolation, framing failures, one-shot non-activation and secret
+  non-disclosure;
+- status/version/health success, readiness 503, inactive unit, unreachable
+  probes, version extraction and strict exit statuses;
+- logs defaults, flag combinations, duplicate/invalid flags and status
+  propagation;
+- service control dispatch;
+- official/mirror bootstrap URL and curl protocol arguments;
+- zero-prompt update invocation, reconfigure invocation and target precedence;
+- pre-v0.3 rejection before curl;
+- `config show` multiline-secret redaction.
+
+### Installer/release integration suite
+
+Extend the generated-installer tests with archives containing separate binary
+and CLI members and legacy archives without CLI. Assert:
+
+- exact binary selection remains unchanged;
+- CLI-bearing target missing `bupt-ec-cli` fails before snapshot;
+- staged/installed CLI `0755` root:root and metadata `0644` root:root;
+- successful upgrade replaces CLI/metadata;
+- transaction failure restores both;
+- failed first install removes both;
+- direct legacy rollback removes both, and a later failure restores both;
+- unrelated protected transaction function hashes do not drift.
+
+The release dry-run assertion must include `bupt-ec-cli`, verify its injected
+version, keep generated installer parity, and prove fragments/tests are absent.
+
+## CI and Local Gates
+
+Keep Taskfile, reusable quality workflow and development docs aligned:
+
+```bash
+bash scripts/generate-install.sh --check
+find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
+bash scripts/install_test.sh
+bash scripts/cli_test.sh
+find scripts -type f -name '*.sh' -exec shellcheck {} +
 ```
-latest      → releases/latest/download/
-vX.Y.Z      → releases/download/vX.Y.Z/
-镜像        → ${DOWNLOAD_BASE_URL}
-```
 
-CLI 需要同样的规则来定位 `install.sh`。这约 10 行逻辑会在两处各存一份。
+`task installer:check` owns both shell behavior suites and remains part of
+`task check`. Workflow edits also require actionlint and a local release-layout
+simulation.
 
-**权衡结论：接受重复**。替代方案是让 CLI source `install.sh` 来复用函数，但那会把整个安装器的全局状态（含 `trap`、`TRANSACTION_*`）拉进 CLI 进程，为省 10 行引入巨大的耦合面。重复的 10 行以注释互指，并由测试覆盖。
+## Compatibility and Rollback
 
-### D6 版本语义分离
+- Existing default `curl | bash` install and explicit Installer modes remain
+  public and self-contained.
+- A successful upgrade from v0.2.x to v0.3.0 installs binary, CLI and metadata
+  together.
+- CLI update/config never asks update questions; only reconfigure is interactive.
+- Direct Installer rollback to pre-v0.3 removes CLI/metadata; CLI itself refuses
+  to initiate that transition.
+- Reverting this feature in source must include an explicit installed-file
+  migration. Merely removing `transaction_targets` entries would leave orphaned
+  `/usr/local/bin/bupt-ec` and metadata, so rollback-by-revert is not sufficient
+  without that cleanup policy.
 
-`RELEASE_VERSION` 是**频道或固定 tag**，`/readyz` 的 `version` 是**实际运行的构建**。二者在 `latest` 频道下必然不同。
+## Risks and Mitigations
 
-```
-$ bupt-ec version
-配置频道:  latest
-运行版本:  v0.3.0
-CLI:       v0.3.0
-```
-
-CLI 自身版本由 release 构建时注入（与 Go 二进制同一 tag），或读取 `/opt/bupt-ec/bupt-ec` 的输出。取前者：Compose 步骤用 `sed` 把占位符替换为 tag，与 `-ldflags` 注入同源。
-
-### D7 健康探测地址来自 env
-
-`APP_ADDR`（形如 `127.0.0.1:8080`）从 env 读取，不硬编码。若 env 缺失则回退 `127.0.0.1:8080` 并提示。
-
-## 权限模型
-
-```
-需要 root: update, config, restart, start, stop
-不需要:    status, version, health, logs
-```
-
-在分派前统一检查：需 root 的子命令若 `EUID != 0`，打印
-
-```
-This command needs root. Try: sudo bupt-ec update
-```
-
-而不是让 `systemctl` 或文件写入抛出晦涩错误。
-
-## 兼容性
-
-- **纯新增**：不改变任何既有命令、端点、配置格式的行为
-- `curl | bash` 的安装路径继续可用，且现在会额外装上 CLI
-- 老版本升级到 v0.3.0 后自动获得 CLI（因为它是事务目标，随二进制一起装）
-- 未安装 CLI 的旧机器仍可用 `curl | bash` 升级，升级后即拥有 CLI
-
-## 回滚形状
-
-| 层次 | 机制 |
-|---|---|
-| 单次升级失败 | 事务内核回滚，CLI 与二进制一并还原（D3 自动获得） |
-| CLI 本身有 bug | 用 `curl \| bash` 绕过 CLI 直接跑安装器，或 `bupt-ec update <旧版本>` |
-| 整个特性需要撤回 | `git revert`；已安装机器的 `/usr/local/bin/bupt-ec` 会在下次升级时被移除——**需在 `transaction_targets` 移除该行的同时处理遗留文件**，否则会留下一个指向旧逻辑的孤儿命令 |
-
-## 风险与缓解
-
-| 风险 | 缓解 |
-|---|---|
-| `find -name bupt-ec` 抓到 CLI 脚本 | D1 的包内改名；测试断言解压后服务二进制是 ELF 而非脚本 |
-| 路径常量在 CLI 与 install.sh 间漂移 | CLI 只硬编码路径，可变配置一律读 env；两文件互相注明「修改时需同步」 |
-| CLI 装到 `/usr/local/bin` 与包管理器冲突 | `/usr/local` 按 FHS 就是本地管理员领地，不与 apt 冲突 |
-| 用户在 CLI 失效时无法升级 | 文档保留 `curl \| bash` 作为兜底路径，不废弃 |
+| Risk | Mitigation |
+| --- | --- |
+| old target Installer lacks `--mode` | always bootstrap current/latest Installer |
+| old archive lacks CLI | explicit floor matrix and transactional remove action |
+| non-root command reads secrets | separate two-field `0644` metadata; never fall back to private env |
+| metadata and private config drift | render both from the same validated `CFG_*` staging generation |
+| private env mutates CLI or leaks source output | isolated strict NUL loader and generic failures |
+| service binary confused with CLI | tarball member remains `bupt-ec-cli`; exact separate extraction/tests |
+| CLI and Installer path/policy drift | fixed constants documented in both specs, focused cross-contract tests |
+| restart returns false failure during warmup | controls report systemctl result; strict readiness remains in status/health |
+| release marker is not injected | exact-one marker assertion and package-content test |

@@ -44,24 +44,32 @@ saved or explicit version selects `latest`.
 | `--mode=update` | Existing deployment update with no prompts | `VERSION` → saved version; no TTY and no apt package install |
 | `--mode=reconfigure` | Interactively change saved deployment settings | Keeps the saved version and ignores `VERSION`; requires a TTY |
 
-For a normal remote update, fetch the current self-contained installer and pass
-arguments after `bash -s --`:
+After installing v0.3.0 or newer, use the installed operations command for
+normal work:
 
 ```bash
-# Reuse the saved release version, with no prompts.
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=update
-# Select a stable version explicitly (also the rollback form).
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=v0.1.6 bash -s -- --mode=update
-# Change configuration interactively without changing the saved version.
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=reconfigure
+bupt-ec status                 # rootless state and strict health summary
+sudo bupt-ec update            # reuse the saved selector without prompts
+sudo bupt-ec update v0.3.1     # choose a CLI-bearing stable release
+sudo bupt-ec config            # interactive reconfiguration
+bupt-ec logs -f
 ```
 
-A downloaded update also works with closed stdin:
+The CLI delegates deployment to the current self-contained Installer. It accepts
+`latest` and stable versions **v0.3.0 or newer**. It deliberately rejects a
+pre-v0.3 target before downloading anything because those archives predate the
+CLI. Use the current Installer fallback for a legacy rollback (or if the CLI is
+missing):
 
 ```bash
-curl -fsSLo /tmp/bupt-ec-install.sh https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh
-sudo VERSION=v0.1.6 bash /tmp/bupt-ec-install.sh --mode=update < /dev/null
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
+  sudo VERSION=v0.2.0 bash -s -- --mode=update
 ```
+
+That direct current-Installer path remains compatible with legacy archives and
+removes the CLI/public metadata transactionally so the installed release stays
+consistent. See [docs/upgrading.md](docs/upgrading.md) for mirror and rollback
+rules.
 
 If update reports repairable saved settings, use interactive
 `--mode=reconfigure`; if saved release metadata is missing, use the default
@@ -102,7 +110,7 @@ Requires Go 1.25.13+ (or a current Go 1.26 patch release), Node 22, pnpm 9.15.x,
 
 ## Security
 
-- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-owned mode `0600`) on servers; configuration is snapshotted at startup and tokens are held in memory only.
+- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-owned mode `0600`) on servers; configuration is snapshotted at startup and tokens are held in memory only. Installed v0.3+ hosts additionally expose only `RELEASE_VERSION` and `APP_ADDR` through root-owned `0644` `/etc/bupt-ec/deployment.meta` for rootless CLI probes.
 - Never commit real credentials, tokens, or logs.
 
 ## Limitations

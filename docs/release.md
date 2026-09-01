@@ -34,18 +34,23 @@ bash scripts/generate-install.sh
 bash scripts/generate-install.sh --check
 find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
 find scripts -type f -name '*.sh' -exec shellcheck {} +
 # Or run the local installer gate above as one task:
 task installer:check
 ```
 
-The behavior entrypoint first checks generation drift and sources the generated
-asset, then loads modules under `scripts/installer_test/` into a temporary root
-with mocked network/system commands. It covers checksum/archive failures,
-mode behavior, safe configuration persistence, upgrade rollback, first-install
-cleanup, permissions, and successful commit behavior. Its transaction flow is
-preflight → snapshot → atomic commit → validation/rollback; source fragments
-and test modules are never runtime release files.
+The Installer behavior entrypoint first checks generation drift and sources the
+generated asset, then loads modules under `scripts/installer_test/` into a
+temporary root with mocked network/system commands. It covers checksum/archive
+failures, mode behavior, safe configuration persistence, CLI/metadata staging,
+legacy removal, upgrade rollback, first-install cleanup, permissions, and
+successful commit behavior. `scripts/cli_test.sh` separately covers the thin
+operations dispatcher and secrecy/readiness contracts; `release_layout_test.sh`
+proves stable/main CLI-version injection, tar member layout, installer parity,
+and checksums. Source fragments and test modules are never runtime release
+files.
 
 ## Changelog conventions
 
@@ -96,7 +101,7 @@ Three jobs in sequence:
 
 1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`); the frontend it builds is uploaded as the `frontend-dist` artifact.
 2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `main-<commit>` on `main` pushes).
-3. **release** — rechecks generated-installer drift immediately before composition, then packs each binary with `.env.example`, `README.md`, and only the self-contained generated `install.sh` into a tarball (never source fragments or test modules), generates `checksums.txt`, attests build provenance, then publishes:
+3. **release** — rechecks generated-installer drift immediately before composition, then packs each binary with `.env.example`, `README.md`, the independently packaged `bupt-ec-cli`, and only the self-contained generated `install.sh` into a tarball (never source fragments or test modules). It injects the same tag or `main-<short-sha>` used by Go into the CLI's single build marker, asserts layout and Installer parity, generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
    - **main push** and **manual dispatch**: a dry-run — the identical pack /
      checksum / attest path runs and the assets are uploaded as workflow
@@ -104,15 +109,22 @@ Three jobs in sequence:
      path is exercised on every merge, so a broken tarball or checksum step
      surfaces then instead of on release day.
 
-Release assets keep this layout (the installer depends on it):
+Release assets keep this layout (the Installer depends on it):
 
 ```text
 bupt-ec-linux-${arch}/
   bupt-ec
+  bupt-ec-cli
   .env.example
   README.md
   install.sh
 ```
+
+There is no standalone CLI release asset: the whole checked tarball covers it.
+The generated `install.sh` remains self-contained and does not source or invoke
+the packaged CLI. `scripts/compose-release-assets.sh` is the shared composition
+helper used by the workflow and local layout suite; it leaves the source marker
+as `dev` in a checkout and substitutes only the package copy.
 
 ## Toolchain versions
 

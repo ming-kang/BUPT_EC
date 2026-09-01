@@ -58,7 +58,7 @@ cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to localhos
 ```bash
 task test                 # go test -race ./...
 task installer:generate   # regenerate tracked scripts/install.sh from fragments
-task installer:check      # generator drift + recursive syntax/test/ShellCheck
+task installer:check      # Installer/CLI syntax, behavior, release-layout, ShellCheck
 task check                # Go/frontend checks plus installer:check (mirrors CI except size)
 task vuln                 # govulncheck (needs network; same pinned version as CI)
 ```
@@ -75,6 +75,8 @@ go mod verify
 bash scripts/generate-install.sh --check
 find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
 find scripts -type f -name '*.sh' -exec shellcheck {} +
 cd frontend && pnpm lint && pnpm test && pnpm build
 cd frontend && pnpm size    # gzip budget over dist/, CI runs it after the build
@@ -82,8 +84,9 @@ cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
 
 The reusable quality gate (`.github/workflows/quality.yml`) runs the same
-checks, including generated-installer drift, recursive shell syntax, generated
-installer behavior tests, and recursive ShellCheck, plus an embedded-assets
+checks, including generated-installer drift, recursive shell syntax, Installer
+and CLI behavior tests, local release-layout/version-injection simulation, and
+recursive ShellCheck, plus an embedded-assets
 build (`go build -tags embed_assets` after copying the freshly built frontend
 to `web/dist`). The other Go steps stay tag-less so a clean checkout without
 `frontend/dist` keeps building. `task check` includes `task installer:check`
@@ -94,8 +97,12 @@ Installer source is modular in `scripts/installer/`, while
 `scripts/generate-install.sh` emits the deterministic tracked and
 self-contained `scripts/install.sh` artifact used by tests and releases. Edit
 fragments, run `task installer:generate`, then run `task installer:check`; do
-not hand-edit the generated artifact. Test modules live in
-`scripts/installer_test/` and are repository-only, not deployment dependencies.
+not hand-edit the generated artifact. `scripts/bupt-ec-cli.sh` is an independent
+thin operations product packaged into each tarball; it must not become an
+Installer runtime dependency. `scripts/compose-release-assets.sh` injects its
+package-only version marker and locks the exact layout. Test modules live in
+`scripts/installer_test/`, `scripts/cli_test.sh`, and
+`scripts/release_layout_test.sh`; all are repository-only.
 
 `BUNDLE_REPORT=1 pnpm build` additionally writes a treemap report to
 `frontend/bundle-stats.local.html` (gitignored, never inside `dist/`).
@@ -137,11 +144,14 @@ frontend/src/            React app in strict TypeScript (Vite + Ant Design)
   todayClassroomsResponse.ts  API envelope normalization helpers
   components/            UI components (.tsx; pickers, table, modal, ErrorBoundary)
 scripts/
-  generate-install.sh    deterministic generator for tracked install.sh
-  installer/             ordered installer source fragments
-  install.sh             generated self-contained release artifact
-  installer_test/        behavior-test modules (repository-only)
-  install_test.sh        generated-artifact behavior-test entrypoint
+  generate-install.sh          deterministic generator for tracked install.sh
+  installer/                   ordered installer source fragments
+  install.sh                   generated self-contained release artifact
+  bupt-ec-cli.sh               packaged thin operations CLI source
+  installer_test/              Installer behavior-test modules (repository-only)
+  install_test.sh, cli_test.sh Installer and CLI behavior entrypoints
+  compose-release-assets.sh    exact tar layout + package-only CLI injection
+  release_layout_test.sh       stable/main package simulation
   release.sh, extract-changelog.sh
 .github/workflows/       ci.yml (PRs), release.yml (main pushes + tags), quality.yml (reusable gate)
 ```

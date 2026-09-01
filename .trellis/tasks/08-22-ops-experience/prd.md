@@ -21,7 +21,8 @@
 |---|---|---|
 | 发布版本号 | **v0.3.0**（不是 0.2.1） | 含新增功能与公开频道移除；`docs/release.md` 已约定 pre-1.0 阶段 minor 承载破坏性变更 |
 | nightly 处理 | **立即删除，不做兼容映射** | 用户确认无存量机器在跑 nightly |
-| CLI 实现语言 | **Shell，不用 Go** | `install.sh`（约 1079 行）+ `install_test.sh`（约 1000 行）的事务与回滚测试是核心资产，重写会清零覆盖率；且 update 需 root 而服务以非特权用户运行 |
+| CLI 实现语言 | **Shell，不用 Go** | generated `install.sh` 与模块化行为测试的事务/回滚覆盖是核心资产；CLI 可直接委托三模式 Installer，且 update 需 root 而服务以非特权用户运行 |
+| CLI 跨版本下限 | **`bupt-ec update` 拒绝 pre-v0.3 target** | v0.2.x 既无 CLI 资产也无三模式 Installer；CLI 在联网前给出 current/latest `curl | bash` 兜底，直接 Installer 保留旧版 rollback |
 | 安装器改造方式 | **演进，不推倒重写** | 事务内核无设计缺陷，缺的只是入口分层；重写必然丢失既有回滚路径覆盖 |
 | 发布节奏 | **四项全部完成后一次性发布** | 用户明确要求 |
 
@@ -55,7 +56,7 @@
 
 四个子任务归档后，父任务执行：
 
-1. **端到端演练**：在干净环境验证「首装 → `bupt-ec update` → 回滚到旧版本」完整链路
+1. **端到端演练**：在干净环境验证「首装 → `bupt-ec update`」以及 CLI-bearing stable tag 间的版本选择；pre-v0.3 target 必须在联网前拒绝并验证 current/latest Installer 的兜底 rollback
 2. **破坏性变更盘点**：确认 CHANGELOG 的 `Removed` / `Changed` 段落完整覆盖 nightly 移除，并给出存量 nightly 机器的处置说明
 3. **发布 v0.3.0**：`scripts/release.sh v0.3.0`，验证 release 资产、release notes、`latest` 指向
 4. **删除 nightly 残留**：发布后删除 GitHub 上的 nightly release 与 `nightly` git tag（顺序在稳定版发布**之后**，避免出现无任何可用安装源的窗口）

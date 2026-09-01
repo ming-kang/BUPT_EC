@@ -5,6 +5,8 @@ transaction_targets() {
   printf '%s\t%s\n' \
     binary "${INSTALL_DIR}/bupt-ec" \
     env "${ENV_FILE}" \
+    cli "${CLI_FILE}" \
+    metadata "${DEPLOYMENT_METADATA_FILE}" \
     service "${SERVICE_FILE}" \
     systemd_enabled "${SYSTEMD_ENABLED_LINK}" \
     nginx_site "${NGINX_SITE}" \
@@ -257,10 +259,95 @@ wait_for_health() {
   return 1
 }
 
+validate_cli_staging_directory() {
+  local staging_dir="$1"
+  local owner mode
+
+  if [[ -L "${staging_dir}" || ! -d "${staging_dir}" ]]; then
+    return 1
+  fi
+  owner="$(stat -c '%u' -- "${staging_dir}" 2>/dev/null)" || return 1
+  mode="$(stat -c '%a' -- "${staging_dir}" 2>/dev/null)" || return 1
+  [[ "${owner}" == "${ENV_FILE_EXPECTED_UID}" && "${mode}" == "700" ]]
+}
+
+validate_cli_staging_regular_file() {
+  local candidate="$1"
+  local expected_mode="$2"
+  local owner mode
+
+  if [[ -L "${candidate}" || ! -f "${candidate}" ]]; then
+    return 1
+  fi
+  owner="$(stat -c '%u' -- "${candidate}" 2>/dev/null)" || return 1
+  mode="$(stat -c '%a' -- "${candidate}" 2>/dev/null)" || return 1
+  [[ "${owner}" == "${ENV_FILE_EXPECTED_UID}" && "${mode}" == "${expected_mode}" ]]
+}
+
+read_cli_staging_action() {
+  local action_file="$1"
+  local action="" extra=""
+
+  validate_cli_staging_regular_file "${action_file}" 600 || return 1
+  {
+    IFS= read -r action || return 1
+    if IFS= read -r extra; then
+      return 1
+    fi
+    [[ -z "${extra}" ]] || return 1
+  } < "${action_file}" || return 1
+  case "${action}" in
+    install | remove) ;;
+    *) return 1 ;;
+  esac
+  # `read` drops NUL bytes. The byte comparison also requires the terminating
+  # newline and rejects an action whose valid-looking first line has trailers.
+  cmp -s -- "${action_file}" <(printf '%s\n' "${action}") || return 1
+  printf '%s' "${action}"
+}
+
+staged_metadata_matches_config() {
+  local metadata_file="$1"
+
+  cmp -s -- "${metadata_file}" <(
+    printf 'RELEASE_VERSION=%s\nAPP_ADDR=%s\n' "${CFG_RELEASE_VERSION}" "${CFG_APP_ADDR}"
+  )
+}
+
 commit_installation() {
   local staging_dir="$1"
   local app_addr="$2"
-  local health_url
+  local health_url cli_action expected_cli_action
+
+  if ! validate_cli_staging_directory "${staging_dir}"; then
+    echo "Staging directory is missing or unsafe." >&2
+    return 1
+  fi
+  if ! cli_action="$(read_cli_staging_action "${staging_dir}/cli.action")"; then
+    echo "Staged CLI action is missing or invalid." >&2
+    return 1
+  fi
+  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
+    expected_cli_action=install
+  else
+    expected_cli_action=remove
+  fi
+  if [[ "${cli_action}" != "${expected_cli_action}" ]]; then
+    echo "Staged CLI action does not match the selected release." >&2
+    return 1
+  fi
+  if [[ "${cli_action}" == "install" ]]; then
+    if ! validate_cli_staging_regular_file "${staging_dir}/bupt-ec-cli" 755 ||
+       ! validate_cli_staging_regular_file "${staging_dir}/deployment.meta" 644 ||
+       ! staged_metadata_matches_config "${staging_dir}/deployment.meta"; then
+      echo "Staged CLI candidates are missing or invalid." >&2
+      return 1
+    fi
+  elif [[ -e "${staging_dir}/bupt-ec-cli" || -L "${staging_dir}/bupt-ec-cli" ||
+          -e "${staging_dir}/deployment.meta" || -L "${staging_dir}/deployment.meta" ]]; then
+    echo "Staged CLI remove action must not include CLI candidates." >&2
+    return 1
+  fi
 
   mkdir -p "${INSTALL_DIR}/run_log" "${CONFIG_DIR}" || return
   chmod 0755 "${INSTALL_DIR}" || return
@@ -270,6 +357,13 @@ commit_installation() {
 
   atomic_install_file "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" 0755 root:root || return
   atomic_install_file "${staging_dir}/bupt-ec.env" "${ENV_FILE}" 0600 root:root || return
+  if [[ "${cli_action}" == "install" ]]; then
+    atomic_install_file "${staging_dir}/bupt-ec-cli" "${CLI_FILE}" 0755 root:root || return
+    atomic_install_file "${staging_dir}/deployment.meta" "${DEPLOYMENT_METADATA_FILE}" 0644 root:root || return
+  else
+    rm -f -- "${CLI_FILE}" || return
+    rm -f -- "${DEPLOYMENT_METADATA_FILE}" || return
+  fi
   atomic_install_file "${staging_dir}/${SERVICE_NAME}.service" "${SERVICE_FILE}" 0644 root:root || return
   atomic_install_file "${staging_dir}/${SERVICE_NAME}.conf" "${NGINX_SITE}" 0644 root:root || return
   atomic_install_symlink "${NGINX_SITE}" "${NGINX_ENABLED}" || return

@@ -4,12 +4,43 @@ Day-to-day operation of a deployed BUPT_EC server: service management, health ch
 
 ## Service management
 
+On v0.3.0+ installations, prefer the packaged operations CLI:
+
+```bash
+bupt-ec status
+bupt-ec version
+bupt-ec health
+bupt-ec logs -f
+bupt-ec logs -n 200
+sudo bupt-ec restart
+sudo bupt-ec stop
+sudo bupt-ec start
+sudo bupt-ec config
+sudo bupt-ec config show
+```
+
+| Command | Root | Exit behavior |
+| --- | :---: | --- |
+| `status` | no | 0 only for active unit plus 2xx `/healthz` and `/readyz` |
+| `health` | no | 0 only when both probes are 2xx |
+| `version` | no | reports selector/running/CLI versions; a valid readyz 503 body still reports the running build |
+| `logs` | no | fixed `journalctl -u bupt-ec`; local journal ACL success/failure is propagated |
+| `update`, `config`, `config show`, controls | yes | rejects without root and prints a `sudo bupt-ec ...` retry |
+
+A readiness 503 during warmup is normal after restart, but `status` and
+`health` intentionally show it as degraded/not-ready and return nonzero for
+automation. `start`, `stop`, and `restart` report their `systemctl` result and
+do not turn normal warmup into a control-command failure.
+
+The underlying commands remain fallback diagnostics for pre-v0.3/legacy hosts
+or a missing CLI:
+
 ```bash
 sudo systemctl status bupt-ec
 sudo systemctl restart bupt-ec
 sudo systemctl stop bupt-ec
-sudo journalctl -u bupt-ec -f          # follow logs
-sudo journalctl -u bupt-ec -n 200      # last 200 lines
+sudo journalctl -u bupt-ec -f
+sudo journalctl -u bupt-ec -n 200
 ```
 
 On shutdown the server drains gracefully: it stops accepting connections, finishes in-flight requests, and waits (within a 10-second budget) for any background classroom refresh to complete.
@@ -162,10 +193,18 @@ effect only after an explicit service restart.
 The installed `/etc/bupt-ec/bupt-ec.env` must remain a regular, root-owned
 `0600` file in a root-owned configuration directory that group/other users
 cannot modify; do not replace it with a symlink. Before it uses saved values,
-the installer safe-loader checks those properties and returns only supported
-configuration fields into its process. If it rejects the file, repair its
-ownership, mode, or syntax as root (or move it aside and rebuild with default
-install) rather than sourcing an untrusted file.
+the Installer and root-only CLI commands evaluate it only in an isolated child
+and frame the fixed supported fields. `sudo bupt-ec config show` never prints
+its raw contents: `JW_PASSWORD` and `JW_TOKEN` are always `***` and all other
+values are shell-escaped on one line. If the safe loader rejects the file,
+repair its ownership, mode, or syntax as root (or move it aside and rebuild
+with default install) rather than sourcing an untrusted file.
+
+For rootless CLI queries, `/etc/bupt-ec/deployment.meta` is a separate,
+root-owned exact-`0644` regular file with only `RELEASE_VERSION` and `APP_ADDR`.
+The CLI parses and validates exactly those two ordered lines; if it is missing
+or untrusted, `status`, `version`, and `health` fail rather than falling back to
+the private env or an assumed loopback address.
 
 ### Tracing a request with `log_id`
 

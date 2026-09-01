@@ -74,10 +74,13 @@ same. It stores the selected value as `RELEASE_VERSION` in
 | `--mode=update` | Prompt-free update of an existing deployment | explicit `VERSION` → saved `RELEASE_VERSION` | No TTY or prompts; skips apt and preflights required tools |
 | `--mode=reconfigure` | Interactively change deployment configuration | saved `RELEASE_VERSION` only; ignores `VERSION` | TTY required; installs supported packages and reruns the transaction |
 
-Use `--mode=update` for a normal unattended upgrade. The installer accepts
-both `--mode=value` and `--mode value`; the remote-script form below uses the
-first spelling and must use `bash -s --` so the argument is forwarded to the
-downloaded script:
+Use the installed `bupt-ec update` command for a normal unattended upgrade on
+v0.3.0+ hosts; it bootstraps this same current Installer and passes
+`--mode=update` without prompts. Direct Installer `--mode=update` remains the
+fallback for first recovery, older installations, and legacy rollback. The
+Installer accepts both `--mode=value` and `--mode value`; the remote-script form
+below uses the first spelling and must use `bash -s --` so the argument is
+forwarded to the downloaded script:
 
 ```bash
 # Reuse the saved stable version.
@@ -127,15 +130,46 @@ not extra prompts; use an interactive install/reconfigure invocation to change
 them. `update` preserves their saved values and only honors `VERSION` as an
 override.
 
+## Installed operations CLI (v0.3.0+)
+
+A CLI-bearing release installs `/usr/local/bin/bupt-ec` as root:root `0755`.
+Use it instead of memorizing long `systemctl`, `journalctl`, or remote Installer
+commands:
+
+```bash
+bupt-ec -h
+bupt-ec status
+bupt-ec version
+bupt-ec health
+bupt-ec logs -n 50
+sudo bupt-ec update
+sudo bupt-ec config
+sudo bupt-ec config show
+sudo bupt-ec restart
+```
+
+`status`, `version`, and `health` work without root through the deliberately
+minimal `/etc/bupt-ec/deployment.meta`: root-owned `0644`, exactly
+`RELEASE_VERSION` and `APP_ADDR`. They never read the root-only env or guess a
+default address. `health` succeeds only when both liveness and readiness are
+2xx; `status` also requires an active unit, so a normal warmup `/readyz` 503 is
+shown as degraded and returns nonzero.
+
+`update` accepts `latest` or stable `v0.3.0+` targets. It rejects a stable
+pre-v0.3 target before network access and tells the operator to use the current
+Installer fallback shown in [upgrading.md](upgrading.md#roll-back-to-an-earlier-release).
+The direct current Installer still permits that legacy target and removes the
+CLI and public metadata atomically with the older service release.
+
 ## What the installer does
 
 - In `install` and `reconfigure` modes, installs `ca-certificates`, `curl`, `tar`, and `nginx` via apt. `update` never invokes apt; it first verifies the download and transaction tools already exist.
 - Creates a dedicated `bupt-ec` system user and group.
 - Downloads the release tarball matching the CPU architecture and requires a matching `checksums.txt` entry (install fails if the checksum file is missing or verification fails). Set `SKIP_CHECKSUM=1` only as an explicit break-glass to skip verification.
-- Extracts the archive and renders candidate env, systemd, and Nginx files in a root-only staging directory before changing any installed target.
-- Snapshots the existing binary, env, systemd unit/enablement, and Nginx site/enablement, then replaces files with same-filesystem atomic renames.
+- Extracts the archive and renders candidate env, systemd, Nginx, CLI action, and (for v0.3+ targets) public metadata files in a root-only staging directory before changing any installed target.
+- Snapshots the existing binary, private env, CLI, public metadata, systemd unit/enablement, and Nginx site/enablement, then replaces/removes files with same-filesystem atomic operations.
 - Installs the binary to `/opt/bupt-ec/bupt-ec`, owned by root so the running service cannot rewrite its own executable. Only `/opt/bupt-ec/run_log` is writable by the service user.
-- Writes the complete deployment configuration (including supported `LOG_CALLER` and `READYZ_DIAGNOSTICS` settings) to `/etc/bupt-ec/bupt-ec.env` (mode `0600`, owned by root).
+- Writes the complete deployment configuration (including supported `LOG_CALLER` and `READYZ_DIAGNOSTICS` settings) to `/etc/bupt-ec/bupt-ec.env` (mode `0600`, owned by root), plus v0.3+ non-secret `/etc/bupt-ec/deployment.meta` (`RELEASE_VERSION` and `APP_ADDR`, mode `0644`).
 - Installs a hardened systemd unit (`NoNewPrivileges`, `PrivateTmp`, `ProtectHome`, `ProtectSystem=full`, empty capability bounding set, and more) and enables it.
 - Writes an Nginx site with HTTP→HTTPS redirect, TLS 1.2/1.3, security headers, and rate limiting on `/api/` (30 requests/minute per IP with a burst of 20). `/api/` uses `proxy_read_timeout 60s`, comfortably above the backend stack (5s cold-wait bound + 15s Go `WriteTimeout`, 60s proxy).
 - Validates Nginx, restarts and checks the service, reloads Nginx, and checks `/healthz` when `APP_ADDR` is loopback. A failure restores the snapshot (or removes newly created first-install files), stops any newly started unit, reloads Nginx after site removal, and restores the previous service active/enabled state before the installer exits non-zero.
@@ -174,9 +208,12 @@ silently inheriting an old mirror.
 
 The mirror directory must contain `bupt-ec-linux-amd64.tar.gz` or
 `bupt-ec-linux-arm64.tar.gz` and a `checksums.txt` that lists the package hash
-(verification is required unless `SKIP_CHECKSUM=1`). Same-origin checksums prove
-download integrity only; they are not independent proof of GitHub publisher
-identity if the mirror itself is compromised.
+(verification is required unless `SKIP_CHECKSUM=1`). For installed CLI update or
+configuration, it must also publish the current self-contained `install.sh` at
+`${DOWNLOAD_BASE_URL}/install.sh`; the CLI fails closed if it is absent and never
+falls back to GitHub or a third party. Same-origin checksums prove download
+integrity only; they are not independent proof of GitHub publisher identity if
+the mirror itself is compromised.
 
 `DOWNLOAD_BASE_URL` must be an absolute **HTTPS** URL with a non-empty host
 (path optional). Userinfo (`user:pass@`), query strings, fragments, and empty

@@ -18,9 +18,29 @@ esac
 # portable; individual security tests can force an unsafe synthetic mode.
 if [[ "${POSIX_MODES_SUPPORTED}" == "false" ]]; then
   stat() {
-    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" && "${3:-}" == "--" && "${4:-}" == "${ENV_FILE}" ]]; then
-      printf '%s\n' "${CURRENT_CONFIG_TEST_STAT_MODE:-600}"
-      return 0
+    if [[ "${1:-}" == "-c" && "${2:-}" == "%a" && "${3:-}" == "--" ]]; then
+      case "${4:-}" in
+        "${ENV_FILE}")
+          printf '%s\n' "${CURRENT_CONFIG_TEST_STAT_MODE:-600}"
+          return 0
+          ;;
+        */staging)
+          printf '%s\n' "${CLI_STAGING_DIR_TEST_MODE:-700}"
+          return 0
+          ;;
+        */staging/cli.action)
+          printf '%s\n' "${CLI_ACTION_TEST_STAT_MODE:-600}"
+          return 0
+          ;;
+        */staging/bupt-ec-cli)
+          printf '%s\n' "${CLI_CANDIDATE_TEST_STAT_MODE:-755}"
+          return 0
+          ;;
+        */staging/deployment.meta)
+          printf '%s\n' "${CLI_METADATA_TEST_STAT_MODE:-644}"
+          return 0
+          ;;
+      esac
     fi
     command stat "$@"
   }
@@ -199,6 +219,8 @@ export PATH="${MOCK_BIN}:${PATH}"
 
 VALID_ARCHIVE="${TEST_TMP}/bupt-ec-linux-amd64.tar.gz"
 MISSING_BINARY_ARCHIVE="${TEST_TMP}/missing-binary.tar.gz"
+MISSING_CLI_ARCHIVE="${TEST_TMP}/missing-cli.tar.gz"
+LEGACY_ARCHIVE="${TEST_TMP}/legacy-no-cli.tar.gz"
 VALID_CHECKSUMS="${TEST_TMP}/checksums-valid.txt"
 MISSING_ENTRY_CHECKSUMS="${TEST_TMP}/checksums-missing-entry.txt"
 MISMATCH_CHECKSUMS="${TEST_TMP}/checksums-mismatch.txt"
@@ -206,6 +228,7 @@ MISMATCH_CHECKSUMS="${TEST_TMP}/checksums-mismatch.txt"
 create_release_archive() {
   local destination="$1"
   local include_binary="$2"
+  local include_cli="$3"
   local source_dir
   source_dir="$(mktemp -d "${TEST_TMP}/archive.XXXXXX")"
   mkdir -p "${source_dir}/bupt-ec-linux-amd64"
@@ -215,12 +238,18 @@ create_release_archive() {
   else
     printf 'archive without binary\n' > "${source_dir}/bupt-ec-linux-amd64/README.md"
   fi
+  if [[ "${include_cli}" == "true" ]]; then
+    printf 'candidate cli\n' > "${source_dir}/bupt-ec-linux-amd64/bupt-ec-cli"
+    chmod 0755 "${source_dir}/bupt-ec-linux-amd64/bupt-ec-cli"
+  fi
   tar -czf "${destination}" -C "${source_dir}" bupt-ec-linux-amd64
   rm -rf "${source_dir}"
 }
 
-create_release_archive "${VALID_ARCHIVE}" true
-create_release_archive "${MISSING_BINARY_ARCHIVE}" false
+create_release_archive "${VALID_ARCHIVE}" true true
+create_release_archive "${MISSING_BINARY_ARCHIVE}" false false
+create_release_archive "${MISSING_CLI_ARCHIVE}" true false
+create_release_archive "${LEGACY_ARCHIVE}" true false
 printf '%s  bupt-ec-linux-amd64.tar.gz\n' "$(sha256sum "${VALID_ARCHIVE}" | awk '{print $1}')" > "${VALID_CHECKSUMS}"
 printf '%s  another-package.tar.gz\n' "$(sha256sum "${VALID_ARCHIVE}" | awk '{print $1}')" > "${MISSING_ENTRY_CHECKSUMS}"
 printf '%064d  bupt-ec-linux-amd64.tar.gz\n' 0 > "${MISMATCH_CHECKSUMS}"
@@ -242,6 +271,8 @@ reset_mock_state() {
   unset MOCK_CHOWN_FAIL_PATTERN
   unset MOCK_CP_FAIL_PATTERN
   unset CURRENT_CONFIG_TEST_STAT_MODE
+  unset CLI_STAGING_DIR_TEST_MODE CLI_ACTION_TEST_STAT_MODE
+  unset CLI_CANDIDATE_TEST_STAT_MODE CLI_METADATA_TEST_STAT_MODE
 }
 
 setup_case() {
@@ -289,14 +320,17 @@ seed_existing_installation() {
   local service_active="${1:-true}"
   local service_enabled="${2:-true}"
 
-  mkdir -p "${INSTALL_DIR}/run_log" "${CONFIG_DIR}" \
+  mkdir -p "${INSTALL_DIR}/run_log" "${CONFIG_DIR}" "$(dirname "${CLI_FILE}")" \
     "$(dirname "${SERVICE_FILE}")" "$(dirname "${SYSTEMD_ENABLED_LINK}")" \
     "$(dirname "${NGINX_SITE}")" "$(dirname "${NGINX_ENABLED}")"
   printf 'old binary\n' > "${INSTALL_DIR}/bupt-ec"
+  printf 'old cli\n' > "${CLI_FILE}"
+  printf 'RELEASE_VERSION=v9.9.8\nAPP_ADDR=127.0.0.1:8080\n' > "${DEPLOYMENT_METADATA_FILE}"
   printf 'old env\n' > "${ENV_FILE}"
   printf 'old service\n' > "${SERVICE_FILE}"
   printf 'old nginx\n' > "${NGINX_SITE}"
-  chmod 0755 "${INSTALL_DIR}/bupt-ec"
+  chmod 0755 "${INSTALL_DIR}/bupt-ec" "${CLI_FILE}"
+  chmod 0644 "${DEPLOYMENT_METADATA_FILE}"
   chmod 0600 "${ENV_FILE}"
   chmod 0644 "${SERVICE_FILE}" "${NGINX_SITE}"
   rm -f -- "${SYSTEMD_ENABLED_LINK}"
@@ -354,6 +388,7 @@ capture_target_state() {
 
 make_staging() {
   local staging_dir="$1"
+  local cli_action="${2:-install}"
   rm -rf "${staging_dir}"
   mkdir -p "${staging_dir}"
   chmod 0700 "${staging_dir}"
@@ -361,9 +396,19 @@ make_staging() {
   chmod 0755 "${staging_dir}/bupt-ec"
   chown root:root "${staging_dir}/bupt-ec"
   set_valid_test_config
+  if [[ "${cli_action}" == "remove" ]]; then
+    CFG_RELEASE_VERSION="v0.2.0"
+  fi
   render_env_file "${staging_dir}/bupt-ec.env"
   render_systemd_service "${staging_dir}/${SERVICE_NAME}.service"
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf"
+  if [[ "${cli_action}" == "install" ]]; then
+    printf 'new cli\n' > "${staging_dir}/bupt-ec-cli"
+    chmod 0755 "${staging_dir}/bupt-ec-cli"
+    chown root:root "${staging_dir}/bupt-ec-cli"
+    render_deployment_metadata "${staging_dir}/deployment.meta"
+  fi
+  render_cli_action "${staging_dir}/cli.action" "${cli_action}"
 }
 
 run_transaction_with_cleanup() {

@@ -130,6 +130,8 @@ Run the generated artifact and every maintained shell source, not only
 bash scripts/generate-install.sh --check
 find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
 find scripts -type f -name '*.sh' -exec shellcheck {} +
 ```
 
@@ -163,6 +165,141 @@ curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | \
 
 `-s --` makes Bash read the installer from stdin and forwards the mode after
 `--`; this update needs no TTY.
+
+## Scenario: Installed Operations CLI
+
+### 1. Scope / Trigger
+
+Apply this contract when changing `scripts/bupt-ec-cli.sh`, public deployment
+metadata, CLI packaging, CLI behavior tests, or commands documented for an
+installed host. The Shell CLI is an operations dispatcher only; it delegates
+archive/checksum/staging/transaction/rollback work to the current generated
+Installer.
+
+### 2. Signatures
+
+```bash
+cli_main [command [args...]]
+configure_cli_test_root <absolute-root>       # sourced tests only
+load_private_deployment_config
+load_public_deployment_metadata
+show_status
+show_version
+show_health
+show_logs [-f] [-n <positive-integer>]
+run_update [latest|vX.Y.Z]
+run_reconfigure
+```
+
+Installed command surface:
+
+```text
+bupt-ec update [VERSION]
+bupt-ec status | version | health
+bupt-ec logs [-f] [-n N]
+bupt-ec start | stop | restart
+bupt-ec config [show]
+bupt-ec -h | --help
+```
+
+### 3. Contracts
+
+- The source is `scripts/bupt-ec-cli.sh`; Installer installs it as
+  `/usr/local/bin/bupt-ec`, root:root `0755`. It has one `dev` build-version
+  marker. Release packaging substitutes the same tag or `main-<short-sha>`
+  injected into Go, exactly once, without changing the source checkout.
+- `update`, `config`, `config show`, and service controls require root before
+  private-file/network/systemd work and print a safe `sudo bupt-ec ...` retry.
+  `status`, `version`, `health`, and `logs` do not silently sudo.
+  Parser/help failures return 2 before those side effects; no argument/help
+  returns 0. `logs` accepts `-f` and `-n <positive integer>` at most once.
+- Root-only private config loading repeats only the transport/security boundary
+  needed to bootstrap Installer: strict root-owned directory and regular exact
+  `0600` env, isolated child evaluation, fixed-NUL framing of the twelve-field
+  registry, protected `/tmp` frame cleanup, and no source stdout/stderr/trap or
+  secret disclosure. `config show` iterates that fixed registry, always renders
+  `JW_PASSWORD` and `JW_TOKEN` as `***`, and shell-escapes other one-line
+  output. The CLI parent never sources the env or imports one-shot controls.
+- Non-root `status`, `version`, and `health` use only
+  `/etc/bupt-ec/deployment.meta`, never the private env or guessed defaults.
+  The metadata must be root-owned exact `0644`, regular/non-symlink in the same
+  secure directory, and exactly ordered `RELEASE_VERSION`/`APP_ADDR` records.
+  Missing, malformed, or untrusted metadata fails explicitly.
+- Local probes use metadata `APP_ADDR`, bounded curl, no proxy, and no redirect.
+  `health` succeeds only when `/healthz` and `/readyz` are 2xx; `status` also
+  requires an active unit. A readiness 503 is printed as degraded/not-ready and
+  is nonzero for both. `version` may report a valid build version from a 503
+  readyz response, but unreachable/malformed output is unavailable/nonzero.
+- `update` and `config` fetch a **current/latest** Installer implementation:
+  official URL is `https://github.com/${RELEASE_REPO}/releases/latest/download/install.sh`;
+  a saved validated mirror is `${DOWNLOAD_BASE_URL}/install.sh` and fails closed
+  if absent. The requested `VERSION` selects its archive, never an old
+  Installer. `config` validates TTY before bootstrap and invokes
+  `--mode=reconfigure`; update invokes `VERSION=<target> --mode=update` without
+  prompts.
+- CLI-selected `latest` and stable `>=v0.3.0` are supported. Any stable target
+  below `v0.3.0` is rejected before curl with current/latest Installer fallback
+  guidance. Direct invocation of that current Installer still supports legacy
+  targets and transactionally removes CLI/metadata through the Installer action
+  contract.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+| --- | --- |
+| no command, `-h`, or `--help` | print help and return 0 |
+| unknown command, extra argument, duplicate log flag, or invalid `-n`/VERSION | return 2 before root/file/network/systemd work |
+| non-root mutation/private-config command | return nonzero with exact safe `sudo bupt-ec ...` retry before side effects |
+| private env has unsafe parent/type/owner/mode, source output, or malformed frames | clear values, remove protected frame, return generic error without secrets |
+| public metadata is missing, unsafe, reordered, duplicated, or has extra keys | fail explicitly; never read private env or guess `APP_ADDR` |
+| `/healthz` or `/readyz` is non-2xx/unreachable | `health` nonzero; `status` nonzero, with degraded/unavailable output |
+| readyz returns 503 with a valid version body | `version` may report the build; strict `health`/`status` still fail |
+| explicit/saved stable target is below `v0.3.0` | reject before curl and show current/latest Installer fallback |
+| saved mirror Installer is missing or its URL is invalid | fail closed without GitHub/third-party fallback or raw URL disclosure |
+| `config` has no interactive TTY | fail before bootstrap network work |
+| valid CLI-bearing target | bootstrap current/latest Installer and pass target through `VERSION` to `--mode=update` |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a root operator runs `bupt-ec update v0.3.1`; the CLI safely loads only
+  registered private fields, fetches the current Installer from the saved trust
+  source, and delegates a zero-prompt update while the Installer verifies and
+  transactionally commits the archive.
+- Base: a non-root operator runs `bupt-ec version`; strict two-field metadata and
+  a 503 readyz body distinguish saved `latest`, running `v0.3.0`, and the CLI
+  build without exposing the private env.
+- Bad: source `/etc/bupt-ec/bupt-ec.env` in the CLI parent, silently probe
+  `127.0.0.1:8080` after metadata failure, download the target-old Installer,
+  or allow `bupt-ec update v0.2.0` to leave a newer CLI beside an older service.
+
+### 6. Tests Required
+
+`scripts/cli_test.sh` must use the sourced-only path seam and mocks to cover
+parsing/root ordering, secret-safe loading/redaction, strict metadata rejection,
+strict readiness exits, logs/control status propagation, official/mirror
+bootstrap URLs and protocol policy, no-TTY update/reconfigure behavior, and the
+pre-v0.3 no-curl boundary. `scripts/release_layout_test.sh` must verify stable
+and `main-<sha>` version injection, architecture package parity, exact tar
+members, generated Installer parity, and the unchanged top-level asset set.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+# Target v0.2.0's Installer predates --mode=update.
+curl -fsSL "https://github.com/${repo}/releases/download/v0.2.0/install.sh" | \
+  VERSION=v0.2.0 bash -s -- --mode=update
+```
+
+#### Correct
+
+```bash
+# The current control plane selects the older archive. The installed CLI itself
+# refuses pre-v0.3; this direct Installer form is the documented legacy fallback.
+curl -fsSL "https://github.com/${repo}/releases/latest/download/install.sh" | \
+  sudo VERSION=v0.2.0 bash -s -- --mode=update
+```
 
 ## Scenario: Transactional Installer Commit and Rollback
 
@@ -203,7 +340,10 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
   write executable, tracked `scripts/install.sh` atomically. The generated file
   remains the sole self-contained installer in release tarballs and as the
   top-level release asset. Fragments and `scripts/installer_test/` modules are
-  repository-only inputs and must never be copied as runtime companions.
+  repository-only inputs and must never be copied as runtime companions. The
+  independently packaged `bupt-ec-cli` tar member is an installed product, not
+  an Installer runtime companion: generated `install.sh` must never source or
+  execute it.
 - Rendering writes the complete twelve-field `CFG_*` contract in the registry
   order: `RELEASE_REPO`, `RELEASE_VERSION`, `DOMAIN`, `SSL_CERT`, `SSL_KEY`,
   `JW_USERNAME`, `JW_PASSWORD`, `JW_TOKEN`, `APP_ADDR`,
@@ -227,16 +367,33 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
   entirely and runs its required-tool preflight before session creation,
   download, or snapshot; all modes retain idempotent service-user creation and
   the same download → staging → transaction path.
+- CLI-bearing releases (`latest` or stable `>=v0.3.0`) contain a separate
+  regular `bupt-ec-cli` archive member. Staging must fail before snapshot if it
+  is absent, render `/etc/bupt-ec/deployment.meta` from validated
+  `CFG_RELEASE_VERSION` and `CFG_APP_ADDR`, and write an exact `install` action.
+  Metadata is root-owned `0644`, regular/non-symlink, and exactly two ordered
+  lines: `RELEASE_VERSION=<latest|vX.Y.Z>` and `APP_ADDR=<validated-host:port>`.
+  It contains no private env fields. Stable legacy targets below `v0.3.0` are
+  still accepted by direct current Installer invocation; their archives omit
+  the CLI and staging writes a strict `remove` action instead.
+- `transaction_targets` has exactly eight roles: binary, private env, CLI,
+  public metadata, systemd unit/link, and Nginx site/link. Commit validates the
+  protected `install|remove` action. `install` atomically writes
+  `/usr/local/bin/bupt-ec` root:root `0755` and metadata root:root `0644`;
+  `remove` deletes both. Snapshot and rollback iterate the same registry, so
+  first-install cleanup and late legacy rollback restore need no CLI-specific
+  snapshot/restore algorithm.
 - Transaction ordering is fixed and must not be interleaved:
 
   1. Parse mode and validate root/TTY/configuration, certificates, release
      selection, and mode-specific prerequisites.
   2. Download the architecture archive and verify its `checksums.txt` entry.
   3. Extract and render every candidate under a mode-`0700` staging directory;
-     env is root-owned mode `0600`. Generated Nginx `/api/`
+     env is root-owned mode `0600`, CLI action is protected mode `0600`, and
+     CLI-bearing metadata is root-owned mode `0644`. Generated Nginx `/api/`
      `proxy_read_timeout` remains 60s (SPA `/` may remain 30s).
-  4. Snapshot binary, env, systemd unit + enabled link, and Nginx site +
-     enabled link, plus runtime state for prior service/site presence,
+  4. Snapshot binary, env, CLI, metadata, systemd unit + enabled link, and
+     Nginx site + enabled link, plus runtime state for prior service/site presence,
      enablement, and activity. The mode-`0700` backup records absent and
      present targets; env, manifest, and runtime state are mode `0600`.
   5. Copy each candidate to `<target>.new.$$` in the target directory, set
@@ -252,8 +409,10 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
 
 - Production paths remain fixed constants. Tests may redirect them only by
   sourcing the generated script and calling `configure_installer_test_root`.
-  The transaction core does not branch on mode, and release tarballs/top-level
-  assets retain their existing layout with `install.sh` only.
+  The transaction core does not branch on mode. Architecture tarballs contain
+  exactly `bupt-ec`, `bupt-ec-cli`, `.env.example`, `README.md`, and generated
+  `install.sh`; top-level published assets remain the two tarballs,
+  `checksums.txt`, and self-contained `install.sh` only.
 
 ### 4. Validation & Error Matrix
 
@@ -263,7 +422,7 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
 | installed env is a symlink, has unsafe parent ownership/mode, wrong owner/mode, malformed output, or unsafe syntax | reject it before deployment work; clear current state and do not print credentials/tokens |
 | update lacks a required tool | fail before session/download/snapshot, never call apt, and give recovery guidance |
 | checksum download/entry/hash failure | non-zero; installed targets byte-identical |
-| archive missing `bupt-ec` or candidate render failure | non-zero; snapshot/commit not entered |
+| archive missing `bupt-ec`, CLI-bearing archive missing `bupt-ec-cli`, malformed action, or candidate render failure | non-zero; snapshot/commit not entered or rollback leaves targets unchanged |
 | snapshot copy/manifest failure | non-zero; transaction inactive; installed targets unchanged |
 | atomic write, daemon reload, enable, or `nginx -t` failure | restore every recorded target/existence state |
 | restart, `is-active`, reload, or loopback health failure | restore files; stop current unit; restore prior active/enabled state |
@@ -295,6 +454,8 @@ Run the generated asset, all fragments, and all test modules:
 bash scripts/generate-install.sh --check
 find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
 find scripts -type f -name '*.sh' -exec shellcheck {} +
 ```
 
@@ -311,14 +472,21 @@ temporary root with mocked `curl`, `chown`, `systemctl`, and `nginx`, and assert
 - Nginx, restart, and health failures restore file content, modes, symlink
   targets, and attempt the old-service restart where one existed;
 - first-install rollback removes all transaction targets; incomplete rollback
-  preserves a mode-`0700` recovery directory and mode-`0600` env backup; and a
-  successful upgrade replaces every target and clears the backup.
+  preserves a mode-`0700` recovery directory and mode-`0600` env backup; a
+  successful upgrade replaces every target and clears the backup; and legacy
+  removal late failure restores the prior CLI and metadata.
+- `scripts/cli_test.sh` sources the CLI through its explicit test seam and
+  covers parser/root gates, safe private loading/redaction, strict public
+  metadata, probes/readiness exits, journal/service dispatch, latest Installer
+  bootstrap, mirror policy, reconfigure TTY, and pre-v0.3 no-curl rejection.
 
 CI must run the same recursive syntax/ShellCheck gate. Release must run
-`generate-install.sh --check` immediately before copying only
-`scripts/install.sh` into architecture tarballs and the top-level asset, then
-assert each tarball's exact documented file list and compare its installer bytes
-with the generated artifact.
+`generate-install.sh --check` immediately before packaging, inject the same
+stable tag or `main-<short-sha>` value used by Go `-ldflags` into the one CLI
+build-version marker, assert each tarball's exact documented file list and
+Installer byte parity, and verify both architecture CLI bytes match. The local
+release-layout suite exercises stable and `main` injection plus checksum/layout
+assertions.
 
 ### 7. Wrong vs Correct
 

@@ -3,7 +3,7 @@
   "name": "bupt-ec-cli",
   "title": "新增 bupt-ec 运维 CLI 并纳入原子事务",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

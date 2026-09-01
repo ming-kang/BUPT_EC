@@ -51,13 +51,15 @@ tasks:
       - bash scripts/generate-install.sh
 
   installer:check:
-    desc: Check installer generation, syntax, behavior, and ShellCheck recursively
+    desc: Check installer/CLI generation, syntax, behavior, release layout, and ShellCheck recursively
     cmds:
       - bash scripts/generate-install.sh --check
       # Run recursive discovery inside Bash: Task's portable shell has a
       # deliberately limited built-in find implementation.
       - bash -c "find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n \"\$script\" || exit 1; done' bash {} +"
       - bash scripts/install_test.sh
+      - bash scripts/cli_test.sh
+      - bash scripts/release_layout_test.sh
       - bash -c 'find scripts -type f -name "*.sh" -exec shellcheck {} +'
 
   check:

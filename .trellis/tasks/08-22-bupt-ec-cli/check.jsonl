@@ -1,2 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验 CLI 已纳入事务目标、自包含约束已修订、未出现专用回滚逻辑"}
+{"file":".trellis/spec/backend/installer-guidelines.md","reason":"核对 self-contained Installer 与 packaged CLI 边界、八 transaction targets、legacy action、rollback 与 exact release layout"}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"核对 recursive shell suites、Taskfile/workflow parity、action pinning、build/test/audit 与 docs/CHANGELOG gates"}
+{"file":".trellis/spec/backend/logging-guidelines.md","reason":"核对 config show/private loader/probe/logs 输出不泄露 JW secrets 或 source 内容"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"核对 CLI 未重写 release archive/checksum/staging/snapshot/rollback 引擎且共用 registry"}
+{"file":".trellis/tasks/08-22-bupt-ec-cli/research/2026-09-planning-refresh.md","reason":"核对 v0.2 incompatibility、v0.3 floor、public metadata 和 strict readiness 决策全部落实"}

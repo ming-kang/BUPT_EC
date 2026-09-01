@@ -122,8 +122,11 @@ jobs:
       - name: Check shell script syntax
         run: find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 
-      - name: Test shell scripts
-        run: bash scripts/install_test.sh
+      - name: Test Installer and CLI shell scripts
+        run: |
+          bash scripts/install_test.sh
+          bash scripts/cli_test.sh
+          bash scripts/release_layout_test.sh
 
       - name: Lint shell scripts
         run: find scripts -type f -name '*.sh' -exec shellcheck {} +

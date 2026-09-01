@@ -294,6 +294,135 @@ test_incomplete_rollback_preserves_recovery_backup() {
   rm -rf "${session_dir}"
 }
 
+test_invalid_cli_action_rolls_back() {
+  local case_dir session_dir staging_dir backup_dir output before after
+
+  case_dir="${TEST_TMP}/invalid-cli-action"
+  session_dir="${case_dir}/session"
+  staging_dir="${session_dir}/staging"
+  backup_dir="${session_dir}/backup"
+  output="${case_dir}/output.log"
+  mkdir -p "${session_dir}"
+  chmod 0700 "${session_dir}"
+  setup_case "${case_dir}"
+  seed_existing_installation
+  make_staging "${staging_dir}"
+  printf 'install\nextra\n' > "${staging_dir}/cli.action"
+  before="$(capture_target_state)"
+
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+    fail "invalid CLI action unexpectedly committed"
+  fi
+  after="$(capture_target_state)"
+  assert_eq "${before}" "${after}" "invalid CLI action restores all targets"
+  assert_contains "${output}" "Staged CLI action is missing or invalid." "invalid CLI action error"
+  assert_path_absent "${session_dir}" "invalid CLI action session cleanup"
+}
+
+test_cli_staging_validation() {
+  local scenario case_dir session_dir staging_dir backup_dir output before after
+
+  for scenario in action-nul action-mode candidate-mode metadata-content action-version remove-candidate staging-mode; do
+    case_dir="${TEST_TMP}/cli-staging-${scenario}"
+    session_dir="${case_dir}/session"
+    staging_dir="${session_dir}/staging"
+    backup_dir="${session_dir}/backup"
+    output="${case_dir}/output.log"
+    mkdir -p "${session_dir}"
+    chmod 0700 "${session_dir}"
+    setup_case "${case_dir}"
+    seed_existing_installation
+
+    case "${scenario}" in
+      remove-candidate)
+        make_staging "${staging_dir}" remove
+        printf 'unexpected cli\n' > "${staging_dir}/bupt-ec-cli"
+        chmod 0755 "${staging_dir}/bupt-ec-cli"
+        ;;
+      *) make_staging "${staging_dir}" ;;
+    esac
+
+    case "${scenario}" in
+      action-nul)
+        printf 'install\0\n' > "${staging_dir}/cli.action"
+        ;;
+      action-mode)
+        if [[ "${POSIX_MODES_SUPPORTED}" == "true" ]]; then
+          chmod 0644 "${staging_dir}/cli.action"
+        else
+          export CLI_ACTION_TEST_STAT_MODE=644
+        fi
+        ;;
+      candidate-mode)
+        if [[ "${POSIX_MODES_SUPPORTED}" == "true" ]]; then
+          chmod 0644 "${staging_dir}/bupt-ec-cli"
+        else
+          export CLI_CANDIDATE_TEST_STAT_MODE=644
+        fi
+        ;;
+      metadata-content)
+        printf 'RELEASE_VERSION=v9.9.9\nAPP_ADDR=127.0.0.1:9999\n' > "${staging_dir}/deployment.meta"
+        ;;
+      action-version)
+        render_cli_action "${staging_dir}/cli.action" remove
+        ;;
+      remove-candidate)
+        ;;
+      staging-mode)
+        if [[ "${POSIX_MODES_SUPPORTED}" == "true" ]]; then
+          chmod 0755 "${staging_dir}"
+        else
+          export CLI_STAGING_DIR_TEST_MODE=755
+        fi
+        ;;
+    esac
+
+    before="$(capture_target_state)"
+    if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+      fail "CLI staging ${scenario} unexpectedly committed"
+    fi
+    after="$(capture_target_state)"
+    assert_eq "${before}" "${after}" "CLI staging ${scenario} restores all targets"
+    assert_path_absent "${session_dir}" "CLI staging ${scenario} session cleanup"
+  done
+}
+
+test_legacy_cli_removal_and_rollback() {
+  local case_dir session_dir staging_dir backup_dir output before after
+
+  case_dir="${TEST_TMP}/legacy-cli-removal"
+  staging_dir="${case_dir}/staging"
+  backup_dir="${case_dir}/backup"
+  mkdir -p "${case_dir}"
+  setup_case "${case_dir}"
+  seed_existing_installation
+  make_staging "${staging_dir}" remove
+  perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080"
+  assert_path_absent "${CLI_FILE}" "legacy successful transaction CLI removal"
+  assert_path_absent "${DEPLOYMENT_METADATA_FILE}" "legacy successful transaction metadata removal"
+  assert_path_absent "${backup_dir}" "legacy successful transaction backup cleanup"
+
+  case_dir="${TEST_TMP}/legacy-cli-rollback"
+  session_dir="${case_dir}/session"
+  staging_dir="${session_dir}/staging"
+  backup_dir="${session_dir}/backup"
+  output="${case_dir}/output.log"
+  mkdir -p "${session_dir}"
+  chmod 0700 "${session_dir}"
+  setup_case "${case_dir}"
+  seed_existing_installation
+  make_staging "${staging_dir}" remove
+  before="$(capture_target_state)"
+  export MOCK_HEALTH_FAILURES=10
+
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+    fail "legacy CLI removal health failure unexpectedly committed"
+  fi
+  after="$(capture_target_state)"
+  assert_eq "${before}" "${after}" "legacy removal health failure restores CLI and metadata"
+  assert_path_absent "${session_dir}" "legacy rollback session cleanup"
+}
+
 test_successful_upgrade_commits_and_cleans_backup() {
   local case_dir staging_dir backup_dir preview_backup
   case_dir="${TEST_TMP}/successful-upgrade"
@@ -307,7 +436,13 @@ test_successful_upgrade_commits_and_cleans_backup() {
 
   assert_mode "${staging_dir}" 700 "candidate directory"
   assert_mode "${staging_dir}/bupt-ec.env" 600 "candidate env"
+  assert_mode "${staging_dir}/bupt-ec-cli" 755 "candidate CLI"
+  assert_mode "${staging_dir}/deployment.meta" 644 "candidate metadata"
+  assert_mode "${staging_dir}/cli.action" 600 "candidate CLI action"
   assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${staging_dir}/bupt-ec.env" "candidate env ownership"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${staging_dir}/bupt-ec-cli" "candidate CLI ownership"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${staging_dir}/deployment.meta" "candidate metadata ownership"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${staging_dir}/cli.action" "candidate action ownership"
 
   snapshot_installation "${preview_backup}"
   assert_mode "${preview_backup}" 700 "backup directory"
@@ -319,13 +454,19 @@ test_successful_upgrade_commits_and_cleans_backup() {
 
   cmp -s "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" || fail "successful upgrade binary mismatch"
   cmp -s "${staging_dir}/bupt-ec.env" "${ENV_FILE}" || fail "successful upgrade env mismatch"
+  cmp -s "${staging_dir}/bupt-ec-cli" "${CLI_FILE}" || fail "successful upgrade CLI mismatch"
+  cmp -s "${staging_dir}/deployment.meta" "${DEPLOYMENT_METADATA_FILE}" || fail "successful upgrade metadata mismatch"
   cmp -s "${staging_dir}/${SERVICE_NAME}.service" "${SERVICE_FILE}" || fail "successful upgrade service mismatch"
   cmp -s "${staging_dir}/${SERVICE_NAME}.conf" "${NGINX_SITE}" || fail "successful upgrade nginx mismatch"
   assert_enabled_target "${SYSTEMD_ENABLED_LINK}" "${SERVICE_FILE}" "successful upgrade systemd enablement"
   assert_enabled_target "${NGINX_ENABLED}" "${NGINX_SITE}" "successful upgrade nginx enablement"
   assert_mode "${INSTALL_DIR}/bupt-ec" 755 "installed binary"
   assert_mode "${ENV_FILE}" 600 "installed env"
+  assert_mode "${CLI_FILE}" 755 "installed CLI"
+  assert_mode "${DEPLOYMENT_METADATA_FILE}" 644 "installed metadata"
   assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${ENV_FILE}.new." "installed env ownership"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${CLI_FILE}.new." "installed CLI ownership"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${DEPLOYMENT_METADATA_FILE}.new." "installed metadata ownership"
   assert_mode "${SERVICE_FILE}" 644 "installed service"
   assert_mode "${NGINX_SITE}" 644 "installed nginx"
   assert_path_absent "${backup_dir}" "successful upgrade backup cleanup"

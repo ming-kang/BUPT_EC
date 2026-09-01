@@ -22,7 +22,7 @@ deployment/release tooling in `scripts/` and `docs/`.
 ├── web/                       # frontend asset embedding (build-tag dual implementation)
 │   └── dist/                  # build staging area, git-ignored; copied from frontend/dist
 ├── frontend/                  # React/Vite application (vite builds into frontend/dist)
-├── scripts/                   # install/release automation
+├── scripts/                   # install/release automation, packaged operations CLI, and shell suites
 └── docs/                      # user-facing operation, deploy, release docs
 ```
 

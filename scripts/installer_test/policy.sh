@@ -162,6 +162,7 @@ test_download_base_url_matrix() {
     "https://user:secret@mirror.example/releases" \
     "https://mirror.example/releases?token=secret" \
     "https://mirror.example/releases#fragment" \
+    "https://[::::]/releases" \
     "https:///missing-host" \
     "https://mirror.example/releases;rm" \
     "https://mirror.example/re leases"

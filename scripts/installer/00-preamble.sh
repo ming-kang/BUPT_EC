@@ -7,6 +7,11 @@ GITHUB_HOST="github.com"
 INSTALL_DIR="/opt/bupt-ec"
 CONFIG_DIR="/etc/bupt-ec"
 ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
+# The independently packaged operations CLI and its non-secret metadata are
+# transaction targets, not runtime dependencies of this self-contained script.
+CLI_FILE="/usr/local/bin/bupt-ec"
+DEPLOYMENT_METADATA_FILE="${CONFIG_DIR}/deployment.meta"
+CLI_MIN_RELEASE="v0.3.0"
 # Installed configuration is trusted only when root owns this exact file.
 # configure_installer_test_root changes this test seam for portable fixtures.
 ENV_FILE_EXPECTED_UID=0
@@ -61,6 +66,8 @@ configure_installer_test_root() {
   INSTALL_DIR="${root}/opt/bupt-ec"
   CONFIG_DIR="${root}/etc/bupt-ec"
   ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
+  CLI_FILE="${root}/usr/local/bin/bupt-ec"
+  DEPLOYMENT_METADATA_FILE="${CONFIG_DIR}/deployment.meta"
   # Test fixtures are owned by the invoking test user rather than root.
   ENV_FILE_EXPECTED_UID="${EUID}"
   SERVICE_FILE="${root}/etc/systemd/system/${SERVICE_NAME}.service"

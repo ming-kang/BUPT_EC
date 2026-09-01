@@ -13,18 +13,28 @@ test_entrypoint_stdin_pipe_reaches_root_check() {
   cmp -s "${INSTALLER_TEST_SCRIPT_DIR}/install.sh" "${stdin_installer}" || \
     fail "stdin installer fixture differs from generated install.sh"
   set +e
-  # Feed install.sh on stdin (same as curl | bash); avoid pipe/cat for shellcheck.
-  output="$(env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash <"${stdin_installer}" 2>&1)"
+  # Feed install.sh on stdin (same as curl | bash). A root-run test cannot
+  # assert the non-root branch, so use the parser's pre-root failure there;
+  # both branches prove stdin entrypoint detection reaches main cleanly.
+  if [[ "${EUID}" -eq 0 ]]; then
+    output="$(env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash -s -- --mode=invalid <"${stdin_installer}" 2>&1)"
+  else
+    output="$(env -i PATH="${PATH}" HOME="${HOME:-/tmp}" bash <"${stdin_installer}" 2>&1)"
+  fi
   status=$?
   set -e
   if [[ "${output}" == *"BASH_SOURCE"* ]]; then
     fail "stdin pipe still trips BASH_SOURCE: ${output}"
   fi
-  if [[ "${output}" != *"must run as root"* ]]; then
+  if [[ "${EUID}" -eq 0 ]]; then
+    if [[ "${output}" != *"--mode must be install, update, or reconfigure."* ]]; then
+      fail "stdin parser should fail before root work, got status=${status}: ${output}"
+    fi
+  elif [[ "${output}" != *"must run as root"* ]]; then
     fail "stdin pipe should fail on root check, got status=${status}: ${output}"
   fi
   if [[ "${status}" -eq 0 ]]; then
-    fail "stdin pipe root check should exit non-zero"
+    fail "stdin entrypoint check should exit non-zero"
   fi
 }
 

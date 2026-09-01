@@ -138,9 +138,13 @@ values.
 
 On installed servers, the working directory is `/opt/bupt-ec`, so rotating logs
 go to `/opt/bupt-ec/run_log/ec.log`. The installer gives the service user write
-access only to that log directory. If logging paths or systemd hardening change,
-update the owning `scripts/installer/` fragment, regenerate
-`scripts/install.sh`, and update `docs/operations.md` together.
+access only to that log directory. Installed operators can use `bupt-ec logs`
+(as permitted by local journal ACLs); it must remain a fixed-unit `journalctl`
+wrapper and never silently elevate. `bupt-ec config show` may display only the
+fixed safe registry with password/token redaction, never raw env/source output.
+If logging paths or systemd hardening change, update the owning
+`scripts/installer/` fragment, regenerate `scripts/install.sh`, and update
+`docs/operations.md` together.
 
 ## Anti-Patterns
 

@@ -10,6 +10,14 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Added
 
+- Installed v0.3+ servers now include the `bupt-ec` operations CLI for
+  prompt-free updates, explicit reconfiguration, status/version/health probes,
+  logs, and service controls. Rootless queries use a minimal root-owned public
+  deployment metadata file; readiness failures return strict nonzero statuses.
+  CLI updates support `latest` and stable targets from v0.3.0 onward, while the
+  documented current-Installer fallback preserves legacy rollback and removes
+  CLI metadata transactionally.
+
 - Installer modes now separate the compatible interactive default install from
   prompt-free `--mode=update` and interactive `--mode=reconfigure`. Updates can
   run without a TTY and select an explicit stable version for an update or

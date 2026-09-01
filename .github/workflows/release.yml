@@ -99,35 +99,18 @@ jobs:
         run: bash scripts/generate-install.sh --check
 
       - name: Compose release assets
-        # Only the generated self-contained artifact is packaged; source fragments
-        # remain repository-only inputs to scripts/generate-install.sh.
+        # The helper injects the exact Go build version into the independently
+        # packaged CLI, asserts the tar layout/parity, and keeps fragments/tests
+        # outside release assets.
         run: |
           set -euo pipefail
-          cd release
-          for arch in amd64 arm64; do
-            package_dir="bupt-ec-linux-${arch}"
-            cp ../.env.example ../README.md ../scripts/install.sh "${package_dir}/"
-            chmod +x "${package_dir}/install.sh"
-            tar -czf "${package_dir}.tar.gz" "${package_dir}"
-
-            # Lock the documented package layout and prove the packaged
-            # installer is exactly the generated top-level artifact.
-            tar -tzf "${package_dir}.tar.gz" | sort > "${package_dir}.actual"
-            printf '%s\n' \
-              "${package_dir}/" \
-              "${package_dir}/.env.example" \
-              "${package_dir}/README.md" \
-              "${package_dir}/bupt-ec" \
-              "${package_dir}/install.sh" | sort > "${package_dir}.expected"
-            diff -u "${package_dir}.expected" "${package_dir}.actual"
-            tar -xOzf "${package_dir}.tar.gz" "${package_dir}/install.sh" | \
-              cmp - ../scripts/install.sh
-            rm -f "${package_dir}.actual" "${package_dir}.expected"
-          done
-          cp ../scripts/install.sh install.sh
-          chmod +x install.sh
-          sha256sum bupt-ec-linux-*.tar.gz > checksums.txt
-          ls -la
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            version="${GITHUB_REF_NAME}"
+          else
+            version="main-$(git rev-parse --short HEAD)"
+          fi
+          bash scripts/compose-release-assets.sh release "${version}"
+          ls -la release
 
       - name: Attest release assets
         uses: actions/attest-build-provenance@96b4a1ef7235a096b17240c259729fdd70c83d45 # v2.4.0

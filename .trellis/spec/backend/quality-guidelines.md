@@ -112,7 +112,7 @@ both files):
 ```bash
 task test                 # go test -race ./...
 task installer:generate   # regenerate tracked scripts/install.sh from fragments
-task installer:check      # generator drift + recursive syntax/test/ShellCheck gate
+task installer:check      # generator drift + Installer/CLI/release-layout tests + recursive ShellCheck
 task check                # Go/frontend checks plus installer:check (not bundle size)
 task build                # frontend build → copy to web/dist → go build -tags embed_assets
 task vuln                 # pinned govulncheck
@@ -141,6 +141,8 @@ govulncheck ./...
 bash scripts/generate-install.sh --check
 find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
 find scripts -type f -name '*.sh' -exec shellcheck {} +
 cd frontend && pnpm lint
 cd frontend && pnpm build

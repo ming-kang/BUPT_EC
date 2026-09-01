@@ -85,6 +85,10 @@ normalize_download_base_url() {
       echo "DOWNLOAD_BASE_URL must include a non-empty host." >&2
       return 1
     fi
+    if ! is_valid_ipv6_literal "${host}"; then
+      echo "DOWNLOAD_BASE_URL IPv6 host is invalid." >&2
+      return 1
+    fi
     host_display="[${host}]"
   else
     if [[ "${authority}" == *:* ]]; then
@@ -345,12 +349,45 @@ download_release() {
   (cd "${work_dir}" && grep " ${package_name}$" checksums.txt | sha256sum -c -)
 }
 
+# latest and stable releases at or above the first CLI-bearing release stage
+# the independently packaged command. Legacy archives deliberately stage a
+# remove action instead, so direct current-installer rollback stays consistent.
+is_cli_bearing_release() {
+  local version="$1"
+  local major minor patch floor_major floor_minor floor_patch
+
+  if [[ "${version}" == "latest" ]]; then
+    return 0
+  fi
+  if [[ ! "${version}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    return 1
+  fi
+  major=$((10#${BASH_REMATCH[1]}))
+  minor=$((10#${BASH_REMATCH[2]}))
+  patch=$((10#${BASH_REMATCH[3]}))
+  if [[ ! "${CLI_MIN_RELEASE}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+    return 1
+  fi
+  floor_major=$((10#${BASH_REMATCH[1]}))
+  floor_minor=$((10#${BASH_REMATCH[2]}))
+  floor_patch=$((10#${BASH_REMATCH[3]}))
+  if (( major != floor_major )); then
+    (( major > floor_major ))
+    return
+  fi
+  if (( minor != floor_minor )); then
+    (( minor > floor_minor ))
+    return
+  fi
+  (( patch >= floor_patch ))
+}
+
 stage_release() {
   local archive="$1"
   local work_dir="$2"
   local staging_dir="$3"
   local extract_dir="${work_dir}/extract"
-  local binary_path
+  local binary_path cli_path
 
   rm -rf "${extract_dir}" "${staging_dir}" || return
   mkdir -p "${extract_dir}" "${staging_dir}" || return
@@ -360,6 +397,7 @@ stage_release() {
     return 1
   fi
 
+  # Keep this exact service-binary selection separate from the CLI member.
   if ! binary_path="$(find "${extract_dir}" -type f -name bupt-ec -print -quit)"; then
     echo "Failed to inspect extracted release archive." >&2
     return 1
@@ -370,4 +408,17 @@ stage_release() {
   fi
   install -m 0755 "${binary_path}" "${staging_dir}/bupt-ec" || return
   chown root:root "${staging_dir}/bupt-ec" || return
+
+  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
+    if ! cli_path="$(find "${extract_dir}" -type f -name bupt-ec-cli -print -quit)"; then
+      echo "Failed to inspect extracted release archive." >&2
+      return 1
+    fi
+    if [[ -z "${cli_path}" ]]; then
+      echo "CLI-bearing release archive does not contain bupt-ec-cli." >&2
+      return 1
+    fi
+    install -m 0755 "${cli_path}" "${staging_dir}/bupt-ec-cli" || return
+    chown root:root "${staging_dir}/bupt-ec-cli" || return
+  fi
 }

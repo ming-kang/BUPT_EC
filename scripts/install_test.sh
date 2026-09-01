@@ -35,7 +35,7 @@ run_suite() {
   done
 }
 
-expected_test_function_count=39
+expected_test_function_count=44
 actual_test_function_count="$(declare -F | awk '$3 ~ /^test_/ { count++ } END { print count + 0 }')"
 assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
   "installer test function inventory"
@@ -68,11 +68,13 @@ run_suite transaction \
   test_checksum_failures_preserve_targets
 run_suite render-config \
   test_deployment_config_key_contract \
+  test_deployment_metadata_render_contract \
   test_config_registry_precedence_and_isolation \
   test_current_config_load_security_and_snapshot \
   test_render_failure_propagation \
   test_config_render_round_trip \
-  test_staging_failures_preserve_targets
+  test_staging_failures_preserve_targets \
+  test_cli_archive_staging_matrix
 run_suite transaction \
   test_snapshot_failure_preserves_targets \
   test_nginx_failure_rolls_back_upgrade \
@@ -80,11 +82,14 @@ run_suite transaction \
   test_upgrade_inactive_service_stays_inactive_on_rollback \
   test_first_install_failure_removes_new_targets \
   test_first_install_late_failures_stop_service_and_reload_nginx \
-  test_incomplete_rollback_preserves_recovery_backup
+  test_incomplete_rollback_preserves_recovery_backup \
+  test_invalid_cli_action_rolls_back \
+  test_cli_staging_validation \
+  test_legacy_cli_removal_and_rollback
 run_suite render-config \
   test_api_proxy_read_timeout_budget
 run_suite transaction \
   test_successful_upgrade_commits_and_cleans_backup
 
-printf 'installer behavior tests passed (36 entry scenarios; %s test functions)\n' \
+printf 'installer behavior tests passed (41 entry scenarios; %s test functions)\n' \
   "${actual_test_function_count}"

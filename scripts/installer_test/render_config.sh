@@ -428,6 +428,70 @@ test_render_failure_propagation() (
   fi
 )
 
+test_deployment_metadata_render_contract() {
+  local case_dir metadata_file expected_file target_roles expected_roles
+
+  case_dir="${TEST_TMP}/deployment-metadata"
+  mkdir -p "${case_dir}"
+  setup_case "${case_dir}"
+  set_valid_test_config
+  CFG_RELEASE_VERSION="v0.3.0"
+  CFG_APP_ADDR="[::1]:8080"
+  metadata_file="${case_dir}/deployment.meta"
+  expected_file="${case_dir}/expected.meta"
+  render_deployment_metadata "${metadata_file}"
+
+  printf 'RELEASE_VERSION=v0.3.0\nAPP_ADDR=[::1]:8080\n' > "${expected_file}"
+  cmp -s "${expected_file}" "${metadata_file}" || fail "metadata exact records"
+  assert_mode "${metadata_file}" 644 "rendered metadata"
+  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${metadata_file}" "metadata ownership"
+  assert_not_contains "${metadata_file}" "RELEASE_REPO=" "metadata excludes repository"
+  assert_not_contains "${metadata_file}" "JW_" "metadata excludes JW fields"
+  assert_not_contains "${metadata_file}" "DOWNLOAD_BASE_URL" "metadata excludes mirror"
+  assert_not_contains "${metadata_file}" "LOG_CALLER" "metadata excludes logging flag"
+  assert_not_contains "${metadata_file}" "READYZ_DIAGNOSTICS" "metadata excludes readiness flag"
+  expected_roles=$'binary\nenv\ncli\nmetadata\nservice\nsystemd_enabled\nnginx_site\nnginx_enabled'
+  target_roles="$(transaction_targets | cut -f1)"
+  assert_eq "${expected_roles}" "${target_roles}" "eight transaction target roles"
+}
+
+test_cli_archive_staging_matrix() {
+  local case_dir work_dir staging_dir before after output status
+
+  case_dir="${TEST_TMP}/missing-cli-archive"
+  work_dir="${case_dir}/work"
+  staging_dir="${case_dir}/staging"
+  output="${case_dir}/output.log"
+  mkdir -p "${case_dir}" "${work_dir}"
+  setup_case "${case_dir}"
+  set_valid_test_config
+  CFG_RELEASE_VERSION="v0.3.0"
+  seed_existing_installation
+  before="$(capture_target_state)"
+  set +e
+  prepare_staging "${MISSING_CLI_ARCHIVE}" "${work_dir}" "${staging_dir}" > "${output}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "CLI-bearing archive without CLI unexpectedly staged"
+  fi
+  after="$(capture_target_state)"
+  assert_eq "${before}" "${after}" "missing CLI archive preserves installed targets"
+  assert_contains "${output}" "does not contain bupt-ec-cli" "missing CLI archive error"
+
+  case_dir="${TEST_TMP}/legacy-cli-archive"
+  work_dir="${case_dir}/work"
+  staging_dir="${case_dir}/staging"
+  mkdir -p "${case_dir}" "${work_dir}"
+  setup_case "${case_dir}"
+  set_valid_test_config
+  CFG_RELEASE_VERSION="v0.2.0"
+  prepare_staging "${LEGACY_ARCHIVE}" "${work_dir}" "${staging_dir}"
+  assert_eq remove "$(< "${staging_dir}/cli.action")" "legacy staging action"
+  assert_path_absent "${staging_dir}/bupt-ec-cli" "legacy staging CLI candidate"
+  assert_path_absent "${staging_dir}/deployment.meta" "legacy staging metadata candidate"
+}
+
 test_config_render_round_trip() (
   local case_dir env_file expected_file actual_file key value_name
 
