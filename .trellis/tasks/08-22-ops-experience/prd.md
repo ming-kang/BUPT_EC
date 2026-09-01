@@ -49,7 +49,7 @@
 - [ ] **版本三处一致**：GitHub release tag、`/readyz` 的 `version`、设置弹窗显示的版本，在同一次部署后三者相同
 - [ ] **事务完整性**：CLI 与二进制在同一个原子事务中替换，任一步失败后回滚不残留半新半旧的组合
 - [x] **文档同步**：`README.md`、`docs/deployment.md`、`docs/upgrading.md`、`docs/operations.md`、`docs/release.md` 与新行为一致，且不再推广 nightly（本地审计：`research/2026-09-02-local-integration-audit.md`）
-- [ ] **质量门禁**：`task check`、`task test`、bundle 预算、embed + tagless 构建、`govulncheck`、`install_test.sh`、ShellCheck 全绿
+- [x] **质量门禁**：`task check`、`task test`、bundle 预算、embed + tagless 构建、`govulncheck`、`install_test.sh`、ShellCheck 全绿（本地 preflight 与 main dry-run：`review/2026-09-02-main-dry-run-success.md`）
 - [x] **CHANGELOG**：`[Unreleased]` 覆盖全部四项用户可见变更，含 nightly 移除的迁移说明（本地审计：`research/2026-09-02-local-integration-audit.md`）
 
 ## 最终集成评审（父任务直接负责）

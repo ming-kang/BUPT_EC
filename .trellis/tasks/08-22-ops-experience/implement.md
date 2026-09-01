@@ -61,24 +61,24 @@ python ./.trellis/scripts/task.py validate 08-22-ops-experience
 
 ## 3. 集成证据提交
 
-- [ ] 更新 parent PRD acceptance checkboxes，只勾选已由证据满足的项；E2E 相关项保持未完成。
-- [ ] 将本地审计摘要写入 task research/review 文件，不写 secrets 或大段测试日志。
-- [ ] 若仅 task artifacts 变化，使用 scoped Trellis/planning commit；若修复产品缺陷，使用
+- [x] 更新 parent PRD acceptance checkboxes，只勾选已由证据满足的项；E2E 相关项保持未完成。
+- [x] 将本地审计摘要写入 task research/review 文件，不写 secrets 或大段测试日志。
+- [x] 若仅 task artifacts 变化，使用 scoped Trellis/planning commit；若修复产品缺陷，使用
   独立 Conventional Commit 并保留 CHANGELOG 同步。
-- [ ] 提交后确认 clean `main`，再次运行 `git diff --check` 与 generator drift check。
+- [x] 提交后确认 clean `main`，再次运行 `git diff --check` 与 generator drift check。
 
 ## 4. Push main 与 GitHub dry-run
 
 这是第一个远程 mutation gate。只有在最新规划获批准且步骤 1–3 全绿后执行。
 
-- [ ] `git fetch --force origin main --tags`，确认没有意外 remote divergence。
-- [ ] push 当前 `main` 到 `origin/main`；不得 force push。
-- [ ] 使用 `gh run list/view/watch` 锁定该 HEAD 对应的 `release.yml` run。
-- [ ] 确认 quality-gate、build-go、release dry-run/attestation 全部成功。
-- [ ] 下载或检查 workflow artifacts：两个 tarball、`checksums.txt`、`install.sh`；验证
+- [x] `git fetch --force origin main --tags`，确认没有意外 remote divergence。
+- [x] push 当前 `main` 到 `origin/main`；不得 force push。
+- [x] 使用 `gh run list/view/watch` 锁定该 HEAD 对应的 `release.yml` run。
+- [x] 确认 quality-gate、build-go、release dry-run/attestation 全部成功。
+- [x] 下载或检查 workflow artifacts：两个 tarball、`checksums.txt`、`install.sh`；验证
   exact layout、checksums、Installer parity 与 `main-<short-sha>` version injection。
-- [ ] 确认该 main run 未创建 GitHub release，且远程仍无 `v0.3.0` tag/release。
-- [ ] 记录 run URL/id、HEAD 与验证摘要。
+- [x] 确认该 main run 未创建 GitHub release，且远程仍无 `v0.3.0` tag/release。
+- [x] 记录 run URL/id、HEAD 与验证摘要。
 
 **Rollback**：dry-run 失败时不创建 stable tag；在 `main` 上 fix forward 并重新通过完整
 本地门和新的 GitHub dry-run。

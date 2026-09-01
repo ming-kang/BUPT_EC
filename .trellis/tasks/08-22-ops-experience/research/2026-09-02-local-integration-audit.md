@@ -21,7 +21,7 @@ All four children are archived with `status: completed`:
 | Release/readyz/CLI/UI versions agree | `release.yml` derives tag or `main-<short-sha>` for Go; composition substitutes that exact value in the one CLI marker; API/UI carry `main.version`; layout simulation passed. | Packaging/data-flow proven; deployed tag/runtime consistency needs E2E/release. |
 | One rollback transaction | The eight-role registry includes binary, env, CLI, metadata, unit/link, and Nginx site/link; snapshot/rollback iterate it; CLI/legacy removal tests passed. | Mock transaction proven; real systemd/Nginx/filesystem validation deferred. |
 | Documentation synchronization | `README.md`, `docs/deployment.md`, `docs/upgrading.md`, `docs/operations.md`, and `docs/release.md` were read against the final modes, CLI floor/fallback, metadata, release layout, and `main-<short-sha>` wording. No current guide promotes nightly. | Proven locally. |
-| Quality gates | Full local preflight in `review/2026-09-02-release-preflight.md` passed after the audit remediation. | Local proven; pushed GitHub dry-run pending. |
+| Quality gates | Full local preflight passed after audit remediation; the successful main dry-run completed quality, build, composition, attestation, and artifact checks. | Proven; `review/2026-09-02-main-dry-run-success.md`. |
 | Complete Unreleased notes | `[Unreleased]` has Added entries for CLI, modes, and UI/API version; Removed includes nightly removal and saved-nightly `VERSION=latest` migration; Changed includes generated Installer; Fixed includes retained settings and this audit remediation. | Proven locally. |
 
 ## `nightly` reference classification
@@ -47,4 +47,4 @@ There are **no** `nightly` matches in `.github/workflows/`, `README.md`, `docs/d
 
 ## Scope and remaining blocker
 
-No product-contract defect was found in the child integration audit. A separate development-only dependency-security defect found during preflight is recorded in the release-preflight review and fixed in this parent pass. Real Linux E2E remains intentionally deferred and blocks the v0.3.0 tag/release and nightly cleanup.
+The child integration audit found no product-contract defect. This parent pass fixed a development-only dependency-security advisory, a Shanghai-business-day test-fixture failure exposed by the first main dry-run, and dynamic-test-override ShellCheck findings exposed by the second. Each fix is recorded in `review/`, followed by a full local preflight; the third main dry-run succeeded. Real Linux E2E remains intentionally deferred and blocks the v0.3.0 tag/release and nightly cleanup.
