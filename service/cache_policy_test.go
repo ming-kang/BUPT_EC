@@ -5,7 +5,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +36,154 @@ func TestGetCachedTodayClassroomsRejectsCrossDayCache(t *testing.T) {
 
 	if cached, ok := svc.getCachedTodayClassrooms(); !ok || cached.Date != now.Format("2006-01-02") {
 		t.Fatalf("expected same-day cache hit, got %#v ok=%t", cached, ok)
+	}
+}
+
+func TestTodayCacheEntryKeepsModelAndJSONInOneGeneration(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, businessLocation)
+	clock := newFakeClock(now)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
+	today := &model.TodayClassrooms{
+		Date:       now.Format("2006-01-02"),
+		UpdatedAt:  now,
+		ExpiresAt:  now.Add(time.Hour),
+		StaleUntil: endOfDay(now),
+		Campuses:   []model.CampusInfo{{ID: "01", Name: "西土城"}},
+	}
+	seedCache(t, svc, today)
+
+	entry, ok := svc.getCachedTodayCacheEntryAt(now)
+	if !ok {
+		t.Fatal("expected same-day cache entry")
+	}
+	if entry.today != today {
+		t.Fatalf("cache entry model = %p, want seeded model %p", entry.today, today)
+	}
+	dataJSON, ok := svc.GetCachedDataJSON()
+	if !ok {
+		t.Fatal("expected fresh cache JSON")
+	}
+	if dataJSON != entry.freshJSON {
+		t.Fatal("fast-path JSON did not come from the loaded cache entry")
+	}
+	wantJSON, err := json.Marshal(classroomResponse(today, false, nil))
+	if err != nil {
+		t.Fatalf("marshal expected fresh JSON: %v", err)
+	}
+	if dataJSON != string(wantJSON) {
+		t.Fatalf("cache entry JSON = %s, want model JSON %s", dataJSON, wantJSON)
+	}
+}
+
+func TestTodayCacheEntryPublicationKeepsConcurrentGenerationsCoherent(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, businessLocation)
+	clock := newFakeClock(now)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
+	publish := func(generation int) {
+		svc.publishTodayCache(&model.TodayClassrooms{
+			Date:       now.Format("2006-01-02"),
+			UpdatedAt:  now,
+			ExpiresAt:  now.Add(time.Hour),
+			StaleUntil: endOfDay(now),
+			Campuses:   []model.CampusInfo{{ID: fmt.Sprintf("generation-%d", generation)}},
+		})
+	}
+	publish(0)
+
+	const generations = 500
+	published := make(chan struct{})
+	loaded := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for generation := 1; generation <= generations; generation++ {
+			publish(generation)
+			published <- struct{}{}
+			// Wait until the reader retains this entry, then publish the next
+			// generation while the reader validates the retained one.
+			<-loaded
+		}
+		close(published)
+	}()
+	go func() {
+		defer wg.Done()
+		for range published {
+			entry, ok := svc.getCachedTodayCacheEntryAt(now)
+			loaded <- struct{}{}
+			if !ok {
+				t.Error("expected same-day cache entry")
+				continue
+			}
+			var decoded model.TodayClassrooms
+			if err := json.Unmarshal([]byte(entry.freshJSON), &decoded); err != nil {
+				t.Errorf("decode cache JSON: %v", err)
+				continue
+			}
+			if len(entry.today.Campuses) != 1 || len(decoded.Campuses) != 1 || entry.today.Campuses[0].ID != decoded.Campuses[0].ID {
+				t.Errorf("mixed cache generation: model=%#v JSON=%#v", entry.today.Campuses, decoded.Campuses)
+			}
+		}
+	}()
+	wg.Wait()
+}
+
+func TestGetCachedDataJSONRejectsCrossDayEntry(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, businessLocation)
+	clock := newFakeClock(now)
+	svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
+	seedCache(t, svc, &model.TodayClassrooms{
+		Date:       now.AddDate(0, 0, -1).Format("2006-01-02"),
+		ExpiresAt:  now.Add(time.Hour),
+		StaleUntil: now.Add(time.Hour),
+	})
+
+	if dataJSON, ok := svc.GetCachedDataJSON(); ok || dataJSON != "" {
+		t.Fatalf("cross-day fast-path JSON = %q, %t; want empty, false", dataJSON, ok)
+	}
+}
+
+func TestGetCachedDataJSONRejectsIneligibleEntry(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, businessLocation)
+	cases := []struct {
+		name   string
+		mutate func(*model.TodayClassrooms)
+	}{
+		{
+			name: "expired",
+			mutate: func(today *model.TodayClassrooms) {
+				today.ExpiresAt = now.Add(-time.Second)
+			},
+		},
+		{
+			name: "cached error",
+			mutate: func(today *model.TodayClassrooms) {
+				today.Error = &model.APIError{Type: "query", Message: "partial"}
+			},
+		},
+		{
+			name: "partial campuses",
+			mutate: func(today *model.TodayClassrooms) {
+				today.PartialCampuses = []string{"04"}
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clock := newFakeClock(now)
+			svc := newTestServiceWithOptions(t, &mockJWClient{}, ClassroomServiceOptions{Clock: clock})
+			today := &model.TodayClassrooms{
+				Date:       now.Format("2006-01-02"),
+				ExpiresAt:  now.Add(time.Hour),
+				StaleUntil: endOfDay(now),
+			}
+			tc.mutate(today)
+			seedCache(t, svc, today)
+
+			if dataJSON, ok := svc.GetCachedDataJSON(); ok || dataJSON != "" {
+				t.Fatalf("ineligible fast-path JSON = %q, %t; want empty, false", dataJSON, ok)
+			}
+		})
 	}
 }
 

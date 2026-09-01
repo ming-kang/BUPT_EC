@@ -61,15 +61,15 @@ Replace `Typography.Text` with `<span>` and `Typography.Title` with `<h2>`/`<h3>
 
 ## Acceptance Criteria
 
-- [ ] `go test -race ./...` passes.
-- [ ] `pnpm -C frontend test` (127 tests) passes.
-- [ ] `pnpm -C frontend lint` and `pnpm -C frontend typecheck` pass.
-- [ ] `/api/get_data` benchmark shows ≥50% fewer allocations per request vs baseline.
-- [ ] `/healthz` handler achieves 0 allocs/op.
-- [ ] Frontend bundle size (gzip-9 total) stays ≤ 224,343 B (current baseline or lower); run `check-bundle-size.mjs`.
-- [ ] The UI renders identically (manual visual check): Card borders, Tag colors, Typography sizing unchanged.
-- [ ] No new runtime dependencies added to either Go or frontend.
-- [ ] Existing API contract unchanged: JSON field names, HTTP status codes, header behavior identical.
+- [x] `go test -race ./...` passes.
+- [x] `pnpm -C frontend test` (127 tests) passes.
+- [x] `pnpm -C frontend lint` and `pnpm -C frontend typecheck` pass.
+- [x] `/api/get_data` benchmark shows ≥50% fewer allocations per request vs baseline.
+- [x] `/healthz` handler achieves 0 allocs/op.
+- [x] Frontend bundle size (gzip-9 total) stays ≤ 224,343 B (current baseline or lower); run `check-bundle-size.mjs`.
+- [x] The UI renders identically (manual visual check): Card borders, Tag colors, Typography sizing unchanged.
+- [x] No new runtime dependencies added to either Go or frontend.
+- [x] Existing API contract unchanged: JSON field names, HTTP status codes, header behavior identical.
 
 ## Out of Scope
 

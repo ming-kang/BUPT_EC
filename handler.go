@@ -49,17 +49,21 @@ type notFoundResponse struct {
 	LogID string `json:"log_id"`
 }
 
-// healthzBody is pre-computed once; /healthz achieves zero allocations per
-// request by writing this constant slice directly.
-var healthzBody = []byte(`{"status":"ok"}`)
+// healthzBody and healthzContentType are pre-computed once; /healthz avoids
+// per-request JSON and header-value allocations by reusing these immutable
+// slices.
+var (
+	healthzBody        = []byte(`{"status":"ok"}`)
+	healthzContentType = []string{"application/json; charset=utf-8"}
+)
 
 type classroomDataService interface {
 	GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error)
 	GetRuntimeStatus() service.RuntimeStatus
 	HasUsableTodayCache() bool
 	// GetCachedDataJSON returns pre-serialized fresh TodayClassrooms JSON.
-	// Returns nil, false when no fresh cache is available.
-	GetCachedDataJSON() ([]byte, bool)
+	// Returns an empty string and false when no fresh cache is available.
+	GetCachedDataJSON() (string, bool)
 }
 
 type HTTPServer struct {
@@ -132,7 +136,7 @@ func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 }
 
 func (server *HTTPServer) Healthz(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.Header()["Content-Type"] = healthzContentType
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(healthzBody)
 }

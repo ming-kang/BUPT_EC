@@ -191,10 +191,15 @@ classroomService, err := service.NewClassroomService(service.ClassroomServiceOpt
 `service/` is split by runtime responsibility:
 
 - `classroom_service.go` defines `ClassroomService` (including the
-  `todayCache atomic.Pointer` day store), optional `Clock` / `BackoffRandom` /
-  `WarmupJitter`, constructor options, and service construction. All mutable classroom-query runtime state belongs on this struct.
+  `todayCache atomic.Pointer[todayCacheEntry]` day store), optional `Clock` /
+  `BackoffRandom` / `WarmupJitter`, constructor options, and service
+  construction. Each immutable cache entry carries both the model pointer and
+  its pre-serialized fresh JSON, and `publishTodayCache` is the sole
+  publication path. All mutable classroom-query runtime state belongs on this
+  struct.
 - `realtime_data.go` exposes the public classroom query methods and owns the
-  same-day cache read/write flow.
+  same-day cache read/write flow; readers validate and use one loaded cache
+  entry, never separately loaded model and JSON values.
 - `refresh_coordinator.go` owns single-flight refresh state, backoff, and
   stale-while-revalidate behavior.
 - `warmup.go` owns the `Run`/`Shutdown` service lifecycle, the startup/midnight

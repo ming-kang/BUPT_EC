@@ -38,13 +38,22 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   `json.Marshal` of the full campus/room tree. Handler response envelopes use
   typed structs with a pooled buffer encoder instead of `map[string]any` +
   per-call `json.Marshal`. `/healthz` writes a pre-computed constant with zero
-  allocations. Together these reduce per-request heap allocations by ~39% and
-  eliminate all reflection-based serialization on the dominant endpoint.
+  allocations. In the handler-only benchmark, the hot path drops from 25 to
+  12 allocations per request (52%); the full route benchmark drops from 37 to
+  24 allocations (35%). The dominant endpoint no longer performs
+  reflection-based serialization of the classroom tree.
 
 - **Frontend bundle size:** antd `Card`, `Tag`, and `Typography` components are
   replaced with native HTML elements and colocated CSS, removing their `rc-*`
   transitive dependency chains from the bundle. Total gzipped assets drop from
   ~224 KB to ~165 KB (−26%).
+
+### Fixed
+
+- `/api/get_data` now publishes each cached classroom model and its
+  pre-serialized fresh JSON as one atomic cache generation, preventing a
+  concurrent refresh from pairing metadata from one generation with response
+  bytes from another.
 
 ## [0.2.0] - 2026-08-22
 

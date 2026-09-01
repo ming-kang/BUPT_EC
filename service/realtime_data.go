@@ -46,7 +46,8 @@ func (s *ClassroomService) queryAll(ctx context.Context) (*model.TodayClassrooms
 
 func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	now := s.now()
-	if cached, ok := s.getCachedTodayClassrooms(); ok {
+	if entry, ok := s.getCachedTodayCacheEntryAt(now); ok {
+		cached := entry.today
 		fresh := !cached.ExpiresAt.Before(now)
 		// Fully fresh success: serve without touching JW.
 		if fresh && cached.Error == nil {
@@ -263,11 +264,10 @@ func (s *ClassroomService) doRefreshTodayClassrooms(ctx context.Context) classro
 		Error:           apiErr,
 	}
 
-	// today is never mutated after this Store: classroomResponse copies before
-	// changing Stale/Error, and doRefresh only reads prev.Campuses. Cross-day
-	// expiry is enforced on read by the Date guard in getCachedTodayClassroomsAt.
-	s.todayCache.Store(today)
-	s.updateCachedDataJSON(today)
+	// today is never mutated after publication: classroomResponse copies before
+	// changing Stale/Error, and doRefresh only reads prev.Campuses. The model
+	// and its fresh JSON string publish as one cache generation.
+	s.publishTodayCache(today)
 	return classroomRefreshResult{
 		value:    today,
 		kind:     kind,
@@ -285,18 +285,34 @@ func emptyCampusInfo(campusConfig config.CampusConfig) model.CampusInfo {
 }
 
 func (s *ClassroomService) getCachedTodayClassrooms() (*model.TodayClassrooms, bool) {
-	return s.getCachedTodayClassroomsAt(s.now())
+	entry, ok := s.getCachedTodayCacheEntryAt(s.now())
+	if !ok {
+		return nil, false
+	}
+	return entry.today, true
 }
 
 func (s *ClassroomService) getCachedTodayClassroomsAt(now time.Time) (*model.TodayClassrooms, bool) {
-	cached := s.todayCache.Load()
-	if cached == nil {
+	entry, ok := s.getCachedTodayCacheEntryAt(now)
+	if !ok {
 		return nil, false
 	}
-	if cached.Date != now.In(businessLocation).Format("2006-01-02") {
+	return entry.today, true
+}
+
+// getCachedTodayCacheEntryAt loads exactly one cache generation and rejects it
+// when it belongs to a different business day. Callers that inspect cache
+// metadata and serialized JSON must use this helper rather than loading the
+// atomic pointer independently.
+func (s *ClassroomService) getCachedTodayCacheEntryAt(now time.Time) (*todayCacheEntry, bool) {
+	entry := s.todayCache.Load()
+	if entry == nil || entry.today == nil {
 		return nil, false
 	}
-	return cached, true
+	if entry.today.Date != now.In(businessLocation).Format("2006-01-02") {
+		return nil, false
+	}
+	return entry, true
 }
 
 func classroomResponseFromRefresh(result classroomRefreshResult) (*model.TodayClassrooms, error) {

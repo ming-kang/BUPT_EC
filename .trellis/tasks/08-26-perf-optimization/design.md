@@ -60,57 +60,56 @@ Benefits: struct encoder cache in encoding/json (one-time reflection, zero map/b
 
 ### Pre-serialized JSON Cache (R2)
 
-Strategy: cache the `"data":{ ... }` JSON bytes at refresh time. On read, assemble the full envelope by concatenating pre-built fragments.
+Strategy: cache the `"data":{ ... }` JSON string at refresh time inside the
+same immutable entry as the model pointer. One atomic store publishes the
+complete generation, so a reader cannot validate model metadata from one
+refresh and return JSON from another.
 
 ```go
-// service/classroom_service.go (new field)
-type classroomJSONCache struct {
-    freshJSON []byte // pre-marshaled full TodayClassrooms for fresh variant
-    staleJSON []byte // same payload with "stale":true patched
+// service/classroom_service.go
+type todayCacheEntry struct {
+    today     *model.TodayClassrooms
+    freshJSON string // immutable pre-marshaled TodayClassrooms representation
 }
 
-// Updated on every todayCache.Store():
-//   freshJSON = json.Marshal(todayData)
-//   staleJSON = json.Marshal(todayDataWithStale)
+// publishTodayCache marshals first, then performs exactly one Store:
+s.todayCache.Store(&todayCacheEntry{today: today, freshJSON: freshJSON})
 ```
 
-The handler then writes:
-```go
-// Conceptual (actual implementation uses a writer pattern):
-buf := pool.Get()
-buf.WriteString(`{"code":0,"log_id":"`)
-buf.WriteString(logID)
-buf.WriteString(`","version":"`)
-buf.WriteString(version)
-buf.WriteString(`","data":`)
-buf.Write(cachedJSON)
-buf.WriteByte('}')
-w.Write(buf.Bytes())
-pool.Put(buf)
-```
+The handler assembles the per-request envelope around `freshJSON` with a
+pooled buffer. The exported service boundary returns a string rather than a
+mutable byte slice, so callers cannot corrupt the stored generation. It uses the direct path only after loading one entry and
+checking that that entry is same-day, fresh, complete (`partial_campuses` is
+empty), error-free, and has bytes. Stale, partial, marshal-failure, and
+no-cache responses retain the typed runtime serialization path.
 
 **Variant handling:**
-- **Fresh (code=0, stale=false, no error):** Use `freshJSON`.
-- **Stale (code=0, stale=true, error object):** The stale response has additional fields (`stale`, `error`, `partial_campuses`). Since `classroomResponse()` copies and mutates these, we pre-serialize the stale variant too at refresh time. If partial_campuses differ from the cached variant, fall back to runtime marshal (rare case: only on partial-campus degradation).
-- **Error (no cache, code≠0):** Small envelope with `"data":null` — typed struct marshal with buffer pool (R4). No pre-serialization needed.
+- **Fresh (code=0, stale=false, no error):** Use `freshJSON` from the loaded entry.
+- **Stale or partial:** `classroomResponse()` copies and decorates the model; serialize at request time to preserve current warnings and fallback semantics.
+- **Error (no cache, code≠0):** Small envelope with `"data":null` — typed struct marshal with buffer pool (R4).
 
-**Invalidation:** The pre-serialized bytes are stored alongside `todayCache` as a sibling `atomic.Pointer`. Both are set atomically in `doRefreshTodayClassrooms` after building the result. The only consumer is `GetTodayClassrooms` (already under the refresh-or-read logic).
-
-**log_id injection:** The log_id is per-request, so it cannot be pre-cached. It's written into the envelope header bytes before the pre-cached data field. This is ~60 bytes of allocation per request (the buffer from the pool) vs ~40KB of re-marshaling saved.
+**log_id injection:** The log_id is per-request, so it cannot be pre-cached.
+It is written into the envelope header bytes before the pre-cached data field.
 
 ### /healthz Constant (R3)
 
 ```go
-var healthzBody = []byte(`{"status":"ok"}`)
+var (
+    healthzBody        = []byte(`{"status":"ok"}`)
+    healthzContentType = []string{"application/json; charset=utf-8"}
+)
 
 func (server *HTTPServer) Healthz(w http.ResponseWriter, _ *http.Request) {
-    w.Header().Set("Content-Type", "application/json; charset=utf-8")
+    w.Header()["Content-Type"] = healthzContentType
     w.WriteHeader(http.StatusOK)
     _, _ = w.Write(healthzBody)
 }
 ```
 
-Zero allocs: no json.Marshal, no map, no interface boxing.
+The body and header value are reused immutable slices: no `json.Marshal`, map
+payload, interface boxing, or per-call header-value slice. The isolated handler
+benchmark locks this at zero allocations; end-to-end `net/http` response-writer
+allocation is outside the handler contract.
 
 ### writeJSON Buffer Pool (R4)
 
@@ -199,9 +198,9 @@ Styles match antd's default token values.
 - **API contract:** Byte-identical JSON output (verified by existing handler_test.go).
 - **Frontend rendering:** Visual regression checked manually (panel borders, tag colors, text sizes).
 - **Build:** No new dependencies; antd remains for Button, Modal, Switch, Alert, Spin, Empty, ConfigProvider, Divider (Phase 3 removals, out of scope).
-- **Tests:** All existing tests pass without modification. New benchmark test added for /api/get_data alloc count.
+- **Tests:** Existing behavior tests remain green. Focused cache-generation, eligibility, fast/slow parity, zero-allocation health, and benchmark coverage were added.
 
 ## Risks
 
-- **R2 (pre-serialized cache) stale variant:** If partial_campuses list changes mid-TTL (extremely rare: only on multi-campus partial recovery during a single 5-minute window), the pre-cached stale bytes may not reflect the latest partial_campuses. Mitigation: fall back to runtime marshal when the cached partial_campuses differ from the request-time state.
+- **R2 (pre-serialized cache) eligibility drift:** The stored string is fresh-shaped, but only complete, error-free, unexpired same-day entries may use it. Mitigation: `GetCachedDataJSON` performs every eligibility check against the same loaded entry; stale, partial, and error responses always use runtime serialization.
 - **Frontend CSS specificity:** antd's CSS-in-JS may have injected styles that override our replacements. Mitigation: test in both light and dark mode; our native elements have no antd class names so no conflict.

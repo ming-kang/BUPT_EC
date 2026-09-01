@@ -9,14 +9,16 @@ and stores one process-local cache entry for the current day.
 Reference files:
 
 - `service/classroom_service.go`: `ClassroomService`, including the
-  `todayCache atomic.Pointer[model.TodayClassrooms]` single-value store.
+  `todayCache atomic.Pointer[todayCacheEntry]` single-value store.
 - `service/realtime_data.go`: `GetTodayClassrooms`, the unexported `queryAll`,
   and cache TTLs.
 - `service/runtime_status.go`: readiness and runtime diagnostics.
 
 There is no cache package and no third-party cache library. The day cache is
-one atomic pointer; expiry is decided entirely by the `Date` / `ExpiresAt` /
-`StaleUntil` fields on the cached value, never by a store-level TTL.
+one atomic pointer to an immutable entry containing both the model pointer and
+its pre-serialized fresh JSON string; expiry is decided entirely by the `Date` /
+`ExpiresAt` / `StaleUntil` fields on the cached model, never by a store-level
+TTL.
 
 Do not add ORM, migration, repository, or table abstractions unless a task
 explicitly changes the product architecture. If you need durable operational
@@ -27,8 +29,9 @@ data, stop and ask for a design decision instead of quietly adding persistence.
 All mutable runtime state for classroom queries is on `ClassroomService`:
 
 - token and API URL state through `TokenManager`;
-- the `todayCache atomic.Pointer[model.TodayClassrooms]` store (values are
-  treated as immutable once stored; copy-on-write before mutating a response);
+- the `todayCache atomic.Pointer[todayCacheEntry]` store (entries carry the
+  immutable model plus an immutable fresh JSON string and are replaced wholesale; copy-on-write
+  before mutating a response);
 - configured campuses copied from `service.ClassroomServiceOptions`;
 - the injected `JWClient`;
 - refresh coordination fields guarded by `refreshMu`;
@@ -44,13 +47,21 @@ mocking.
 
 `service/realtime_data.go` defines the cache contract:
 
-- Storage: one `atomic.Pointer[model.TodayClassrooms]` on `ClassroomService`
-  (no key, no TTL; the pointer is replaced wholesale on every refresh).
-- Value: `*model.TodayClassrooms`, immutable once stored.
+- Storage: one `atomic.Pointer[todayCacheEntry]` on `ClassroomService` (no
+  key, no TTL; the complete entry is replaced wholesale on every refresh).
+- Value: `todayCacheEntry` carries `*model.TodayClassrooms` and an immutable
+  JSON string shaped with `stale=false` and `error=null`. Both are immutable
+  once stored and must be published only through `publishTodayCache`; the JSON
+  is eligible for the fast path only when the model is also fresh, error-free,
+  and has no partial campuses.
 - Fresh window: about five minutes (`classroomFreshTTL`).
-- Stale window: until local end of day (`StaleUntil` from `endOfDay`).
-- Cross-day protection: `getCachedTodayClassrooms` rejects entries whose `Date`
-  differs from `now().Format("2006-01-02")`.
+- Stale window: until the Asia/Shanghai business-day end (`StaleUntil` from `endOfDay`).
+- Cross-day protection: `getCachedTodayCacheEntryAt` rejects entries whose
+  model `Date` differs from `now().Format("2006-01-02")`.
+- Fast JSON path: `GetCachedDataJSON` loads one entry, then performs same-day,
+  fresh, error-free, and complete-cache validation and returns that same
+  entry's immutable JSON string. Never load model and JSON from separate
+  atomics or expose a mutable backing byte slice.
 
 `GetTodayClassrooms` follows this order:
 

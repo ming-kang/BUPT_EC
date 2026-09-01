@@ -1,6 +1,7 @@
 package main
 
 import (
+	"BUPT_EC/logs"
 	"BUPT_EC/service"
 	"BUPT_EC/service/model"
 	"bytes"
@@ -10,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -24,7 +26,7 @@ type fakeClassroomService struct {
 	todayError       error
 	runtimeStatus    service.RuntimeStatus
 	usableTodayCache bool
-	cachedDataJSON   []byte
+	cachedDataJSON   string
 }
 
 func (classroomService *fakeClassroomService) GetTodayClassrooms(_ context.Context) (*model.TodayClassrooms, error) {
@@ -39,11 +41,11 @@ func (classroomService *fakeClassroomService) HasUsableTodayCache() bool {
 	return classroomService.usableTodayCache
 }
 
-func (classroomService *fakeClassroomService) GetCachedDataJSON() ([]byte, bool) {
-	if classroomService.cachedDataJSON != nil {
+func (classroomService *fakeClassroomService) GetCachedDataJSON() (string, bool) {
+	if classroomService.cachedDataJSON != "" {
 		return classroomService.cachedDataJSON, true
 	}
-	return nil, false
+	return "", false
 }
 
 func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials bool) *HTTPServer {
@@ -216,6 +218,46 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 	}
 	if len(envelope.Data.Campuses) != 1 || envelope.Data.Campuses[0].ID != "01" {
 		t.Fatalf("GetData campuses = %#v, want campus 01", envelope.Data.Campuses)
+	}
+}
+
+func TestGetDataFastAndSlowPathsAreHTTPIdentical(t *testing.T) {
+	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
+	today := &model.TodayClassrooms{
+		Date:       now.Format("2006-01-02"),
+		UpdatedAt:  now,
+		ExpiresAt:  now.Add(time.Hour),
+		StaleUntil: now.Add(12 * time.Hour),
+		Campuses:   []model.CampusInfo{{ID: "01", Name: "西土城"}},
+	}
+	dataJSON, err := json.Marshal(today)
+	if err != nil {
+		t.Fatalf("marshal fresh cache JSON: %v", err)
+	}
+	fast := newTestHTTPServer(&fakeClassroomService{
+		todayClassrooms: today,
+		cachedDataJSON:  string(dataJSON),
+	}, true)
+	slow := newTestHTTPServer(&fakeClassroomService{todayClassrooms: today}, true)
+	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil).
+		WithContext(logs.GenNewContext(context.Background()))
+
+	serve := func(server *HTTPServer) *httptest.ResponseRecorder {
+		recorder := httptest.NewRecorder()
+		server.GetData(recorder, request)
+		return recorder
+	}
+	fastResponse := serve(fast)
+	slowResponse := serve(slow)
+
+	if fastResponse.Code != slowResponse.Code {
+		t.Fatalf("fast status = %d, slow status = %d", fastResponse.Code, slowResponse.Code)
+	}
+	if !reflect.DeepEqual(fastResponse.Header(), slowResponse.Header()) {
+		t.Fatalf("fast headers = %#v, slow headers = %#v", fastResponse.Header(), slowResponse.Header())
+	}
+	if !bytes.Equal(fastResponse.Body.Bytes(), slowResponse.Body.Bytes()) {
+		t.Fatalf("fast body = %s, slow body = %s", fastResponse.Body.Bytes(), slowResponse.Body.Bytes())
 	}
 }
 
@@ -568,9 +610,61 @@ func TestGzipWrapperSkipsAlreadyCompressedAssetTypes(t *testing.T) {
 	}
 }
 
+type allocationResponseWriter struct {
+	header http.Header
+	status int
+	bytes  int
+}
+
+func newAllocationResponseWriter() *allocationResponseWriter {
+	return &allocationResponseWriter{header: make(http.Header)}
+}
+
+func (w *allocationResponseWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *allocationResponseWriter) WriteHeader(status int) {
+	w.status = status
+}
+
+func (w *allocationResponseWriter) Write(p []byte) (int, error) {
+	w.bytes += len(p)
+	return len(p), nil
+}
+
+func TestHealthzHandlerHasZeroAllocations(t *testing.T) {
+	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
+	writer := newAllocationResponseWriter()
+	allocations := testing.AllocsPerRun(1000, func() {
+		writer.status = 0
+		writer.bytes = 0
+		httpServer.Healthz(writer, nil)
+	})
+	if allocations != 0 {
+		t.Fatalf("Healthz allocations = %v, want 0", allocations)
+	}
+	if writer.status != http.StatusOK || writer.bytes != len(healthzBody) {
+		t.Fatalf("Healthz result = status %d, bytes %d", writer.status, writer.bytes)
+	}
+	if got := writer.header.Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("Healthz Content-Type = %q", got)
+	}
+}
+
 // --- Benchmarks ---
 
+// discardBenchmarkSlog prevents GetData's request log from dominating benchmark
+// output and timing. It restores the package logger when the benchmark ends.
+func discardBenchmarkSlog(b *testing.B) {
+	b.Helper()
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	b.Cleanup(func() { slog.SetDefault(previousLogger) })
+}
+
 func BenchmarkGetDataSuccess(b *testing.B) {
+	discardBenchmarkSlog(b)
 	now := time.Now()
 	todayData := largeTodayClassrooms(now)
 	// Pre-serialize the data JSON like the real service does at refresh time.
@@ -580,7 +674,7 @@ func BenchmarkGetDataSuccess(b *testing.B) {
 	}
 	httpServer := newTestHTTPServer(&fakeClassroomService{
 		todayClassrooms: todayData,
-		cachedDataJSON:  dataJSON,
+		cachedDataJSON:  string(dataJSON),
 	}, true)
 	handler := httpServer.Routes()
 	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
@@ -598,18 +692,19 @@ func BenchmarkGetDataSuccess(b *testing.B) {
 
 func BenchmarkHealthz(b *testing.B) {
 	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
-	handler := http.HandlerFunc(httpServer.Healthz)
-	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	writer := newAllocationResponseWriter()
 
 	b.ReportAllocs()
 	b.ResetTimer()
 	for range b.N {
-		responseRecorder := httptest.NewRecorder()
-		handler.ServeHTTP(responseRecorder, request)
+		writer.status = 0
+		writer.bytes = 0
+		httpServer.Healthz(writer, nil)
 	}
 }
 
 func BenchmarkGetDataHandlerOnly(b *testing.B) {
+	discardBenchmarkSlog(b)
 	now := time.Now()
 	todayData := largeTodayClassrooms(now)
 	dataJSON, err := json.Marshal(todayData)
@@ -618,7 +713,7 @@ func BenchmarkGetDataHandlerOnly(b *testing.B) {
 	}
 	httpServer := newTestHTTPServer(&fakeClassroomService{
 		todayClassrooms: todayData,
-		cachedDataJSON:  dataJSON,
+		cachedDataJSON:  string(dataJSON),
 	}, true)
 	// Test the handler directly to isolate GetData from gzip/recovery/log middleware.
 	handler := http.HandlerFunc(httpServer.GetData)

@@ -60,7 +60,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 // eliminates per-request reflection-based json.Marshal for the large
 // campus/room tree. The output is byte-identical to what writeJSON would
 // produce for a getDataSuccessResponse with the same data.
-func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver string, dataJSON []byte) {
+func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver string, dataJSON string) {
 	buf := jsonBufPool.Get().(*bytes.Buffer)
 	buf.Reset()
 	// Build: {"code":0,"log_id":"...","version":"...","data":...}
@@ -72,7 +72,7 @@ func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver str
 	verJSON, _ := json.Marshal(ver)
 	buf.Write(verJSON)
 	buf.WriteString(`,"data":`)
-	buf.Write(dataJSON)
+	buf.WriteString(dataJSON)
 	buf.WriteByte('}')
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
