@@ -68,6 +68,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Development tooling now pins transitive `browserslist` to 4.28.7, fixing
+  GHSA-c83g-rgw3-j3cx and GHSA-73wf-gq98-2v4g reported by the release audit.
+
 - Installer runs now retain the supported `LOG_CALLER` and
   `READYZ_DIAGNOSTICS` deployment settings instead of silently dropping them
   from the saved environment file.

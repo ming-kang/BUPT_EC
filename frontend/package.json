@@ -42,6 +42,9 @@
     "vitest": "^3.2.7"
   },
   "pnpm": {
+    "overrides": {
+      "browserslist": "4.28.7"
+    },
     "auditConfig": {
       "ignoreGhsas": [
         "GHSA-mh99-v99m-4gvg"
