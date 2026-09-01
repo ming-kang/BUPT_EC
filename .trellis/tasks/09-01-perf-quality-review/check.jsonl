@@ -1,0 +1,8 @@
+{"file":".trellis/spec/backend/index.md","reason":"Top-level architecture and non-negotiable project rules for final review validation."}
+{"file":".trellis/spec/backend/quality-guidelines.md","reason":"Canonical verification commands, test conventions, CI rules, frontend constraints, and review checklist."}
+{"file":".trellis/spec/backend/runtime-state-and-cache.md","reason":"Validate concurrency/cache/token findings against documented runtime contracts."}
+{"file":".trellis/spec/backend/api-contract.md","reason":"Validate API/frontend/HTTP findings against observable cross-layer contracts."}
+{"file":".trellis/spec/backend/directory-structure.md","reason":"Validate ownership, layering, composition, and embedding recommendations."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Challenge duplication findings and confirm canonical reuse opportunities."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Validate end-to-end data/config/release flow coverage and boundary ownership."}
+{"file":".trellis/tasks/09-01-perf-quality-review/research/repository-audit-map.md","reason":"Ensure the final report covers planned risk areas and applies false-positive controls."}
