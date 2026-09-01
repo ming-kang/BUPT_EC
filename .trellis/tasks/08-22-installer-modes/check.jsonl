@@ -1,2 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "校验事务七阶段未被打乱、位置参数未漂移、spec 行号已更新"}
+{"file": ".trellis/spec/backend/installer-guidelines.md", "reason": "终检 mode/version、完整配置持久化、事务阶段、生成 artifact 与 release layout 是否符合 source-backed installer contract"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "终检 Taskfile/CI/action pinning、递归 shell gate、文档与 release hygiene 是否符合仓库级质量规则"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "终检 LOG_CALLER 经 installer env 持久化且 owning fragment/generated artifact/operations 文档引用一致"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "终检 installer env → config.Load → systemd/runtime 行为，以及 source → generated artifact → CI/release 的跨层一致性"}
+{"file": ".trellis/tasks/08-22-installer-modes/research/2026-09-planning-refresh.md", "reason": "逐项复核审计证据已被实现或明确延期，尤其无 TTY gate、LOG_CALLER/READYZ、位置参数和 >1000 行文件"}
+{"file": ".trellis/tasks/08-22-installer-modes/research/deferred-transaction-findings.md", "reason": "确认 transaction baseline 之外的 interruption recovery 与预损坏 systemd link 状态未被误混入本次模式/源拆分任务"}

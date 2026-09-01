@@ -10,6 +10,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Added
 
+- Installer modes now separate the compatible interactive default install from
+  prompt-free `--mode=update` and interactive `--mode=reconfigure`. Updates can
+  run without a TTY and select an explicit stable version for an update or
+  rollback; reconfiguration keeps the saved release version.
+
 - The settings dialog now shows the running backend version, so the deployed
   build can be identified from the page itself instead of by logging into the
   server. `/api/get_data` carries that version on both its success and failure
@@ -33,6 +38,11 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- Installer and installer-test sources are now modular. A deterministic
+  generator produces the tracked, self-contained `scripts/install.sh` release
+  artifact, with generation-drift, recursive syntax, behavior-test, and
+  ShellCheck gates protecting it.
+
 - **Backend performance:** `/api/get_data` response JSON is pre-serialized at
   refresh time and served directly on the hot path, eliminating per-request
   `json.Marshal` of the full campus/room tree. Handler response envelopes use
@@ -49,6 +59,16 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   ~224 KB to ~165 KB (−26%).
 
 ### Fixed
+
+- Installer runs now retain the supported `LOG_CALLER` and
+  `READYZ_DIAGNOSTICS` deployment settings instead of silently dropping them
+  from the saved environment file.
+
+- Installer secret prompts no longer contaminate captured values with prompt
+  feedback, and loading an existing environment now rejects unsafe ownership,
+  mode, symlink, and untrusted-directory layouts before using it. Explicit
+  cross-version updates also refuse a saved custom mirror that cannot prove it
+  serves the selected version, preventing binary/version metadata mismatches.
 
 - `/api/get_data` now publishes each cached classroom model and its
   pre-serialized fresh JSON as one atomic cache generation, preventing a

@@ -1,0 +1,2 @@
+4f00a652c8b0b70abce31e789af102ec6a6c619ed7468c5951f774515dfa6935 *scripts/install.sh
+0d504a0b7c060606b491de10864b0268379b0dac8ffdab98336c52fd32d48af7 *scripts/install_test.sh

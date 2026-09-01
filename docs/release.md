@@ -15,14 +15,37 @@ A release publishes four assets, which the installer depends on by exact name:
 - `checksums.txt`
 - `install.sh`
 
-Installer commands select the release explicitly: `VERSION=latest` tracks the
-newest stable release, and immutable deployments use a matching
-`VERSION=vX.Y.Z`. The installer persists that choice as `RELEASE_VERSION`; a
-first-time install without either value falls back to `latest`.
+An explicit installer `VERSION=latest` tracks the newest stable release, and
+immutable deployments use a matching `VERSION=vX.Y.Z`. The installer persists
+that choice as `RELEASE_VERSION`; a first-time default install without either
+value falls back to `latest`.
 
 Versioning follows [Semantic Versioning](https://semver.org/). While the project is pre-1.0, minor bumps may contain breaking changes.
 
-`install.sh` is intentionally a self-contained release asset. Its transaction flow is preflight → snapshot → atomic commit → validation/rollback; do not add runtime helper files to the published layout. `scripts/install_test.sh` uses a temporary root and mocked network/system commands to cover checksum and archive failures, upgrade rollback, first-install cleanup, permissions, and successful commit behavior.
+`install.sh` is intentionally a self-contained release asset, but it is not
+hand-maintained as one source file. The ordered fragments under
+`scripts/installer/` and `scripts/generate-install.sh` deterministically produce
+the tracked `scripts/install.sh`; the generator's fixed list, rather than a
+directory glob, defines release order. Do not edit the generated artifact by
+hand. Regenerate it after fragment changes and reject drift before release:
+
+```bash
+bash scripts/generate-install.sh
+bash scripts/generate-install.sh --check
+find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
+bash scripts/install_test.sh
+find scripts -type f -name '*.sh' -exec shellcheck {} +
+# Or run the local installer gate above as one task:
+task installer:check
+```
+
+The behavior entrypoint first checks generation drift and sources the generated
+asset, then loads modules under `scripts/installer_test/` into a temporary root
+with mocked network/system commands. It covers checksum/archive failures,
+mode behavior, safe configuration persistence, upgrade rollback, first-install
+cleanup, permissions, and successful commit behavior. Its transaction flow is
+preflight → snapshot → atomic commit → validation/rollback; source fragments
+and test modules are never runtime release files.
 
 ## Changelog conventions
 
@@ -65,7 +88,7 @@ Three workflows: `ci.yml` and `release.yml` both call `quality.yml` (reusable ga
 
 ### `ci.yml` — pull requests
 
-Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, the bundle size budget check (`node scripts/check-bundle-size.mjs` in `frontend/`, over the freshly built `dist/`), `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build` (tag-less, so a clean checkout stays buildable), an embedded-assets build (`go build -tags embed_assets` with the freshly built frontend copied to `web/dist`), `govulncheck` (pinned version), transactional installer behavior tests, and `shellcheck` on all scripts.
+Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, the bundle size budget check (`node scripts/check-bundle-size.mjs` in `frontend/`, over the freshly built `dist/`), `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build` (tag-less, so a clean checkout stays buildable), an embedded-assets build (`go build -tags embed_assets` with the freshly built frontend copied to `web/dist`), and pinned `govulncheck`. The installer portion is ordered as generated-artifact drift check, recursive `bash -n` over `scripts/`, behavior tests against the generated asset, then recursive ShellCheck over `scripts/` (including `installer/` and `installer_test/`).
 
 ### `release.yml` — pushes to `main` and `v*` tags
 
@@ -73,7 +96,7 @@ Three jobs in sequence:
 
 1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`); the frontend it builds is uploaded as the `frontend-dist` artifact.
 2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `main-<commit>` on `main` pushes).
-3. **release** — packs each binary with `.env.example`, `README.md`, and `install.sh` into a tarball, generates `checksums.txt`, attests build provenance, then publishes:
+3. **release** — rechecks generated-installer drift immediately before composition, then packs each binary with `.env.example`, `README.md`, and only the self-contained generated `install.sh` into a tarball (never source fragments or test modules), generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
    - **main push** and **manual dispatch**: a dry-run — the identical pack /
      checksum / attest path runs and the assets are uploaded as workflow

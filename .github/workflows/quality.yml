@@ -116,8 +116,14 @@ jobs:
         # so the tool is only compiled from scratch on a cache miss.
         run: go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
 
+      - name: Check generated installer
+        run: bash scripts/generate-install.sh --check
+
+      - name: Check shell script syntax
+        run: find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
+
       - name: Test shell scripts
         run: bash scripts/install_test.sh
 
       - name: Lint shell scripts
-        run: shellcheck scripts/*.sh
+        run: find scripts -type f -name '*.sh' -exec shellcheck {} +

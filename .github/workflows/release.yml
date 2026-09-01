@@ -95,14 +95,34 @@ jobs:
           name: bupt-ec-linux-arm64
           path: release/bupt-ec-linux-arm64
 
+      - name: Check generated installer
+        run: bash scripts/generate-install.sh --check
+
       - name: Compose release assets
+        # Only the generated self-contained artifact is packaged; source fragments
+        # remain repository-only inputs to scripts/generate-install.sh.
         run: |
           set -euo pipefail
           cd release
           for arch in amd64 arm64; do
-            cp ../.env.example ../README.md ../scripts/install.sh "bupt-ec-linux-${arch}/"
-            chmod +x "bupt-ec-linux-${arch}/install.sh"
-            tar -czf "bupt-ec-linux-${arch}.tar.gz" "bupt-ec-linux-${arch}"
+            package_dir="bupt-ec-linux-${arch}"
+            cp ../.env.example ../README.md ../scripts/install.sh "${package_dir}/"
+            chmod +x "${package_dir}/install.sh"
+            tar -czf "${package_dir}.tar.gz" "${package_dir}"
+
+            # Lock the documented package layout and prove the packaged
+            # installer is exactly the generated top-level artifact.
+            tar -tzf "${package_dir}.tar.gz" | sort > "${package_dir}.actual"
+            printf '%s\n' \
+              "${package_dir}/" \
+              "${package_dir}/.env.example" \
+              "${package_dir}/README.md" \
+              "${package_dir}/bupt-ec" \
+              "${package_dir}/install.sh" | sort > "${package_dir}.expected"
+            diff -u "${package_dir}.expected" "${package_dir}.actual"
+            tar -xOzf "${package_dir}.tar.gz" "${package_dir}/install.sh" | \
+              cmp - ../scripts/install.sh
+            rm -f "${package_dir}.actual" "${package_dir}.expected"
           done
           cp ../scripts/install.sh install.sh
           chmod +x install.sh

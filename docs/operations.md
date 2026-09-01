@@ -142,6 +142,31 @@ tokens.
 
 Set `LOG_CALLER=1` in the environment file to add source file/line to each record (useful when debugging, off by default).
 
+### Persisted logging and readiness settings
+
+`LOG_CALLER` and `READYZ_DIAGNOSTICS` are both persisted installer deployment
+settings. A normal `--mode=update` copies their saved values unchanged; the
+interactive `install` and `reconfigure` paths use an explicitly supplied value
+before a saved value, without adding prompts for either setting. To change them
+through the installer, use a terminal and reconfigure, for example:
+
+```bash
+sudo LOG_CALLER=1 READYZ_DIAGNOSTICS=1 bash /tmp/bupt-ec-install.sh --mode=reconfigure
+```
+
+The service snapshots its environment at startup; it does not watch the env
+file for hot reload. A successful reconfigure runs the normal transaction and
+restarts the service. Prefer it to editing the env by hand; a direct edit takes
+effect only after an explicit service restart.
+
+The installed `/etc/bupt-ec/bupt-ec.env` must remain a regular, root-owned
+`0600` file in a root-owned configuration directory that group/other users
+cannot modify; do not replace it with a symlink. Before it uses saved values,
+the installer safe-loader checks those properties and returns only supported
+configuration fields into its process. If it rejects the file, repair its
+ownership, mode, or syntax as root (or move it aside and rebuild with default
+install) rather than sourcing an untrusted file.
+
 ### Tracing a request with `log_id`
 
 Every `/api/*` request gets a `log_id` that appears:
@@ -268,7 +293,7 @@ If the message instead says the automatic rollback was incomplete, note the prin
 |---|---|---|
 | Installer exits during upgrade | Look for `Rollback completed.` and run `sudo systemctl status bupt-ec` | New Nginx/service/health validation failed; the previous installation was restored. Fix the reported cause before retrying. |
 | Installer reports incomplete rollback | Preserve the printed root-only recovery directory; run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; use the preserved snapshot for manual recovery. |
-| `/readyz` 503, `last_login_error` mentions credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Rerun the installer to re-enter them. |
+| `/readyz` 503, `last_login_error` mentions credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Run interactive `--mode=reconfigure` to re-enter them. |
 | `/readyz` 503, `last_refresh_error` set, login OK | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
 | Page loads but shows the stale warning | `/readyz` → `cache_fresh` | Upstream refresh failing; check `last_refresh_error`. |
@@ -279,6 +304,6 @@ If the message instead says the automatic rollback was incomplete, note the prin
 ## Security notes
 
 - Tokens are held in memory only; nothing user-identifiable is persisted.
-- `/etc/bupt-ec/bupt-ec.env` is mode `0600`, root-owned. Keep it that way.
+- `/etc/bupt-ec/bupt-ec.env` is a regular root-owned mode-`0600` file in a root-controlled, non-writable-by-others directory. Keep it that way; the installer refuses unsafe ownership, mode, or symlink layouts.
 - The binary at `/opt/bupt-ec/bupt-ec` is root-owned so the service user cannot replace its own executable.
 - Never commit or paste real credentials, tokens, or log files.

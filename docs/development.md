@@ -56,9 +56,11 @@ cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to localhos
 ## Tests and checks
 
 ```bash
-task test    # go test -race ./...
-task check   # gofmt/vet/tidy/verify + frontend lint/test/audits (mirrors CI)
-task vuln    # govulncheck (needs network; same pinned version as CI)
+task test                 # go test -race ./...
+task installer:generate   # regenerate tracked scripts/install.sh from fragments
+task installer:check      # generator drift + recursive syntax/test/ShellCheck
+task check                # Go/frontend checks plus installer:check (mirrors CI except size)
+task vuln                 # govulncheck (needs network; same pinned version as CI)
 ```
 
 Native equivalents, for environments without `task`:
@@ -70,17 +72,30 @@ go vet ./...
 gofmt -l .                 # must print nothing
 GOTOOLCHAIN=go1.25.13 go mod tidy -diff   # go.mod/go.sum match the import graph
 go mod verify
+bash scripts/generate-install.sh --check
+find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
+bash scripts/install_test.sh
+find scripts -type f -name '*.sh' -exec shellcheck {} +
 cd frontend && pnpm lint && pnpm test && pnpm build
 cd frontend && pnpm size    # gzip budget over dist/, CI runs it after the build
 cd frontend && pnpm audit:prod && pnpm audit:dev
 ```
 
 The reusable quality gate (`.github/workflows/quality.yml`) runs the same
-checks, plus an embedded-assets build (`go build -tags embed_assets` after
-copying the freshly built frontend to `web/dist`); the other Go steps stay
-tag-less so a clean checkout without `frontend/dist` keeps building. `task
-check` skips `pnpm size` on purpose (it needs a fresh production build) — run
-it by hand when changing frontend dependencies or chunk splitting.
+checks, including generated-installer drift, recursive shell syntax, generated
+installer behavior tests, and recursive ShellCheck, plus an embedded-assets
+build (`go build -tags embed_assets` after copying the freshly built frontend
+to `web/dist`). The other Go steps stay tag-less so a clean checkout without
+`frontend/dist` keeps building. `task check` includes `task installer:check`
+but skips `pnpm size` on purpose (it needs a fresh production build) — run it
+by hand when changing frontend dependencies or chunk splitting.
+
+Installer source is modular in `scripts/installer/`, while
+`scripts/generate-install.sh` emits the deterministic tracked and
+self-contained `scripts/install.sh` artifact used by tests and releases. Edit
+fragments, run `task installer:generate`, then run `task installer:check`; do
+not hand-edit the generated artifact. Test modules live in
+`scripts/installer_test/` and are repository-only, not deployment dependencies.
 
 `BUNDLE_REPORT=1 pnpm build` additionally writes a treemap report to
 `frontend/bundle-stats.local.html` (gitignored, never inside `dist/`).
@@ -121,7 +136,13 @@ frontend/src/            React app in strict TypeScript (Vite + Ant Design)
   useTodayClassrooms.ts  SWR data fetching + auto-refresh on expires_at
   todayClassroomsResponse.ts  API envelope normalization helpers
   components/            UI components (.tsx; pickers, table, modal, ErrorBoundary)
-scripts/                 install.sh, release.sh, extract-changelog.sh
+scripts/
+  generate-install.sh    deterministic generator for tracked install.sh
+  installer/             ordered installer source fragments
+  install.sh             generated self-contained release artifact
+  installer_test/        behavior-test modules (repository-only)
+  install_test.sh        generated-artifact behavior-test entrypoint
+  release.sh, extract-changelog.sh
 .github/workflows/       ci.yml (PRs), release.yml (main pushes + tags), quality.yml (reusable gate)
 ```
 

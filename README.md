@@ -27,17 +27,47 @@ Endpoints:
 
 ## Deploy to a server
 
-One command on a Debian/Ubuntu server with a domain and TLS certificate already in place.
+One command on a Debian/Ubuntu server with a domain and TLS certificate already in place:
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 ```
 
-Stable `vX.Y.Z` tags are the only release channel. Pass `VERSION=vX.Y.Z` instead
-of `latest` to pin an immutable release; with no `VERSION` and no saved choice a
-first install resolves to `latest`.
+No `--mode` keeps the original interactive install flow compatible, including
+its prompts and defaults. Stable `vX.Y.Z` tags are the only release channel;
+`VERSION=vX.Y.Z` selects an immutable release, while a first install with no
+saved or explicit version selects `latest`.
 
-The installer configures systemd and Nginx, asks for your JW credentials interactively, and starts the service. Upgrading later is the same command (pin a stable tag in production).
+| Mode | Use | Version and terminal behavior |
+| --- | --- | --- |
+| omitted / `--mode=install` | Compatible full interactive install | `VERSION` → saved version → `latest`; requires a TTY |
+| `--mode=update` | Existing deployment update with no prompts | `VERSION` → saved version; no TTY and no apt package install |
+| `--mode=reconfigure` | Interactively change saved deployment settings | Keeps the saved version and ignores `VERSION`; requires a TTY |
+
+For a normal remote update, fetch the current self-contained installer and pass
+arguments after `bash -s --`:
+
+```bash
+# Reuse the saved release version, with no prompts.
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=update
+# Select a stable version explicitly (also the rollback form).
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=v0.1.6 bash -s -- --mode=update
+# Change configuration interactively without changing the saved version.
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=reconfigure
+```
+
+A downloaded update also works with closed stdin:
+
+```bash
+curl -fsSLo /tmp/bupt-ec-install.sh https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh
+sudo VERSION=v0.1.6 bash /tmp/bupt-ec-install.sh --mode=update < /dev/null
+```
+
+If update reports repairable saved settings, use interactive
+`--mode=reconfigure`; if saved release metadata is missing, use the default
+install mode to rebuild it. If the installer says it cannot load the env safely,
+repair its ownership/mode/syntax as root or move it aside and run default
+install; see the upgrade guide for details.
 
 Supported production topology is **one** `bupt-ec` process behind Nginx on a
 single host. Cache and JW refresh state are process-local; multi-instance
@@ -72,7 +102,7 @@ Requires Go 1.25.13+ (or a current Go 1.26 patch release), Node 22, pnpm 9.15.x,
 
 ## Security
 
-- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-only) on servers; configuration is snapshotted at startup and tokens are held in memory only.
+- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-owned mode `0600`) on servers; configuration is snapshotted at startup and tokens are held in memory only.
 - Never commit real credentials, tokens, or logs.
 
 ## Limitations

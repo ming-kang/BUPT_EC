@@ -1,3 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
-{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "含 Scenario: Transactional Installer Commit and Rollback（七阶段顺序、位置参数陷阱、行号）与 Installer Release Selection，是本任务不可逾越的边界"}
-{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "本任务核心是复用事务内核而非重写，需按复用清单自查"}
+{"file": ".trellis/spec/backend/installer-guidelines.md", "reason": "Installer Release Selection 与 Transactional Installer contracts 定义版本、镜像、七阶段事务、发布资产和测试边界；本任务必须同步 mode/config/generator 契约"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "定义 Taskfile/CI/action pinning、递归 shell gate、文档与 release hygiene 的仓库级质量规则"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "源拆分与模式分层必须复用现有 transaction/download/render 行为，避免重写核心路径"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "LOG_CALLER 是完整部署配置字段；安装器源路径与 operations 文档必须随持久化契约同步"}
+{"file": ".trellis/tasks/08-22-installer-modes/research/2026-09-planning-refresh.md", "reason": "记录当前 TTY gate、配置遗漏、位置参数、超大文件、CI/release 资产的代码证据与规划结论"}

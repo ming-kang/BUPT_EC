@@ -3,7 +3,7 @@
   "name": "installer-modes",
   "title": "install.sh 拆分安装/升级/重配置三种模式",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

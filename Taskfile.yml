@@ -45,8 +45,23 @@ tasks:
     cmds:
       - go test -race ./...
 
+  installer:generate:
+    desc: Regenerate the tracked self-contained installer from its source fragments
+    cmds:
+      - bash scripts/generate-install.sh
+
+  installer:check:
+    desc: Check installer generation, syntax, behavior, and ShellCheck recursively
+    cmds:
+      - bash scripts/generate-install.sh --check
+      # Run recursive discovery inside Bash: Task's portable shell has a
+      # deliberately limited built-in find implementation.
+      - bash -c "find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n \"\$script\" || exit 1; done' bash {} +"
+      - bash scripts/install_test.sh
+      - bash -c 'find scripts -type f -name "*.sh" -exec shellcheck {} +'
+
   check:
-    desc: Local quality gate mirroring quality.yml (Go + frontend)
+    desc: Local quality gate mirroring quality.yml (Go + frontend + installer)
     # Deliberate deviation from quality.yml: the bundle size budget gate
     # ("Check bundle size budget" step) needs a fresh production build, which
     # would slow down every local `task check`. Run it manually when touching
@@ -59,6 +74,7 @@ tasks:
       - go vet ./...
       - go mod tidy -diff
       - go mod verify
+      - task: installer:check
       - task: frontend:install
       - pnpm -C frontend lint
       - pnpm -C frontend typecheck

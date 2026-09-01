@@ -38,6 +38,7 @@ conventions live in [Quality Guidelines](./quality-guidelines.md).
 | [Error Handling](./error-handling.md) | JW error classification, safe user messages, stale data errors, and API failures | Source-backed |
 | [Logging Guidelines](./logging-guidelines.md) | `log/slog`, `log_id` propagation, log outputs, and secret redaction rules | Source-backed |
 | [Quality Guidelines](./quality-guidelines.md) | Formatting, tests, CI commands, frontend dependency lines and bundle budget, release hygiene, and review checklist | Source-backed |
+| [Installer Guidelines](./installer-guidelines.md) | Installer modes/configuration, generated source/release assets, staging, atomic commit, and rollback contracts | Source-backed |
 
 ## Non-Negotiable Local Rules
 

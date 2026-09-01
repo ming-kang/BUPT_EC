@@ -110,10 +110,12 @@ sync with `.github/workflows/quality.yml` (the sync note is at the top of
 both files):
 
 ```bash
-task test    # go test -race ./...
-task check   # gofmt/vet/tidy/verify + frontend lint/test/audits
-task build   # frontend build → copy to web/dist → go build -tags embed_assets
-task vuln    # pinned govulncheck
+task test                 # go test -race ./...
+task installer:generate   # regenerate tracked scripts/install.sh from fragments
+task installer:check      # generator drift + recursive syntax/test/ShellCheck gate
+task check                # Go/frontend checks plus installer:check (not bundle size)
+task build                # frontend build → copy to web/dist → go build -tags embed_assets
+task vuln                 # pinned govulncheck
 ```
 
 For frontend source, API-normalization, selection-state, or package changes,
@@ -136,8 +138,10 @@ go test -race ./...
 go build ./...
 rm -rf web/dist && cp -r frontend/dist web/dist && go build -tags embed_assets ./...
 govulncheck ./...
+bash scripts/generate-install.sh --check
+find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n "$script" || exit 1; done' bash {} +
 bash scripts/install_test.sh
-shellcheck scripts/*.sh
+find scripts -type f -name '*.sh' -exec shellcheck {} +
 cd frontend && pnpm lint
 cd frontend && pnpm build
 cd frontend && node scripts/check-bundle-size.mjs
@@ -384,234 +388,17 @@ User-visible changes must update documentation and changelog in the same change:
   commit.
 
 Release automation depends on exact asset names and layout. If changing release
-assets or installer behavior, update `scripts/release.sh`, `scripts/install.sh`,
-`.github/workflows/release.yml`, and `docs/release.md` together.
+assets or installer behavior, update the `scripts/installer/` sources,
+`scripts/generate-install.sh`, generated `scripts/install.sh`,
+`scripts/release.sh`, `.github/workflows/release.yml`, and `docs/release.md`
+together.
 
-## Scenario: Installer Release Selection
+## Installer Guidance
 
-### 1. Scope / Trigger
-
-Apply this contract whenever installer version defaults, release URLs,
-deployment commands, or persisted installer metadata change. Stable `vX.Y.Z`
-tags are the only release channel: this contract keeps every documented
-installer command explicit about which stable release it selects, and keeps the
-unattended fallback on a published stable release rather than an inferred one.
-
-### 2. Signatures
-
-```bash
-resolve_release_version <explicit-version> <saved-version>
-validate_version <version>
-resolve_download_base_url <repo> <version> <override-url>
-```
-
-### 3. Contracts
-
-- `VERSION`: optional command environment value; highest precedence.
-- `RELEASE_VERSION`: saved in `/etc/bupt-ec/bupt-ec.env`; reused when
-  `VERSION` is absent.
-- First install with neither value uses `latest`.
-- Valid values are `latest` or `vMAJOR.MINOR.PATCH`.
-- `nightly` was a valid value through v0.2.0 and is **rejected** as of v0.3.0.
-  Rejection is the migration path, not a compatibility shim: `validate_version`
-  runs on the *resolved* version, so a host still carrying
-  `RELEASE_VERSION=nightly` fails there and its error must name
-  `VERSION=latest` as the fix. Never silently remap `nightly` to `latest` —
-  that would upgrade a machine across channels without the operator saying so.
-- `latest` maps to `/releases/latest/download`; other valid values map to
-  `/releases/download/<version>`.
-- Default download base is always official GitHub (`github.com`). Reachability
-  probes may only produce clearer errors; they must never select a third-party
-  host.
-- A validated `DOWNLOAD_BASE_URL` is the only non-GitHub source path and means
-  the operator already trusts that mirror. Same-origin `checksums.txt` proves
-  integrity, not independent publisher identity. Saved `DOWNLOAD_BASE_URL`
-  values come from prior explicit configuration only and are re-validated
-  before download (normalized absolute HTTPS, or HTTP only with
-  `ALLOW_INSECURE_DOWNLOAD_BASE_URL=true`). Reject userinfo, query, fragment,
-  empty host, whitespace/semicolons, and non-HTTP(S) schemes even when the
-  insecure opt-in is set. Logs must never echo raw URLs containing credentials
-  or tokens; curl uses explicit `--proto` / `--proto-redir` allow-lists shared
-  by package and checksum downloads.
-
-### 4. Validation & Error Matrix
-
-| Input | Result |
-| --- | --- |
-| `latest` | accepted |
-| `v0.1.4` | accepted |
-| `nightly` | non-zero validation failure; error must include the `VERSION=latest` migration command |
-| empty final value, path separators, whitespace, shell punctuation | non-zero validation failure |
-| GitHub unreachable and no `DOWNLOAD_BASE_URL` | non-zero failure before download/snapshot |
-| HTTP mirror without explicit insecure opt-in | non-zero validation failure |
-| `file://` / `ftp://` / other non-HTTP(S) with insecure opt-in | non-zero validation failure before download |
-| userinfo, query, fragment, or empty host | non-zero validation failure; error omits raw secret |
-
-### 5. Good/Base/Bad Cases
-
-- Good: latest installer command passes `sudo VERSION=latest bash`.
-- Base: no explicit or saved version resolves to `latest`.
-- Bad: download `releases/latest/download/install.sh` and invoke `sudo bash`;
-  the script cannot infer which URL supplied its stdin.
-
-### 6. Tests Required
-
-- `bash scripts/install_test.sh` asserts precedence, accepted/rejected values,
-  GitHub URL mapping, and custom mirror preservation. `nightly` is asserted
-  both as a rejected value and for the content of its migration message.
-- Both CI quality gates must execute the behavior test before shellcheck.
-- Search README and `docs/` for installer commands without a matching explicit
-  `VERSION`, and for any surviving reference to a non-stable channel.
-
-### 7. Wrong vs Correct
-
-#### Wrong
-
-```bash
-curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sudo bash
-```
-
-#### Correct
-
-```bash
-curl -fsSL https://github.com/org/repo/releases/latest/download/install.sh | sudo VERSION=latest bash
-```
-
-## Scenario: Transactional Installer Commit and Rollback
-
-### 1. Scope / Trigger
-
-Apply this contract whenever `scripts/install.sh` changes release staging,
-installed paths, file ownership/modes, systemd or Nginx activation, health
-validation, or rollback behavior. The installer runs as root and updates a live
-service, so a partially applied change is a production correctness and secret
-handling failure.
-
-### 2. Signatures
-
-```bash
-configure_installer_test_root <absolute-root>   # sourced tests only
-prepare_staging <archive> <work-dir> <staging-dir> <config...>
-snapshot_installation <backup-dir>
-atomic_install_file <source> <target> <mode> <owner>
-atomic_install_symlink <link-target> <target>
-commit_installation <staging-dir> <app-addr>
-rollback_installation <backup-dir>
-perform_install_transaction <staging-dir> <backup-dir> <app-addr>
-```
-
-> **Common Mistake (positional parameters)**: `render_env_file`
-> (install.sh:607, 11 args) and `prepare_staging` (install.sh:749, 13 args)
-> take all configuration as positional parameters. Adding or removing a
-> middle parameter silently shifts every later one (e.g.
-> `download_base_url` receiving a version string), so any arity change must
-> update both signatures, every call site, and the
-> `scripts/install_test.sh` fixture arguments in the same edit.
-
-### 3. Contracts
-
-The seven stages are ordered and must not be interleaved:
-
-1. Validate input, certificates, release selection, and platform prerequisites.
-2. Download the architecture archive and verify its `checksums.txt` entry.
-3. Extract the archive and render every candidate under a mode-`0700` staging
-   directory; candidate env is root-owned mode `0600`.
-4. Snapshot binary, env, systemd unit + enabled link, and Nginx site + enabled
-   link, plus a runtime state file recording prior service present/enabled/active
-   and Nginx site/enablement. The manifest records both existing and absent
-   targets under a mode-`0700` backup directory; env, manifest, and runtime
-   state are mode `0600`.
-5. Copy each candidate to `<target>.new.$$` in the target directory, set
-   owner/mode, then use `mv -T` for same-filesystem atomic replacement.
-6. Run daemon reload, unit enablement, `nginx -t`, service restart,
-   `is-active`, Nginx reload, and loopback `/healthz` retry validation.
-7. On success remove the backup and only then print success. On failure: stop any
-   currently active unit, restore originally present targets / remove originally
-   absent targets, `daemon-reload`, reconcile prior enabled/disabled and
-   active/inactive service state (do not start a previously inactive unit), run
-   `nginx -t` and reload Nginx even for first-install site removal. Preserve
-   root-only recovery files when rollback itself is incomplete.
-8. Generated Nginx `/api/` `proxy_read_timeout` must be 60s (SPA `/` may stay
-   30s) so it exceeds the backend stack (5s cold-wait bound, 15s Go write timeout).
-
-Production paths are fixed constants. Environment variables must not redirect
-them. Tests opt into a temporary root only by sourcing the script and calling
-`configure_installer_test_root` explicitly. Release archives and top-level
-assets remain self-contained; no runtime helper beside `install.sh` is allowed.
-
-### 4. Validation & Error Matrix
-
-| Condition | Required result |
-| --- | --- |
-| checksum download/entry/hash failure | non-zero; installed targets byte-identical |
-| archive missing `bupt-ec` or candidate render failure | non-zero; snapshot/commit not entered |
-| snapshot copy/manifest failure | non-zero; transaction inactive; installed targets unchanged |
-| atomic write, daemon reload, enable, or `nginx -t` failure | restore every recorded target/existence state |
-| restart, `is-active`, reload, or loopback health failure | restore files; stop current unit; restore prior active/enabled state |
-| first-install commit failure | remove newly created transaction targets; stop new unit; reload Nginx |
-| previously inactive/disabled upgrade failure | restore files; leave service inactive/disabled |
-| rollback command failure | non-zero; preserve and print root-only recovery directory |
-| all validations pass | remove backup; clear transaction state; print success |
-| non-loopback `APP_ADDR` | explicitly log that direct health probing is skipped |
-
-### 5. Good/Base/Bad Cases
-
-- Good: an upgrade stages and snapshots everything, atomically installs all
-  candidates, passes validation, removes the backup, then reports success.
-- Base: a first install records every target as absent; a failed validation
-  removes all newly created transaction targets and does not restart a nonexistent
-  old service.
-- Bad: write `/etc/bupt-ec/bupt-ec.env` before checksum verification, or keep a
-  new binary after `nginx -t`/health validation fails.
-
-### 6. Tests Required
-
-`bash scripts/install_test.sh` must use an explicit temporary root plus mocked
-`curl`, `chown`, `systemctl`, and `nginx`, and assert:
-
-- missing/invalid checksums, missing binary, render failure, and snapshot copy
-  failure leave old targets unchanged;
-- Nginx, restart, and health failures restore file content, modes, symlink
-  targets, and attempt the old-service restart where one existed;
-- first-install rollback removes all transaction targets;
-- incomplete rollback preserves a mode-`0700` recovery directory and mode-`0600`
-  env backup;
-- successful upgrade replaces every target, enables both services/sites,
-  installs env mode `0600`, clears transaction state, and removes the backup;
-- `bash -n scripts/install.sh scripts/install_test.sh`, `shellcheck scripts/*.sh`,
-  and release asset layout checks remain green.
-
-### 7. Wrong vs Correct
-
-#### Wrong
-
-```bash
-snapshot_installation() {
-  cp -a "${ENV_FILE}" "${backup_dir}/env"
-  printf 'env\t1\t%s\n' "${ENV_FILE}" >> "${backup_dir}/manifest"
-}
-
-# Bash suppresses errexit inside a function used in an OR-list. A failed cp can
-# be masked by the later successful printf.
-snapshot_installation "${backup_dir}" || return
-```
-
-#### Correct
-
-```bash
-snapshot_installation() {
-  if ! cp -a "${ENV_FILE}" "${backup_dir}/env"; then
-    echo "Failed to snapshot env." >&2
-    return 1
-  fi
-  printf 'env\t1\t%s\n' "${ENV_FILE}" >> "${backup_dir}/manifest" || return
-}
-
-snapshot_installation "${backup_dir}" || return
-```
-
-Critical installer helpers must explicitly propagate each filesystem failure;
-do not rely only on `set -e` when callers use `if`, `!`, `&&`, or `||`.
+Installer mode, configuration, generated-artifact, staging, release-layout,
+and transaction/rollback contracts live in
+[Installer Guidelines](./installer-guidelines.md). Read that file before
+changing any installer source, test, quality gate, or release asset.
 
 ## Security Checklist
 
@@ -620,8 +407,9 @@ do not rely only on `set -e` when callers use `if`, `!`, `&&`, or `||`.
 - Keep JW API URL validation restricted to HTTPS BUPT hosts.
 - Keep the AES key in `service/crypto.go` aligned with the JW protocol; do not
   change it casually.
-- Keep `/etc/bupt-ec/bupt-ec.env` documented as root-owned mode `0600` for
-  deployed servers.
+- Keep `/etc/bupt-ec/bupt-ec.env` documented as a regular root-owned mode
+  `0600` file in a root-controlled non-writable-by-others directory; the
+  installer safe-loader rejects symlink or unsafe ownership/mode layouts.
 - Keep production `APP_ADDR` behind Nginx as `127.0.0.1:8080` unless the deploy
   design changes.
 
