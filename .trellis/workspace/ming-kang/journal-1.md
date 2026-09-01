@@ -765,3 +765,34 @@ Completed backlog item F-02 as a behavior-preserving compatibility migration:
 ### Status
 
 [OK] **Completed** — backlog 剩余：api-etag-preserialize（挂起待流量）、E-03′/E-06/F-04/B-05（条件触发）
+
+
+## Session 18: Pause bupt-ec CLI implementation before independent review
+
+**Date**: 2026-09-02
+**Task**: Pause bupt-ec CLI implementation before independent review
+**Branch**: `main`
+
+### Summary
+
+CLI/metadata/transaction/release implementation is present and implement-agent gates were reported green; independent full-scope review was interrupted and remains required.
+
+### Main Changes
+
+- Added CLI, metadata, Installer transaction, release composition, tests, specs, and docs in the uncommitted worktree.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] Main session confirmed git diff --check and Trellis context validation; implement worker reported full gates green.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- Read .trellis/tasks/08-22-bupt-ec-cli/research/pause-handoff-2026-09-01.md and rerun independent full-scope check before commit.
