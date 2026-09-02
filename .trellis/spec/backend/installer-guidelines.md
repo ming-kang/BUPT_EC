@@ -407,6 +407,12 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
      and reload Nginx even after first-install site removal, and preserve
      root-only recovery files if rollback is incomplete.
 
+- Loopback health validation treats individual connection failures as an expected
+  startup-retry state: every bounded curl attempt discards both stdout and stderr.
+  A later success commits silently; exhausting all ten attempts emits exactly the
+  Installer-owned `Service health check failed: <url>` diagnostic and returns
+  nonzero into the existing rollback path. Do not expose raw curl errors that make
+  a successful delayed startup look like a failed deployment.
 - Production paths remain fixed constants. Tests may redirect them only by
   sourcing the generated script and calling `configure_installer_test_root`.
   The transaction core does not branch on mode. Architecture tarballs contain
@@ -425,7 +431,9 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
 | archive missing `bupt-ec`, CLI-bearing archive missing `bupt-ec-cli`, malformed action, or candidate render failure | non-zero; snapshot/commit not entered or rollback leaves targets unchanged |
 | snapshot copy/manifest failure | non-zero; transaction inactive; installed targets unchanged |
 | atomic write, daemon reload, enable, or `nginx -t` failure | restore every recorded target/existence state |
-| restart, `is-active`, reload, or loopback health failure | restore files; stop current unit; restore prior active/enabled state |
+| transient loopback health failures followed by success | suppress per-attempt curl output; commit after the later successful attempt |
+| all ten loopback health attempts fail | suppress raw curl output, print `Service health check failed: <url>`, then restore files and prior runtime state |
+| restart, `is-active`, or reload failure | restore files; stop current unit; restore prior active/enabled state |
 | first-install commit failure | remove newly created transaction targets; stop new unit; reload Nginx |
 | previously inactive/disabled upgrade failure | restore files; leave service inactive/disabled |
 | rollback command failure | non-zero; preserve and print root-only recovery directory |
@@ -438,13 +446,16 @@ through positional arguments; those helpers read the validated `CFG_*` contract.
   tools, stages a complete twelve-field env plus candidates, snapshots every
   target, atomically commits, passes validation, removes the backup, then
   reports success.
+- Base: a restarted service misses the first loopback health attempt but passes
+  a later retry; the operator sees no raw curl error and receives only the final
+  deployment success summary.
 - Base: a first install records every target as absent; a failed validation
   removes all newly created transaction targets and does not restart a
   nonexistent old service.
-- Bad: add a renderer/stager configuration positional argument, write
-  `/etc/bupt-ec/bupt-ec.env` before checksum verification, publish an installer
-  that needs a fragment beside it, or leave a new binary after `nginx -t` or
-  health validation fails.
+- Bad: expose expected per-attempt curl failures before a later success, add a
+  renderer/stager configuration positional argument, write `/etc/bupt-ec/bupt-ec.env`
+  before checksum verification, publish an installer that needs a fragment beside
+  it, or leave a new binary after `nginx -t` or health validation fails.
 
 ### 6. Tests Required
 
@@ -471,6 +482,9 @@ temporary root with mocked `curl`, `chown`, `systemctl`, and `nginx`, and assert
   failure leave old targets unchanged;
 - Nginx, restart, and health failures restore file content, modes, symlink
   targets, and attempt the old-service restart where one existed;
+- health retry tests make the mock curl emit recognizable stderr, then assert a
+  fail-then-success transaction hides it and commits after two attempts, while
+  ten exhausted attempts hide it, retain `Service health check failed`, and roll back;
 - first-install rollback removes all transaction targets; incomplete rollback
   preserves a mode-`0700` recovery directory and mode-`0600` env backup; a
   successful upgrade replaces every target and clears the backup; and legacy
@@ -508,6 +522,26 @@ prepare_staging "$archive" "$work_dir" "$staging_dir"
 
 The staging helpers consume the single validated `CFG_*` contract, leaving the
 transaction's path-only signatures stable.
+
+Health retries must suppress the implementation-owned curl noise without hiding
+Installer-owned exhaustion diagnostics:
+
+#### Wrong
+
+```bash
+if curl -fsS "${health_url}" >/dev/null; then
+  return
+fi
+```
+
+#### Correct
+
+```bash
+if curl -fsS "${health_url}" >/dev/null 2>&1; then
+  return
+fi
+# After the bounded loop: emit Service health check failed and return nonzero.
+```
 
 Critical filesystem helpers must also propagate every failure explicitly.
 Bash suppresses `errexit` inside a function invoked by `if`, `!`, `&&`, or
