@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 19
 - **Last Active**: 2026-09-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~798 | Active |
+| `journal-1.md` | ~838 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-09-02 | Complete ops experience rollout and v0.3.1 follow-up | `8f211a8`, `43a541b`, `c93471a`, `f2e34f4` | `main` |
 | 18 | 2026-09-02 | Pause bupt-ec CLI implementation before independent review | - | `main` |
 | 17 | 2026-08-21 | Fix devDependency audit findings via lockfile patch bumps | `d7af573` | `main` |
 | 16 | 2026-08-07 | 全面审计：性能与可维护性优化机会 | `1403f80` | `main` |

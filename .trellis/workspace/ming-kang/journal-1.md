@@ -796,3 +796,43 @@ CLI/metadata/transaction/release implementation is present and implement-agent g
 ### Next Steps
 
 - Read .trellis/tasks/08-22-bupt-ec-cli/research/pause-handoff-2026-09-01.md and rerun independent full-scope check before commit.
+
+
+## Session 19: Complete ops experience rollout and v0.3.1 follow-up
+
+**Date**: 2026-09-02
+**Task**: Complete ops experience rollout and v0.3.1 follow-up
+**Branch**: `main`
+
+### Summary
+
+Published v0.3.0, confirmed the v0.2.x production upgrade and UI/CLI version consistency, removed nightly release/tags, fixed transient Installer health-retry curl noise inline, published v0.3.1, updated Installer specs, and archived the parent task.
+
+### Main Changes
+
+- Removed GitHub nightly prerelease plus local/remote nightly tags after production success.
+- Suppressed per-attempt curl stderr in Installer health retries while preserving exhaustion diagnostics and rollback.
+- Published immutable v0.3.1 as Latest without automatically upgrading production.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8f211a8` | (see git log) |
+| `43a541b` | (see git log) |
+| `c93471a` | (see git log) |
+| `f2e34f4` | (see git log) |
+
+### Testing
+
+- [OK] task installer:check passed; independent patch review PASS.
+- [OK] main dry-run 33588576299 and v0.3.1 release workflow 33588730765 succeeded.
+- [OK] Published install.sh contains the fix; v0.3.1 refs align and nightly is absent.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- No active task; production remains healthy on v0.3.0 and may upgrade to v0.3.1 when desired.
