@@ -62,7 +62,7 @@
 4. **生产观察**：验证 systemd/Nginx、CLI、metadata、`/healthz`、`/readyz`、API/UI 与日志；至少观察两个检查点并确认版本三处一致。异常时优先依赖 Installer 自动 rollback；事务已成功但后续异常则使用已验证 VM 快照恢复。
 5. **删除 nightly 残留**：仅在 v0.3.0 资产和生产观察都通过后删除 GitHub nightly release、远程 tag 与本地 tag，随后验证 v0.3.0 仍为 Latest。
 
-当前远程基线：`v0.2.0` 是 Latest；`nightly` prerelease 与同名远程 tag 仍存在；`v0.3.0` 尚不存在。最新 `main` dry-run 为成功的 GitHub Actions run `33544029600`。证据见 `research/2026-09-01-integration-baseline.md`、`research/2026-09-02-local-integration-audit.md` 和 `review/2026-09-02-main-dry-run-success.md`。
+当前远程状态：`v0.3.0` 已由 release commit `8f211a8` 发布为 Latest，tag workflow `33584926291` 成功；`nightly` prerelease 与同名远程 tag 仍存在。用户明确授权跳过重复的 release preflight 直接创建发布，但该豁免不延伸到生产升级恢复准备或 nightly 删除。证据见 `research/2026-09-01-integration-baseline.md`、`research/2026-09-02-local-integration-audit.md`、`review/2026-09-02-main-dry-run-success.md` 和 `review/2026-09-02-v0.3.0-direct-release.md`。
 
 ## 发布风险接受与生产边界
 

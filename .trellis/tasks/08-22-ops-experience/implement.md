@@ -67,13 +67,15 @@
   production 只验证正常 update 和只读 smoke/observation。
 - [x] 向用户提交更新后的最终规划摘要和精确远程 mutation 边界。
 - [x] 用户在该摘要后明确重新批准发布、生产升级与成功后 nightly 删除。
+- [x] 2026-09-02 用户进一步明确授权跳过重复验证、直接发布 v0.3.0；该授权仅豁免
+  release creation 前的步骤 6–7，不授权跳过生产升级前的恢复准备，也不授权删除 nightly。
 
-**Gate**：本次风险模型和执行顺序是 material plan change。重新批准前不得运行 release
-script、创建/push v0.3.0、连接生产执行变更或删除 nightly。
+**Gate**：发布创建豁免已使用并记录；生产连接/变更和 nightly 删除仍受步骤 6、9–12 的
+原有 gate 约束。
 
 ## 6. 生产恢复与访问 preflight
 
-在 stable tag 创建前完成：
+发布创建已按用户明确授权跳过本节；以下事项仍必须在任何生产变更前完成：
 
 - [ ] 获得生产连接方式和明确主机标识；确认命令目标是预期生产 VM，不把凭据写入仓库。
 - [ ] 确认维护窗口内可接受短暂 restart/readiness warmup。
@@ -114,12 +116,12 @@ git diff --check
 
 ## 8. 创建并发布 v0.3.0
 
-- [ ] 运行 `scripts/release.sh v0.3.0`。
-- [ ] 检查 release commit 仅按脚本契约修改 `CHANGELOG.md` 与
-  `frontend/package.json`，日期、compare links、version 正确。
-- [ ] 检查 local `v0.3.0` 指向 release commit。
-- [ ] normal push `main` + `v0.3.0`；不 force、不移动/reuse tag。
-- [ ] 监控 tag-triggered Release workflow 到成功。
+- [x] 运行 `scripts/release.sh v0.3.0`。
+- [x] release commit `8f211a811133b10868e6977854fbef52f900d056` 仅按脚本契约修改
+  `CHANGELOG.md` 与 `frontend/package.json`。
+- [x] local/remote `v0.3.0` 指向该 release commit。
+- [x] normal push `main` + immutable `v0.3.0`；未 force、移动或复用 tag。
+- [x] tag-triggered Release workflow `33584926291` 成功。
 
 失败规则：
 
@@ -129,11 +131,11 @@ git diff --check
 
 ## 9. GitHub release/资产验证
 
-在生产变更前完成：
+在生产变更前完成；发布后的最小状态确认已完成，深度资产验证仍待执行：
 
-- [ ] `v0.3.0` release 非 draft/prerelease，`latest` 指向它。
+- [x] `v0.3.0` release 非 draft/prerelease，`latest` 指向它。
 - [ ] notes 与 CHANGELOG `0.3.0` section 一致。
-- [ ] 顶层 assets exact：两个 tarball、`checksums.txt`、`install.sh`。
+- [x] GitHub API 所列顶层 assets exact：两个 tarball、`checksums.txt`、`install.sh`。
 - [ ] protected temp dir 下载并验证 checksums、tar exact members/modes。
 - [ ] packaged/top-level/generated Installer byte parity。
 - [ ] amd64/arm64 CLI 与 Go binary version injection 均为 `v0.3.0`。
