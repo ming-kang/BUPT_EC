@@ -234,8 +234,8 @@ rm -rf "${session}"
   version、assets、nightly absence 与 git refs 已由主会话复核。
 - [x] `trellis-update-spec` 判断需要更新 Installer contract；已记录健康重试输出与测试约束。
 - [x] 最终 task/spec evidence 已完成并纳入收尾提交。
-- [ ] `task.py archive 08-22-ops-experience`。
-- [ ] 确认无 active task、工作区 clean、local/remote refs 符合预期。
+- [x] `task.py archive 08-22-ops-experience --no-commit` 已执行，active task 已清除。
+- [x] 归档提交后确认工作区 clean、main 同步、v0.3.1 refs 一致且 nightly 不存在。
 
 ## Remote Mutation Boundaries
 
