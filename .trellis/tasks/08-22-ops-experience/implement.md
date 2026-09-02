@@ -199,17 +199,31 @@ rm -rf "${session}"
 
 ## 12. nightly cleanup
 
-仅在步骤 9 和 10 全绿后：
+用户确认生产运行正常后执行；正式双 checkpoint、snapshot 与深度资产验证按用户明确指令豁免并记录风险：
 
-- [ ] 删除 GitHub `nightly` prerelease。
-- [ ] 删除 remote `refs/tags/nightly`，再删除 local nightly tag。
-- [ ] 验证无 nightly release/tag。
-- [ ] 验证 v0.3.0 仍为 Latest，latest/stable asset URL 正常。
-- [ ] 保留 snapshot 至 cleanup evidence 完成，随后交还 operator retention policy。
+- [x] 删除 GitHub `nightly` prerelease。
+- [x] 删除 remote `refs/tags/nightly`，再删除 local nightly tag。
+- [x] 验证无 nightly release/tag。
+- [x] 验证 v0.3.0 仍为 Latest。
+- [x] 用户明确表示无需备份/回滚；无 snapshot retention 动作。
 
-Partial failure 只重试缺失 cleanup，不触碰 v0.3.0。
+证据记录于 `review/2026-09-02-production-success-nightly-cleanup.md`。
 
-## 13. 最终终检、spec 判断与父任务归档
+## 13. v0.3.1 内联健康重试输出修复
+
+- [x] mock health curl 失败时写入可识别 stderr，建立真实噪声回归条件。
+- [x] `wait_for_health` 隐藏单次 curl stdout/stderr，但不改变重试参数和最终高层诊断。
+- [x] 成功事务测试改为首次失败、后续成功，断言两次调用且无 raw curl stderr。
+- [x] exhausted health failure 断言十次调用、无 raw curl stderr、保留
+  `Service health check failed` 与 rollback。
+- [x] regenerate `scripts/install.sh`，添加 `[Unreleased]` Fixed 条目。
+- [x] focused Installer suite 与 `task installer:check` 全绿；generator drift、recursive
+  syntax/ShellCheck 和 `git diff --check` 通过。
+- [ ] 提交并 normal push 修复，等待 exact-HEAD main dry-run 成功。
+- [ ] `scripts/release.sh v0.3.1` 创建 immutable tag/release，监控 tag workflow 成功。
+- [ ] 确认 v0.3.1 为 Latest、四项资产存在、nightly 未复活；不升级生产。
+
+## 14. 最终终检、spec 判断与父任务归档
 
 - [ ] 将 parent 八项 acceptance 映射到 repository/dry-run/production evidence；明确记录
   waived clean-host/fault-injection gap 后再勾选。

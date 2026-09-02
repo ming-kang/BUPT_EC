@@ -277,6 +277,16 @@ Only after release verification and both production checkpoints:
 
 Partial cleanup retries only the missing action and never touches v0.3.0.
 
+Cleanup completed after the operator confirmed production success: GitHub nightly prerelease, remote tag, and local tag were deleted; v0.3.0 remained Latest.
+
+## v0.3.1 Inline Health-Retry Output Fix
+
+The production transaction showed the intended startup race behavior: the first loopback `/healthz` request reached the host before the restarted service had bound port 8080, then a later retry succeeded. `wait_for_health` currently redirects curl stdout only, so `curl -fsS` exposes each intermediate failure on stderr even though the retry state machine is still healthy.
+
+The smallest correction is owned by `scripts/installer/40-transaction.sh::wait_for_health`: redirect both stdout and stderr for each bounded retry. Do not change the ten-attempt loop, two-second curl bounds, one-second delay, success predicate, or the final `Service health check failed: <url>` diagnostic. Therefore a transient failure becomes silent, while exhaustion still returns nonzero through the existing high-level message and transaction rollback path.
+
+The generated `scripts/install.sh` must be regenerated rather than edited. The mock curl emits a recognizable stderr line on health failures; transaction tests must prove both a fail-then-success path suppresses it and an exhausted path suppresses raw curl output while retaining the Installer-owned final diagnostic. `CHANGELOG.md` carries the user-visible fix. Release `v0.3.1` uses the normal immutable release script/tag workflow and does not imply a production update.
+
 ## Security and Operational Notes
 
 - No task artifact or chat output records GitHub tokens, SSH keys, JW secrets,
