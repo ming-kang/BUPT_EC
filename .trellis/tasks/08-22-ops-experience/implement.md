@@ -41,16 +41,20 @@
 
 - [x] `4f60f8c chore(task): record ops release preflight`。
 - [x] `37926e6 chore(task): record main release dry-run`。
-- [x] 工作区 clean，所有证据 secret-free。
+- [x] `c555d03 chore(task): record production canary plan`。
+- [x] 所有已提交证据 secret-free。
 
 ## 4. Push main 与 GitHub dry-run
 
-- [x] normal non-force push main；当前 `main == origin/main == 37926e6`。
-- [x] Release run `33544029600` 对 exact HEAD 成功。
-- [x] quality、amd64/arm64 builds、composition、attestation 与 dry-run upload 全绿。
+- [x] normal non-force push main；production-canary planning HEAD
+  `c555d0372981022ef992560e11c5722adc623e21` 已同步到 `origin/main`。
+- [x] Release run `33583463349` 对 exact planning HEAD 成功。
+- [x] quality、amd64/arm64 builds、composition、attestation 与 dry-run upload 全绿；
+  tag-only notes/publication steps skipped。
 - [x] dry-run exact four assets、checksums、tar layout、Installer parity、
-  `main-37926e6` CLI/Go injection 验证通过。
-- [x] 未发布 GitHub release；无 v0.3.0 tag；nightly 未修改。
+  `main-c555d03` CLI/Go injection 验证通过。
+- [x] 未发布 GitHub release；无 v0.3.0 tag；v0.2.0 仍为 Latest，nightly 未修改。
+- [x] 证据记录于 `review/2026-09-02-production-plan-preparation.md`。
 - [x] 独立终检 zero finding；无需新项目级 spec。
 
 ## 5. 风险接受与生产方案重规划
