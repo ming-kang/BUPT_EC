@@ -82,7 +82,7 @@
 - [x] 最多 10 次、每次超时、间隔、成功条件与事务/回滚语义不变；
 - [x] 全部探测失败时仍输出明确的 `Service health check failed` 并触发原有回滚；
 - [x] generated `scripts/install.sh` 与源片段同步，回归测试覆盖“先失败后成功无噪声”和“最终失败仍有高层诊断”；
-- [ ] CHANGELOG 记录修复，immutable v0.3.1 发布成功；不自动升级生产。
+- [x] CHANGELOG 记录修复，immutable v0.3.1 发布成功；未自动升级生产。
 
 ## 非目标
 

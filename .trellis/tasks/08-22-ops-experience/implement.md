@@ -219,18 +219,21 @@ rm -rf "${session}"
 - [x] regenerate `scripts/install.sh`，添加 `[Unreleased]` Fixed 条目。
 - [x] focused Installer suite 与 `task installer:check` 全绿；generator drift、recursive
   syntax/ShellCheck 和 `git diff --check` 通过。
-- [ ] 提交并 normal push 修复，等待 exact-HEAD main dry-run 成功。
-- [ ] `scripts/release.sh v0.3.1` 创建 immutable tag/release，监控 tag workflow 成功。
-- [ ] 确认 v0.3.1 为 Latest、四项资产存在、nightly 未复活；不升级生产。
+- [x] 修复提交 `43a541b` 与 task evidence 提交 `d3f8283` normal push；exact-HEAD
+  main dry-run `33588576299` 成功。
+- [x] `scripts/release.sh v0.3.1` 创建 release commit/tag `c93471a`；tag workflow
+  `33588730765` 成功。
+- [x] v0.3.1 为 Latest、四项资产存在、发布的 `install.sh` 含修复、nightly 未复活；
+  未升级生产。
 
 ## 14. 最终终检、spec 判断与父任务归档
 
-- [ ] 将 parent 八项 acceptance 映射到 repository/dry-run/production evidence；明确记录
-  waived clean-host/fault-injection gap 后再勾选。
-- [ ] 独立 `trellis-check` full-scope review：release、production checkpoints、version、
-  assets、nightly absence、git state。
-- [ ] 运行 `trellis-update-spec` 判断；无新 executable contract 时记录无需更新理由。
-- [ ] 提交最终 task/workspace/spec evidence。
+- [x] parent 八项 acceptance 已映射到 repository/dry-run/production evidence；
+  clean-host/fault-injection、深度 asset、正式双 checkpoint 与 snapshot 缺口明确记录为用户豁免。
+- [x] 独立只读 review 对 v0.3.1 patch PASS；main/tag release workflows 全绿，发布、
+  version、assets、nightly absence 与 git refs 已由主会话复核。
+- [x] `trellis-update-spec` 判断需要更新 Installer contract；已记录健康重试输出与测试约束。
+- [x] 最终 task/spec evidence 已完成并纳入收尾提交。
 - [ ] `task.py archive 08-22-ops-experience`。
 - [ ] 确认无 active task、工作区 clean、local/remote refs 符合预期。
 
