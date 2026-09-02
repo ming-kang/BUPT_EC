@@ -8,6 +8,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-02
+
 ### Fixed
 
 - Installer startup health retries no longer print transient curl connection
@@ -399,7 +401,8 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - One-command installer (`install.sh`) configuring systemd and Nginx on Debian/Ubuntu.
 - Release pipeline publishing Linux amd64/arm64 tarballs with checksums and build provenance attestations.
 
-[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/ming-kang/BUPT_EC/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/ming-kang/BUPT_EC/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/ming-kang/BUPT_EC/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/ming-kang/BUPT_EC/compare/v0.1.5...v0.1.6
