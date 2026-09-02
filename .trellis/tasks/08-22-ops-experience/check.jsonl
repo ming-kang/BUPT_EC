@@ -1,4 +1,5 @@
 {"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "独立终检对照本地/CI质量门、release workflow、toolchain 与 changelog hygiene"}
 {"file": ".trellis/spec/backend/installer-guidelines.md", "reason": "终检默认 Installer 兼容、原子 rollback、CLI floor、metadata 与发布资产边界"}
 {"file": ".trellis/spec/backend/api-contract.md", "reason": "终检 release tag、readyz/API/UI version 三处一致与公共响应契约"}
-{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-01-integration-baseline.md", "reason": "核对远程发布前后状态、nightly cleanup 顺序与 deferred E2E blocker"}
+{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-01-integration-baseline.md", "reason": "核对远程发布前后状态、release preconditions 与 nightly cleanup 顺序"}
+{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-02-production-canary-decision.md", "reason": "终检生产 snapshot、正常升级、观察、禁故障注入和明确风险接受是否真实执行"}

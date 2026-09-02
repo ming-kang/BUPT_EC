@@ -54,21 +54,23 @@
 
 ## 最终集成评审（父任务直接负责）
 
-四个子任务已全部归档。父任务执行：
+四个子任务已全部归档；本地全量门与 `main` release dry-run 已通过。父任务余下流程：
 
-1. **端到端演练**：在干净环境验证「首装 → `bupt-ec update`」以及 CLI-bearing stable tag 间的版本选择；pre-v0.3 target 必须在联网前拒绝并验证 current/latest Installer 的兜底 rollback
-2. **破坏性变更盘点**：确认 CHANGELOG 的 `Removed` / `Changed` 段落完整覆盖 nightly 移除，并给出存量 nightly 机器的处置说明
-3. **发布前同步门**：本地 `main` 当前领先 `origin/main` 18 个提交；先推送 `main` 并要求对应的 release dry-run workflow 全绿，再运行要求 `HEAD == origin/main` 的发布脚本
-4. **发布 v0.3.0**：`scripts/release.sh v0.3.0`，验证 release 资产、release notes、`latest` 指向
-5. **删除 nightly 残留**：发布后删除 GitHub 上的 nightly release 与 `nightly` git tag（顺序在稳定版发布**之后**，避免出现无任何可用安装源的窗口）
+1. **生产恢复前置**：在生产主机变更前创建云主机/VM 快照，并确认快照状态可恢复、控制台/SSH 可用；采集不含秘密的 systemd/Nginx/health/version 基线。
+2. **发布 v0.3.0**：执行 release-critical preflight 后运行 `scripts/release.sh v0.3.0`，监控 tag workflow，并验证 release notes、四个精确资产、checksum、版本注入与 `latest` 指向。
+3. **生产金丝雀升级**：在维护窗口使用已发布 current/latest Installer 将现有生产主机正常升级到显式 `v0.3.0`；只执行正常升级及只读 smoke checks，不做故障注入或 legacy rollback 演练。
+4. **生产观察**：验证 systemd/Nginx、CLI、metadata、`/healthz`、`/readyz`、API/UI 与日志；至少观察两个检查点并确认版本三处一致。异常时优先依赖 Installer 自动 rollback；事务已成功但后续异常则使用已验证 VM 快照恢复。
+5. **删除 nightly 残留**：仅在 v0.3.0 资产和生产观察都通过后删除 GitHub nightly release、远程 tag 与本地 tag，随后验证 v0.3.0 仍为 Latest。
 
-当前远程基线：`v0.2.0` 是 Latest；`nightly` prerelease 与同名远程 tag 仍存在；`v0.3.0` 尚不存在。证据见 `research/2026-09-01-integration-baseline.md`。
+当前远程基线：`v0.2.0` 是 Latest；`nightly` prerelease 与同名远程 tag 仍存在；`v0.3.0` 尚不存在。最新 `main` dry-run 为成功的 GitHub Actions run `33544029600`。证据见 `research/2026-09-01-integration-baseline.md`、`research/2026-09-02-local-integration-audit.md` 和 `review/2026-09-02-main-dry-run-success.md`。
 
-## 发布安全决策与延期项
+## 发布风险接受与生产边界
 
-- 用户决定当前阶段暂不执行真实 Linux 主机端到端演练。
-- 仓库 mocks、release-layout simulation 与完整质量门仍必须执行，但它们不能替代真实 systemd/Nginx/root 文件系统验证。
-- 安全默认是把真实端到端演练保留为 **v0.3.0 发布阻断项**：本阶段可以完成本地集成审计、发布准备及 `main` dry-run 验证；在演练完成，或用户以后明确接受跳过该门槛的发布风险之前，不推送 `v0.3.0` tag，也不删除 nightly release/tag。
+- 用户明确决定不建立独立测试环境，直接在生产环境执行首次真实主机升级，并接受因此无法在发布前证明 clean-host、故障注入、pre-v0.3 removal/restore 与真实 systemd/Nginx rollback 的剩余风险。
+- 用户选择云主机/VM 快照作为 Installer transaction 之外的最后恢复手段；快照必须在变更前完成且状态可恢复，仅“已请求创建”不满足 gate。
+- 仓库 mocks、release-layout simulation、本地全量门与 `main` dry-run 是 clean-install、故障 rollback、legacy removal 的发布前证据；不得声称它们等同于独立真实 E2E。
+- 生产环境禁止故意安装损坏候选、禁止为了测试执行 pre-v0.3 rollback、禁止测试 CLI/metadata 删除恢复。直接 Installer 的 v0.2.x fallback 仅保留为事故恢复选项，使用前需再次明确授权。
+- 由于 exact `v0.3.0` 资产只有稳定 tag workflow 才会发布，生产验证发生在 tag 公开之后；若生产发现问题，不移动或复用 `v0.3.0` tag，不删除 nightly，恢复主机后以 fix-forward 新版本处理。
 
 ## 非目标
 

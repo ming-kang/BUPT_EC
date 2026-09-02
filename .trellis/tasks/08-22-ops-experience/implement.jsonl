@@ -1,4 +1,5 @@
 {"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "父任务本地/CI发布质量门、工作流约束、工具链与文档发布卫生"}
 {"file": ".trellis/spec/backend/installer-guidelines.md", "reason": "默认安装兼容、CLI/metadata八目标事务、pre-v0.3 fallback 与 exact release layout"}
 {"file": ".trellis/spec/backend/api-contract.md", "reason": "readyz build version、API envelope 与设置 UI 版本可见性的一致性契约"}
-{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-01-integration-baseline.md", "reason": "当前 local/remote refs、GitHub releases、release script preconditions 与 E2E 延期基线"}
+{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-01-integration-baseline.md", "reason": "当前 local/remote refs、GitHub releases 与 release script preconditions 基线"}
+{"file": ".trellis/tasks/08-22-ops-experience/research/2026-09-02-production-canary-decision.md", "reason": "用户接受无独立 E2E 的剩余风险、VM snapshot gate、生产禁测边界与恢复策略"}

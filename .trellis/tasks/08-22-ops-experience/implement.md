@@ -1,179 +1,234 @@
-# 执行计划：v0.3.0 最终集成、发布与 nightly 下线
+# 执行计划：v0.3.0 生产金丝雀发布与 nightly 下线
 
 任务：`08-22-ops-experience`
-状态：planning
+状态：in_progress（需求变更后回到规划审阅 gate）
 
-## 0. 规划与远程基线
+## 0. 规划、子任务与远程基线
 
-- [x] 确认四个子任务均已归档，父任务是唯一活跃 Trellis 任务。
-- [x] 记录本地 `main`、`origin/main`、`v0.3.0`、`nightly` tag/release 与 GitHub
-  authentication 的只读基线。
-- [x] 确认 `scripts/release.sh` 要求 clean `main` 且 `HEAD == origin/main`，并记录其
-  release commit/tag/push 及本地 rollback 契约。
-- [x] 记录用户决定：暂不提供真实 Linux E2E 环境；该 gate 默认阻断 stable tag push。
-- [x] 完成 PRD convergence、design、implement、真实 implement/check context，并通过
-  `task.py validate`。
-- [x] 向用户提交最终规划摘要；用户随后明确批准启动执行。
+- [x] 四个 child 均完成归档，父任务是唯一 active Trellis task。
+- [x] PRD/design/implement 与 implement/check context manifests 完成并通过 validate。
+- [x] 用户批准第一阶段本地集成、普通 push main 与 GitHub dry-run。
+- [x] 记录 local/remote refs、GitHub release、nightly 与 release script baseline。
 
 ## 1. 本地跨子任务集成审计
 
-- [x] 读取四个 archived child 的 PRD/design/implement/check 结果和工作/归档提交，建立
-  acceptance-to-evidence 表，不重复实现已归档功能。
-- [x] 复核 parent 八项跨子任务验收：默认 Installer 兼容、零问答 update、单稳定轨道、
-  版本一致、事务完整、文档同步、质量门与 CHANGELOG。
-- [x] 搜索 `nightly` 全仓匹配并分类：允许 released CHANGELOG 历史；拒绝 production
-  workflow/script/current docs/config 路径或仍推广 nightly 的文案。
-- [x] 提取 `[Unreleased]` 并逐项映射四个子任务；确认 `Added`/`Changed`/`Removed`、pre-v0.3
-  fallback 与存量 nightly 迁移说明完整。
-- [x] 验证 release composition source、generated Installer、CLI build marker、Go ldflags、
-  readyz/UI version flow 与 exact four-asset contract 一致。
-- [ ] 如发现真实缺陷，停止发布准备，修复 owning contract，更新 docs/CHANGELOG/spec，
-  并从本步骤重新开始。
+- [x] 建立四个 archived child 的 acceptance-to-evidence 表。
+- [x] 复核 parent 八项跨子任务验收。
+- [x] 分类所有 `nightly` 匹配；无当前生产发布/推广路径。
+- [x] `[Unreleased]` 完整覆盖四项交付与 nightly migration。
+- [x] 验证 release composition、generated Installer、CLI/Go/API/UI version flow 和
+  exact four-asset contract。
+- [x] 记录于 `research/2026-09-02-local-integration-audit.md`。
 
 ## 2. 本地全量发布前门禁
 
-按顺序运行并保存摘要：
-
-```bash
-task check
-task test
-task installer:check
-pnpm -C frontend build
-pnpm -C frontend size
-go build ./...
-rm -rf web/dist && cp -r frontend/dist web/dist
-go build -tags embed_assets ./...
-GOTOOLCHAIN=go1.25.13 go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
-actionlint .github/workflows/ci.yml .github/workflows/quality.yml .github/workflows/release.yml
-git diff --check
-python ./.trellis/scripts/task.py validate 08-22-ops-experience
-```
-
-- [x] `task check` 全绿，包括 Go/frontend/Installer/CLI/release-layout/ShellCheck。
+- [x] `task check` 全绿。
 - [x] `task test` race suite 全绿。
-- [x] fresh frontend build 与 bundle budget 全绿。
-- [x] tagless/embed builds 全绿。
-- [x] pinned Go 1.25.13 vulnerability scan 无 reachable finding。
-- [x] actionlint 与 whitespace checks 全绿。
-- [x] 生成物无 drift，工作区无 credentials/logs/build artifacts/未知脏文件。
+- [x] `task installer:check` 全绿：Installer 41 scenarios / 44 test functions、CLI 10
+  scenarios、release-layout stable/main simulation 与 recursive ShellCheck。
+- [x] frontend 18 files / 127 tests、fresh build 与 bundle `164,862 / 230,888 B` 全绿。
+- [x] tagless/embed Go builds 全绿。
+- [x] pinned Go 1.25.13 `govulncheck` 无 reachable finding。
+- [x] actionlint、generator drift、`git diff --check` 与 task validate 全绿。
 
-**Gate**：任一失败时不得 push `main`。
+审计修复：
+
+- [x] `3969e56 fix(frontend): pin browserslist security update`。
+- [x] `1cd87b2 fix(test): use Shanghai dates in cache fixtures`。
+- [x] `40f0b46 fix(ci): suppress dynamic test override lint`。
 
 ## 3. 集成证据提交
 
-- [x] 更新 parent PRD acceptance checkboxes，只勾选已由证据满足的项；E2E 相关项保持未完成。
-- [x] 将本地审计摘要写入 task research/review 文件，不写 secrets 或大段测试日志。
-- [x] 若仅 task artifacts 变化，使用 scoped Trellis/planning commit；若修复产品缺陷，使用
-  独立 Conventional Commit 并保留 CHANGELOG 同步。
-- [x] 提交后确认 clean `main`，再次运行 `git diff --check` 与 generator drift check。
+- [x] `4f60f8c chore(task): record ops release preflight`。
+- [x] `37926e6 chore(task): record main release dry-run`。
+- [x] 工作区 clean，所有证据 secret-free。
 
 ## 4. Push main 与 GitHub dry-run
 
-这是第一个远程 mutation gate。只有在最新规划获批准且步骤 1–3 全绿后执行。
+- [x] normal non-force push main；当前 `main == origin/main == 37926e6`。
+- [x] Release run `33544029600` 对 exact HEAD 成功。
+- [x] quality、amd64/arm64 builds、composition、attestation 与 dry-run upload 全绿。
+- [x] dry-run exact four assets、checksums、tar layout、Installer parity、
+  `main-37926e6` CLI/Go injection 验证通过。
+- [x] 未发布 GitHub release；无 v0.3.0 tag；nightly 未修改。
+- [x] 独立终检 zero finding；无需新项目级 spec。
 
-- [x] `git fetch --force origin main --tags`，确认没有意外 remote divergence。
-- [x] push 当前 `main` 到 `origin/main`；不得 force push。
-- [x] 使用 `gh run list/view/watch` 锁定该 HEAD 对应的 `release.yml` run。
-- [x] 确认 quality-gate、build-go、release dry-run/attestation 全部成功。
-- [x] 下载或检查 workflow artifacts：两个 tarball、`checksums.txt`、`install.sh`；验证
-  exact layout、checksums、Installer parity 与 `main-<short-sha>` version injection。
-- [x] 确认该 main run 未创建 GitHub release，且远程仍无 `v0.3.0` tag/release。
-- [x] 记录 run URL/id、HEAD 与验证摘要。
+## 5. 风险接受与生产方案重规划
 
-**Rollback**：dry-run 失败时不创建 stable tag；在 `main` 上 fix forward 并重新通过完整
-本地门和新的 GitHub dry-run。
+- [x] 用户明确无独立测试条件，决定直接在生产环境执行首次真实升级。
+- [x] 用户选择云主机/VM 快照作为 Installer transaction 外部恢复兜底。
+- [x] PRD/design 改为发布后生产金丝雀：禁止生产 fault injection、clean install、
+  pre-v0.3 removal/restore 演练。
+- [x] 记录接受的证据缺口：clean-host/真实故障 rollback 仅由 repository mocks 覆盖，
+  production 只验证正常 update 和只读 smoke/observation。
+- [x] 向用户提交更新后的最终规划摘要和精确远程 mutation 边界。
+- [x] 用户在该摘要后明确重新批准发布、生产升级与成功后 nightly 删除。
 
-## 5. 真实 Linux E2E（当前延期 / blocking）
+**Gate**：本次风险模型和执行顺序是 material plan change。重新批准前不得运行 release
+script、创建/push v0.3.0、连接生产执行变更或删除 nightly。
 
-- [ ] 获得可销毁或明确授权的 Linux 环境；记录发行版和必要工具版本，不记录访问秘密。
-- [ ] 清洁首装 current/latest Installer，验证真实路径、owner/mode、systemd、Nginx、CLI
-  与 metadata。
-- [ ] 验证非 root `status`/`version`/`health`、root `config show` secrecy 与 UI/readyz/CLI
-  version consistency。
-- [ ] 执行零 prompt `bupt-ec update`，验证完整配置保留和 transaction success。
-- [ ] 验证 `bupt-ec update v0.2.x` 在 curl 前拒绝。
-- [ ] 用 current/latest Installer direct fallback 验证 pre-v0.3 transaction removal/rollback
-  契约（基于可用 immutable release/fixture，禁止污染生产主机）。
-- [ ] 保存不含凭据的 E2E 结果，清理 VM/测试部署。
+## 6. 生产恢复与访问 preflight
 
-**当前决定**：用户暂时不测试。因此执行到这里必须暂停；不得默认勾选、不得用 mocks
-冒充真实 E2E，也不得继续 stable tag push。若用户以后明确接受跳过风险，先更新 PRD/design/
-implement 并重新提交最终规划摘要。
+在 stable tag 创建前完成：
 
-## 6. v0.3.0 release preflight
+- [ ] 获得生产连接方式和明确主机标识；确认命令目标是预期生产 VM，不把凭据写入仓库。
+- [ ] 确认维护窗口内可接受短暂 restart/readiness warmup。
+- [ ] 创建 VM/系统盘 snapshot，等待 provider 状态达到 `available/completed`。
+- [ ] 记录 snapshot ID/time/state（不记录 access secret），验证 provider console 和 SSH。
+- [ ] 采集 secret-free baseline：
+  - [ ] `systemctl is-active/is-enabled bupt-ec`；
+  - [ ] `nginx -t`；
+  - [ ] healthz/readyz HTTP status 和 running version；
+  - [ ] installed target owner/mode/hash，但不显示 private env 内容；
+  - [ ] 当前 API/UI 可用性；
+  - [ ] 当前 saved selector/trust source 通过安全方式确认。
+- [ ] 确认 snapshot restore 操作路径和负责执行者。
 
-仅在步骤 5 完成或经过新的明确风险豁免后执行：
+**Gate**：snapshot 仅 requested/in-progress、console/SSH 不可用、baseline 异常或 custom
+mirror/saved nightly 未厘清时不得发布 tag。
 
-- [ ] fetch 后确认 clean `main == origin/main`。
-- [ ] 确认最新 main dry-run workflow 对该 HEAD 全绿。
-- [ ] 确认本地/远程均无 `v0.3.0` tag/release，`v0.2.0` 仍是 Latest，nightly 仍可用。
-- [ ] 再跑 release-critical subset：generator drift、Installer/CLI/layout suites、CHANGELOG
-  extraction、actionlint、`git diff --check`。
-- [ ] 人工审阅 `scripts/extract-changelog.sh Unreleased` 输出作为最终 release notes。
+## 7. v0.3.0 release-critical preflight
 
-## 7. 创建并发布 v0.3.0
+```bash
+git fetch --force origin main --tags
+git status --short --branch
+bash scripts/generate-install.sh --check
+bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
+scripts/extract-changelog.sh Unreleased
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.10 \
+  .github/workflows/ci.yml .github/workflows/quality.yml .github/workflows/release.yml
+git diff --check
+```
+
+- [ ] clean `main == origin/main`，latest green dry-run 属于 current HEAD。
+- [ ] local/remote/GitHub 都无 `v0.3.0` tag/release。
+- [ ] `v0.2.0` 仍为 Latest；nightly release/tag 仍存在。
+- [ ] release-critical suites、generator、actionlint、diff check 全绿。
+- [ ] 人工审阅 `Unreleased` 输出作为最终 release notes。
+
+## 8. 创建并发布 v0.3.0
 
 - [ ] 运行 `scripts/release.sh v0.3.0`。
-- [ ] 检查 `chore: release v0.3.0` 只修改预期 `CHANGELOG.md` 与
-  `frontend/package.json`，日期/compare links/version 均正确。
-- [ ] 检查 local `v0.3.0` tag 指向 release commit。
-- [ ] 在脚本 push gate 确认后推送 `main` 与 `v0.3.0`；不得 force push/move tag。
-- [ ] 监控 tag-triggered `release.yml` 到成功；失败时保留 nightly，不执行 cleanup。
+- [ ] 检查 release commit 仅按脚本契约修改 `CHANGELOG.md` 与
+  `frontend/package.json`，日期、compare links、version 正确。
+- [ ] 检查 local `v0.3.0` 指向 release commit。
+- [ ] normal push `main` + `v0.3.0`；不 force、不移动/reuse tag。
+- [ ] 监控 tag-triggered Release workflow 到成功。
 
-## 8. 发布资产与版本一致性验证
+失败规则：
 
-- [ ] GitHub `v0.3.0` release 非 draft/prerelease，且 `latest` 指向它。
-- [ ] release notes 与 `CHANGELOG.md` 的 `0.3.0` section 一致。
-- [ ] 顶层 assets exact 为两个 tarball、`checksums.txt`、`install.sh`。
-- [ ] 下载到 protected temp dir，验证 checksums 与两个 tarball exact member list。
-- [ ] 验证 packaged Installer 与 top-level/generated Installer byte parity。
-- [ ] 验证 amd64/arm64 packaged CLI bytes/version marker 都是 `v0.3.0`。
-- [ ] 验证 Go binary `/readyz` version、CLI version 与 UI display 数据流同源；若真实部署
-  尚未验证，不得声称三处运行时一致已满足。
-- [ ] 验证 `releases/latest/download/install.sh` 与所有 stable assets 可访问。
+- commit/tag 未 push：确认远程无 ref 后才可使用文档 local rollback；
+- tag workflow 失败：不动生产、不删 nightly；transient 可 rerun，代码缺陷必须新版本
+  fix-forward，不移动 tag。
 
-## 9. nightly release/tag 删除
+## 9. GitHub release/资产验证
 
-仅在步骤 8 全绿后执行，且操作前再次读取远程状态：
+在生产变更前完成：
+
+- [ ] `v0.3.0` release 非 draft/prerelease，`latest` 指向它。
+- [ ] notes 与 CHANGELOG `0.3.0` section 一致。
+- [ ] 顶层 assets exact：两个 tarball、`checksums.txt`、`install.sh`。
+- [ ] protected temp dir 下载并验证 checksums、tar exact members/modes。
+- [ ] packaged/top-level/generated Installer byte parity。
+- [ ] amd64/arm64 CLI 与 Go binary version injection 均为 `v0.3.0`。
+- [ ] `releases/latest/download/install.sh` 和 stable assets 可访问。
+
+**Gate**：任一 mismatch 都不得升级生产，nightly 保留。
+
+## 10. 生产金丝雀正常升级
+
+### 10.1 Live command review
+
+- [ ] 根据 baseline 确认生产 host 是 pre-v0.3 还是已有 CLI。
+- [ ] 确认 saved source 是 official GitHub；若 custom mirror 或 saved nightly，先按文档
+  选择明确路径，不静默改变 trust source。
+- [ ] 向用户展示最终主机、snapshot 与命令摘要；确认后执行。
+
+Pre-v0.3 official-source host 推荐下载后运行 current Installer，使 stdin 真正关闭：
+
+```bash
+session="$(mktemp -d /tmp/bupt-ec-release.XXXXXXXX)"
+chmod 0700 "${session}"
+curl --fail --show-error --silent --location \
+  --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 60 \
+  -o "${session}/install.sh" \
+  https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh
+sudo VERSION=v0.3.0 bash "${session}/install.sh" --mode=update < /dev/null
+rm -rf "${session}"
+```
+
+- [ ] Installer 返回 0 并报告 deployment success。
+- [ ] 若返回非零，确认是否 `Rollback completed.`，对比 baseline，保留 recovery dir，停止
+  后续动作且不删 nightly。
+
+### 10.2 Immediate smoke
+
+- [ ] `bupt-ec version/status/health/logs -n 50`。
+- [ ] systemd active/enabled；`nginx -t` 通过。
+- [ ] healthz 2xx；readyz 在 warmup 后 2xx。
+- [ ] CLI root:root 0755；metadata root:root 0644 exact 两字段；private env 仍 root:root
+  0600，绝不输出其值。
+- [ ] selector/running/CLI/API/UI version 均按契约为 v0.3.0。
+- [ ] 页面和今日数据正常；无重复新错误或 secret disclosure。
+
+### 10.3 Observation
+
+- [ ] 第一个完整成功 checkpoint。
+- [ ] 至少五分钟后、且不早于升级后十分钟完成第二个成功 checkpoint。
+- [ ] 两次均要求 active/enabled、Nginx valid、双 probe 2xx、v0.3.0 version consistency、
+  API/UI 正常和无持续新错误。
+
+## 11. 生产异常处理
+
+- [ ] Installer transaction 失败时先等待/验证自动 rollback，不在 rollback 运行中 restore VM。
+- [ ] rollback incomplete 时保留 root-only recovery dir 并使用 provider console/snapshot plan。
+- [ ] Installer 成功但 smoke/observation 失败时停止变更、保存 safe evidence、恢复已验证
+  VM snapshot。
+- [ ] 已发布 v0.3.0 有缺陷时不移动/删除/reuse tag；恢复 production，保留 nightly，
+  fix-forward 新 immutable version。
+- [ ] direct v0.2.x fallback 仅作为二级事故恢复，执行前重新取得明确授权；不用于测试。
+
+## 12. nightly cleanup
+
+仅在步骤 9 和 10 全绿后：
 
 - [ ] 删除 GitHub `nightly` prerelease。
-- [ ] 删除 remote `refs/tags/nightly`，再删除 local `nightly` tag。
-- [ ] 确认 `gh release list/view` 无 nightly，`git ls-remote` 无 nightly tag。
-- [ ] 确认 v0.3.0 仍为 Latest，latest/stable asset URL 正常。
-- [ ] 搜索仓库 production paths 不再引用 nightly；CHANGELOG 历史引用保留。
+- [ ] 删除 remote `refs/tags/nightly`，再删除 local nightly tag。
+- [ ] 验证无 nightly release/tag。
+- [ ] 验证 v0.3.0 仍为 Latest，latest/stable asset URL 正常。
+- [ ] 保留 snapshot 至 cleanup evidence 完成，随后交还 operator retention policy。
 
-**Partial-failure rule**：若 release 与 tag 只删除其一，仅重试缺失动作；绝不修改或删除
-`v0.3.0`。
+Partial failure 只重试缺失 cleanup，不触碰 v0.3.0。
 
-## 10. 父任务完成与归档
+## 13. 最终终检、spec 判断与父任务归档
 
-- [ ] 将 parent 八项 acceptance 全部映射到最终证据并勾选。
-- [ ] 独立 `trellis-check` 对照 parent PRD/design/implement、GitHub release、E2E 证据、
-  asset layout 与 nightly absence 做 full-scope review。
-- [ ] 必要时运行 `trellis-update-spec`；若无新可执行契约，记录无需更新的理由。
-- [ ] 提交最终 task/spec/workspace 记录。
-- [ ] `python ./.trellis/scripts/task.py archive 08-22-ops-experience`。
-- [ ] 确认无 active Trellis task、工作区 clean、未误 push 其他 refs。
+- [ ] 将 parent 八项 acceptance 映射到 repository/dry-run/production evidence；明确记录
+  waived clean-host/fault-injection gap 后再勾选。
+- [ ] 独立 `trellis-check` full-scope review：release、production checkpoints、version、
+  assets、nightly absence、git state。
+- [ ] 运行 `trellis-update-spec` 判断；无新 executable contract 时记录无需更新理由。
+- [ ] 提交最终 task/workspace/spec evidence。
+- [ ] `task.py archive 08-22-ops-experience`。
+- [ ] 确认无 active task、工作区 clean、local/remote refs 符合预期。
 
-## Commit and Remote Mutation Shape
+## Remote Mutation Boundaries
 
-预期提交/远程事件：
+重新批准后授权范围将是：
 
-1. 可能的集成修复提交（仅检查发现缺陷时）；
-2. parent integration evidence/task-artifact commit；
-3. normal push `main`，触发 non-publishing dry-run；
-4. `chore: release v0.3.0` + immutable `v0.3.0` tag；
-5. normal push `main` + tag，触发 stable publication；
-6. post-verification nightly release/tag deletion；
-7. parent Trellis archive commit。
+1. normal push release commit 和 immutable `v0.3.0` tag；
+2. 对已确认生产主机执行一次正常 v0.3.0 update；
+3. 仅在 release + production 两次 checkpoint 全绿后删除 nightly release/tag；
+4. 不 force push、不移动 tag、不执行 production fault injection、不主动 direct rollback
+   到 pre-v0.3。
 
-任何步骤都不使用 force push。发布 tag 一旦远程发布，不移动、不复用。
+## Ready-to-Resume Gate
 
-## Ready-to-Start Gate
-
-- [x] 四个 child 均完成归档。
-- [x] 远程 baseline 与 release script constraints 已研究。
-- [x] 用户决定真实 E2E 当前延期；release blocking policy 已写清。
-- [x] PRD convergence、design、implement 与 context manifests 完成并通过 validate。
-- [x] 最新最终规划摘要已提交给用户。
-- [x] 用户在该摘要后明确批准启动执行。
+- [x] 第一阶段审计、门禁、main push/dry-run、独立 check 已完成。
+- [x] 用户明确选择 production canary 并接受无独立 E2E 的剩余风险。
+- [x] 用户选择可恢复 VM snapshot。
+- [x] 更新后的 PRD/design/implement 已写明 mutation ordering、rollback 和禁测边界。
+- [x] 最新 materially changed planning summary 已提交用户。
+- [x] 用户在该摘要后明确批准继续执行。

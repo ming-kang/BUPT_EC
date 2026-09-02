@@ -1,212 +1,290 @@
-# 设计：v0.3.0 最终集成、发布与 nightly 下线
+# 设计：v0.3.0 生产金丝雀发布与 nightly 下线
 
 任务：`08-22-ops-experience`
 子任务状态：4/4 已归档
+当前状态：本地集成审计与 `main` release dry-run 已完成
 
 ## Architecture Overview
 
-父任务不再新增产品功能。它把四个已归档交付整合为一个受控发布状态机：
+父任务不再新增产品功能。用户明确接受无独立测试环境的剩余风险，并选择云主机/VM
+快照作为生产升级的外部恢复兜底。剩余发布状态机为：
 
 ```text
-local main (18 commits ahead)
+clean main == origin/main
   │
-  ├─ local full-scope integration audit
-  │    ├─ Go/frontend/shell/security gates
-  │    ├─ exact release-layout simulation
-  │    ├─ changelog/nightly production-path audit
-  │    └─ cross-child contract review
+  ├─ release-critical preflight
+  │    ├─ current HEAD dry-run already green
+  │    ├─ generated Installer / CLI / layout checks
+  │    ├─ release notes review
+  │    └─ v0.3.0 absence + nightly presence
   │
-  ├─ push main ── GitHub release.yml dry-run
-  │                    ├─ reusable quality gate
-  │                    ├─ amd64/arm64 embedded builds
-  │                    └─ pack/checksum/attest artifacts, no publication
-  │
-  ├─ real Linux E2E gate [currently deferred / blocking]
-  │    ├─ clean install
-  │    ├─ bupt-ec update
-  │    ├─ version/status/UI consistency
-  │    └─ pre-v0.3 no-curl rejection + current Installer fallback
+  ├─ production recovery preflight
+  │    ├─ VM snapshot reaches recoverable/available state
+  │    ├─ provider console + SSH verified
+  │    └─ secret-free service/Nginx/version baseline captured
   │
   ├─ scripts/release.sh v0.3.0
-  │    ├─ release commit
-  │    ├─ immutable v0.3.0 tag
-  │    └─ tag workflow publishes four assets
+  │    ├─ release commit + immutable tag
+  │    └─ tag workflow publishes exact four assets
   │
-  └─ verify v0.3.0 latest ── delete nightly release/tag
+  ├─ verify v0.3.0 release/latest/assets
+  │
+  ├─ production canary upgrade in maintenance window
+  │    ├─ direct current/latest Installer → explicit v0.3.0
+  │    ├─ transaction result + filesystem/service checks
+  │    ├─ CLI/readyz/API/UI version consistency
+  │    └─ two observation checkpoints
+  │
+  └─ production healthy ── delete nightly release/tag ── archive parent
 ```
 
-The safe ordering is strict. `nightly` remains available until v0.3.0 is
-published and verified. The stable tag is not pushed while the real-host E2E
-gate is deferred unless the user later makes an explicit risk-acceptance
-decision.
+The ordering is strict. `nightly` remains available until both the public
+v0.3.0 release and production canary are verified. Production is not used for
+fault injection, clean-install rehearsal, or deliberate legacy rollback.
 
 ## Responsibility Boundary
 
 | Concern | Owner |
 | --- | --- |
-| local source/tests/docs/spec integration | parent task execution |
-| release asset composition | `.github/workflows/release.yml` + `scripts/compose-release-assets.sh` |
+| source/tests/docs/spec integration | completed parent-task audit |
+| release composition and checksums | `.github/workflows/release.yml` + `scripts/compose-release-assets.sh` |
 | release commit/tag creation | `scripts/release.sh v0.3.0` |
-| stable asset publication | GitHub tag-triggered Release workflow |
-| real host systemd/Nginx/filesystem validation | disposable or designated Linux environment |
-| nightly release/tag deletion | explicit post-release GitHub cleanup |
+| stable asset publication | tag-triggered GitHub Release workflow |
+| infrastructure snapshot and restore | production cloud/VM provider |
+| normal v0.3.0 production transaction | generated current/latest Installer |
+| production smoke/observation | operator + read-only CLI/HTTP/systemd/Nginx checks |
+| nightly release/tag deletion | explicit post-production-verification cleanup |
 
-No product code should change during the parent integration pass unless a check
-finds a genuine defect. Any defect returns the task to planning/execution,
-updates the owning child contract or shared spec, and reruns the complete gate.
+No product code changes are planned. A release/preflight finding returns to the
+normal fix-forward quality loop and requires a new green `main` dry-run.
 
-## Integration Contract
+## Evidence Model and Accepted Gap
 
-The eight parent acceptance criteria are reviewed as one release contract:
+The parent acceptance criteria use three evidence layers:
 
-1. historical default `curl | sudo VERSION=latest bash` remains compatible;
-2. installed updates require no configuration prompts;
-3. nightly has no production code, workflow, installer, or promoted-doc path;
-4. release tag, `/readyz` version, CLI build marker, and UI version agree;
-5. service binary, CLI, metadata, env, systemd, and Nginx remain one rollback unit;
-6. operator/deployment/release docs match final behavior;
-7. all local and GitHub quality gates pass;
-8. `[Unreleased]` is complete release-note material including nightly migration.
+1. **Repository evidence:** Installer/CLI/release-layout suites prove clean
+   first-install, prompt-free update, first-install cleanup, fault rollback,
+   legacy CLI/metadata removal/restore, secrecy, and exact assets.
+2. **GitHub dry-run evidence:** run `33544029600` proves the pushed HEAD passes
+   quality, both architecture builds, composition, checksums, attestation, and
+   `main-37926e6` version injection without publication.
+3. **Production canary evidence:** the existing production deployment proves the
+   real normal update path, host filesystem/systemd/Nginx integration, release
+   version consistency, readiness, UI behavior, and sustained operation.
 
-Historical CHANGELOG entries may mention nightly. Searches must classify each
-match rather than mechanically require zero repository matches.
+There is deliberately no independent clean-host or real fault-injection E2E.
+The user accepts that gap. Reports must not claim otherwise. In particular, the
+production host must not be intentionally broken to exercise rollback, and a
+pre-v0.3 direct Installer transition is reserved for actual recovery only.
 
-## Local Validation Layer
+## Completed Integration Contract
 
-Before any remote mutation:
+The existing audit already established:
+
+- default no-mode Installer still selects interactive `install`;
+- update mode is non-TTY, skips apt, and adopts the protected saved config;
+- no current workflow, release script, README, config, or promoted docs path
+  publishes/recommends nightly;
+- tag/main version derivation is shared by Go and packaged CLI, and API/UI read
+  the running Go version;
+- transaction registry covers binary, env, CLI, metadata, systemd unit/link,
+  and Nginx site/link;
+- docs and `[Unreleased]` cover all four child deliverables and migration;
+- local full gates and final main dry-run pass.
+
+Historical CHANGELOG/Trellis references and active negative `nightly` rejection
+contracts remain valid.
+
+## Release-Critical Preflight
+
+Immediately before release:
 
 ```bash
-task check
-task test
-task installer:check
-pnpm -C frontend build
-pnpm -C frontend size
-go build ./...
-rm -rf web/dist && cp -r frontend/dist web/dist
-go build -tags embed_assets ./...
-GOTOOLCHAIN=go1.25.13 go run golang.org/x/vuln/cmd/govulncheck@v1.5.0 ./...
-actionlint .github/workflows/ci.yml .github/workflows/quality.yml .github/workflows/release.yml
+git fetch --force origin main --tags
+git status --short --branch
+bash scripts/generate-install.sh --check
+bash scripts/install_test.sh
+bash scripts/cli_test.sh
+bash scripts/release_layout_test.sh
+scripts/extract-changelog.sh Unreleased
+go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.10 \
+  .github/workflows/ci.yml .github/workflows/quality.yml .github/workflows/release.yml
 git diff --check
 ```
 
-The release-layout suite remains the local packaging simulation for stable and
-`main-<sha>` versions. Additional read-only audits verify exact release assets,
-Installer/CLI version injection, changelog extraction, archived child state,
-remote tags/releases, and the absence of production nightly paths.
+Required state:
 
-## Main Push and Dry-Run Gate
+- clean `main == origin/main`;
+- latest green `main` dry-run belongs to current HEAD;
+- no local/remote/GitHub `v0.3.0` exists;
+- `v0.2.0` is Latest and nightly release/tag still exist;
+- release notes contain the complete intended public changes;
+- generated Installer and release composition do not drift.
 
-The current local branch is ahead of `origin/main`, while `scripts/release.sh`
-requires equality with `origin/main`. The first remote mutation is therefore a
-normal `main` push after local checks and a clean working tree.
+Any failure stops before tag creation.
 
-That push triggers `release.yml` in dry-run mode. Completion requires:
+## Production Recovery Preflight
 
-- the workflow run is associated with the pushed HEAD;
-- all jobs succeed;
-- the workflow uploads composed artifacts but creates no GitHub release;
-- no `v0.3.0` tag/release exists afterward.
+The VM snapshot gate occurs **before any production mutation** and must be
+operator/provider-confirmed:
 
-A failed dry-run blocks release. Fixes are committed normally to `main`, all
-local gates rerun, and a new dry-run must pass.
+1. create a named snapshot for the exact production VM/system disk;
+2. wait until its state is `available`, `completed`, or the provider-equivalent
+   recoverable state;
+3. record only snapshot identifier/time/state, never credentials;
+4. verify out-of-band provider console and SSH access;
+5. record a secret-free baseline:
+   - current Git commit/release if available;
+   - `systemctl is-active/is-enabled bupt-ec`;
+   - `nginx -t`;
+   - `/healthz` and `/readyz` status/version;
+   - owner/mode/hash of installed targets without printing private env values;
+   - current public page/API behavior.
 
-## Real Linux E2E Gate
-
-The release-grade scenario needs a disposable or explicitly designated Linux
-host with root, systemd, Nginx, curl, tar, and network access. It verifies real
-paths and ownership in addition to command behavior.
-
-Required scenario shape:
-
-1. install from current/latest self-contained Installer into a clean host;
-2. verify `/opt/bupt-ec/bupt-ec`, `/usr/local/bin/bupt-ec`, private env, public
-   metadata, systemd unit/link, and Nginx site/link ownership/modes;
-3. verify `bupt-ec version/status/health/config show` secrecy and exit behavior;
-4. perform a zero-prompt CLI-bearing update and confirm configuration retention;
-5. verify CLI rejects a pre-v0.3 target before curl;
-6. use the current/latest Installer directly for the legacy target and confirm
-   transactional CLI/metadata removal or rollback behavior as selected by the
-   test fixture/release availability.
-
-The user has deferred this environment. The gate remains blocking; no host is
-provisioned and no real-host commands run during the first execution tranche.
+The snapshot is retained until production observation and nightly cleanup are
+complete. “Snapshot requested” or a failed/in-progress snapshot is not enough.
 
 ## Stable Release State Machine
 
-### Pre-tag
-
-- working tree clean;
-- local `main == origin/main`;
-- latest main dry-run green;
-- real Linux E2E green, unless the user explicitly waives it later;
-- `v0.3.0` absent locally/remotely;
-- `[Unreleased]` extraction reviewed.
-
 ### Tag creation and push
 
-Run `scripts/release.sh v0.3.0`. It creates only:
+Run `scripts/release.sh v0.3.0`. It creates:
 
 - `chore: release v0.3.0`;
-- annotated/lightweight repository tag according to the existing script;
-- `CHANGELOG.md` release section and compare links;
-- `frontend/package.json` version `0.3.0`.
+- `CHANGELOG.md` section/date/compare links;
+- `frontend/package.json` version `0.3.0`;
+- local immutable `v0.3.0` tag;
+- after explicit push confirmation, remote `main` and `v0.3.0`.
 
-The script's push prompt is a point-of-no-return gate. If the local commit/tag
-exists but was not pushed, follow the documented local rollback command or push
-only after revalidation.
+If commit/tag creation succeeds but push does not occur, confirm no remote ref
+before using the documented local rollback. Once pushed, the tag is never moved
+or reused.
 
 ### Publication verification
 
-The tag workflow must succeed before cleanup. Verify:
+Before touching production, verify:
 
-- GitHub release `v0.3.0` exists and is not a prerelease/draft;
+- tag workflow succeeds for the release commit;
+- GitHub release `v0.3.0` is neither draft nor prerelease;
 - `latest` resolves to `v0.3.0`;
-- release notes equal the `CHANGELOG.md` `0.3.0` section;
-- exact top-level assets are two architecture tarballs, `checksums.txt`, and
-  `install.sh`;
-- checksums verify and each tarball has the exact documented member list;
-- both CLI copies and Go binaries report/inject `v0.3.0` consistently.
+- notes equal the `CHANGELOG.md` `0.3.0` section;
+- exact assets are two architecture tarballs, `checksums.txt`, and `install.sh`;
+- checksums pass; tar members and modes match the documented layout;
+- packaged/top-level/generated Installers match;
+- both CLI packages and Go binaries carry `v0.3.0`.
 
-### Nightly cleanup
+A publication mismatch blocks production. Nightly remains untouched.
 
-Only after publication verification:
+## Production Upgrade Contract
 
-1. delete the GitHub `nightly` prerelease;
+### Existing pre-v0.3 host
+
+Because `/usr/local/bin/bupt-ec` does not yet exist, use a downloaded current
+Installer rather than a pipe so update stdin can be closed explicitly:
+
+```bash
+session="$(mktemp -d /tmp/bupt-ec-release.XXXXXXXX)"
+chmod 0700 "${session}"
+curl --fail --show-error --silent --location \
+  --proto '=https' --proto-redir '=https' \
+  --connect-timeout 10 --max-time 60 \
+  -o "${session}/install.sh" \
+  https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh
+sudo VERSION=v0.3.0 bash "${session}/install.sh" --mode=update < /dev/null
+rm -rf "${session}"
+```
+
+The live command must be reviewed against the production host first, including
+whether its saved configuration is official GitHub or a custom mirror. If it
+uses a custom mirror or saved `nightly`, use the documented matching recovery
+path rather than silently changing trust source. Never print the private env.
+
+The Installer's nonzero result is authoritative. On failure:
+
+- stop and preserve complete terminal output without secrets;
+- confirm whether `Rollback completed.` was reported;
+- check old service/Nginx/health state against the baseline;
+- preserve any root-only recovery directory;
+- do not retry blindly and do not delete nightly.
+
+### Post-commit smoke checks
+
+On success verify, without changing configuration:
+
+```bash
+bupt-ec version
+bupt-ec status
+bupt-ec health
+bupt-ec logs -n 50
+sudo systemctl is-active bupt-ec
+sudo systemctl is-enabled bupt-ec
+sudo nginx -t
+curl --fail --show-error --silent http://127.0.0.1:8080/healthz
+curl --show-error --silent http://127.0.0.1:8080/readyz
+```
+
+Also verify:
+
+- `/usr/local/bin/bupt-ec` is root:root `0755`;
+- `/etc/bupt-ec/deployment.meta` is root:root `0644` and has only the two public
+  fields;
+- private env remains root:root `0600` without displaying its values;
+- configured selector, running `/readyz` version, CLI version, API envelope,
+  and UI settings all identify `v0.3.0` as appropriate;
+- public page loads current data and browser HTML is not stuck on old assets;
+- logs contain no new persistent error loop or secret disclosure.
+
+`/readyz` may transiently return 503 during warmup. Treat it as failure only if
+it does not become ready within the agreed observation or logs show a persistent
+configuration/upstream error.
+
+### Observation and success threshold
+
+Use two successful checkpoints at least five minutes apart (one frontend cache
+TTL), with the second no earlier than ten minutes after upgrade. Each checkpoint
+requires active/enabled service, valid Nginx config, 2xx health/readiness,
+`v0.3.0` version consistency, successful API/UI behavior, and no repeating new
+error pattern. Until then, retain the VM snapshot and nightly release/tag.
+
+## Production Rollback Strategy
+
+1. **Installer exits nonzero:** rely first on its automatic transaction rollback
+   and compare the restored host with the baseline. Do not restore the VM while
+   rollback is still running.
+2. **Rollback incomplete:** preserve the root-only recovery directory and use
+   provider console/SSH plus the VM snapshot recovery plan.
+3. **Installer succeeds but post-check/observation fails:** stop further changes,
+   capture safe evidence, and restore the verified VM snapshot. This service has
+   no durable classroom/user database, so snapshot rollback primarily loses
+   transient cache/log interval, but provider behavior must still be reviewed.
+4. **Published v0.3.0 defect:** do not move/delete/reuse the tag. Keep nightly,
+   restore production, then fix forward and publish a new immutable version.
+5. **Direct v0.2.x Installer rollback:** reserved as a secondary recovery option
+   only; do not run it merely to test legacy removal, and require fresh explicit
+   authorization before use.
+
+## Nightly Cleanup
+
+Only after release verification and both production checkpoints:
+
+1. delete GitHub `nightly` prerelease;
 2. delete remote `refs/tags/nightly`;
-3. delete the local `nightly` tag;
-4. verify `gh release list` and `git ls-remote` show no nightly release/tag;
-5. verify `v0.3.0` remains Latest and its assets still resolve.
+3. delete local `nightly` tag;
+4. verify no nightly release/tag remains;
+5. verify v0.3.0 remains Latest and latest/stable assets resolve;
+6. retain the production VM snapshot until the cleanup verification is recorded,
+   then hand snapshot retention/deletion back to the operator/provider policy.
 
-Cleanup never rewrites history or moves `v0.3.0`.
-
-## Failure and Rollback Strategy
-
-| Failure point | Required response |
-| --- | --- |
-| local integration failure | no remote mutation; fix and rerun full gate |
-| main push dry-run failure | release blocked; fix forward on main and rerun |
-| E2E unavailable/deferred | stop before stable tag push |
-| release script fails before commit/tag | restore working tree if needed; inspect partial changelog/package edits |
-| local release commit/tag created but not pushed | use documented local tag delete + reset only after confirming no remote ref |
-| tag workflow fails after push | do not delete nightly; prefer workflow rerun for transient failures or a documented fix-forward release decision |
-| v0.3.0 verification mismatch | do not delete nightly; preserve evidence and investigate |
-| partial nightly cleanup | retry only the missing deletion; never touch v0.3.0 |
+Partial cleanup retries only the missing action and never touches v0.3.0.
 
 ## Security and Operational Notes
 
-- Planning and verification commands may query GitHub read-only. Remote pushes,
-  release publication, and deletion are explicit mutation stages.
-- No credentials, GitHub tokens, JW secrets, deployment env contents, or host
-  logs are recorded in task artifacts.
-- The pinned Go 1.25.13 `govulncheck` result is authoritative for the repository
-  toolchain; host Go 1.26 findings must be interpreted against the documented
-  patched floor.
-- Release artifacts are downloaded into protected temporary directories and
-  removed after verification.
-
-## Deferred Item
-
-A real Linux E2E environment is intentionally deferred by user decision. The
-parent task may advance through planning, local integration, and main dry-run,
-but it cannot satisfy the final acceptance criteria or archive until that gate
-is completed or explicitly waived in a future planning update.
+- No task artifact or chat output records GitHub tokens, SSH keys, JW secrets,
+  private env content, raw credentials, or full sensitive logs.
+- Production commands are shown for operator review before execution. Access
+  method, hostname, maintenance timing, and snapshot identifier are runtime
+  inputs, not committed repository configuration.
+- Remote mutations are ordered: release tag/publication → production normal
+  update → observation → nightly cleanup. No force push is permitted.
+- This plan records explicit risk acceptance; it does not redefine mocks as a
+  real-host fault-injection test.
