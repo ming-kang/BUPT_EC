@@ -8,6 +8,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Fixed
+
+- Installer startup health retries no longer print transient curl connection
+  errors when the restarted service becomes healthy on a later retry; exhausted
+  retries still report the Installer-owned health failure and roll back.
+
 ## [0.3.0] - 2026-09-02
 
 ### Added

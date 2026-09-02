@@ -188,6 +188,7 @@ if [[ "${url}" == http://*/healthz ]]; then
   count=$((count + 1))
   printf '%s\n' "${count}" > "${counter_file}"
   if (( count <= ${MOCK_HEALTH_FAILURES:-0} )); then
+    echo "mock curl health failure" >&2
     exit 22
   fi
   exit 0

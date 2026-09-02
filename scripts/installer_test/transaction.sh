@@ -127,6 +127,8 @@ test_restart_and_health_failures_roll_back_upgrade() {
     assert_command_count 1 "systemctl start ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "${failure} path restores previous active service"
     if [[ "${failure}" == "health" ]]; then
       assert_command_count 10 "curl http://127.0.0.1:8080/healthz" "${MOCK_COMMAND_LOG}" "health failure retry count"
+      assert_not_contains "${output}" "mock curl health failure" "health retries hide raw curl stderr"
+      assert_contains "${output}" "Service health check failed" "health exhaustion keeps installer diagnostic"
       assert_command_count 1 "systemctl stop ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "health failure stops new service before restore"
     fi
     assert_contains "${output}" "Rollback completed." "${failure} rollback output"
@@ -424,11 +426,12 @@ test_legacy_cli_removal_and_rollback() {
 }
 
 test_successful_upgrade_commits_and_cleans_backup() {
-  local case_dir staging_dir backup_dir preview_backup
+  local case_dir staging_dir backup_dir preview_backup output
   case_dir="${TEST_TMP}/successful-upgrade"
   staging_dir="${case_dir}/staging"
   backup_dir="${case_dir}/backup"
   preview_backup="${case_dir}/preview-backup"
+  output="${case_dir}/output.log"
   mkdir -p "${case_dir}"
   setup_case "${case_dir}"
   seed_existing_installation
@@ -450,8 +453,10 @@ test_successful_upgrade_commits_and_cleans_backup() {
   assert_mode "${preview_backup}/env" 600 "backup env"
   rm -rf "${preview_backup}"
 
-  perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080"
+  export MOCK_HEALTH_FAILURES=1
+  perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080" > "${output}" 2>&1
 
+  assert_not_contains "${output}" "mock curl health failure" "successful health retry hides raw curl stderr"
   cmp -s "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" || fail "successful upgrade binary mismatch"
   cmp -s "${staging_dir}/bupt-ec.env" "${ENV_FILE}" || fail "successful upgrade env mismatch"
   cmp -s "${staging_dir}/bupt-ec-cli" "${CLI_FILE}" || fail "successful upgrade CLI mismatch"
@@ -472,5 +477,5 @@ test_successful_upgrade_commits_and_cleans_backup() {
   assert_path_absent "${backup_dir}" "successful upgrade backup cleanup"
   assert_eq false "${TRANSACTION_ACTIVE}" "successful transaction active flag"
   assert_eq "" "${TRANSACTION_BACKUP_DIR}" "successful transaction backup pointer"
-  assert_command_count 1 "curl http://127.0.0.1:8080/healthz" "${MOCK_COMMAND_LOG}" "successful health check count"
+  assert_command_count 2 "curl http://127.0.0.1:8080/healthz" "${MOCK_COMMAND_LOG}" "successful health retry count"
 }

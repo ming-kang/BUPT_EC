@@ -247,7 +247,7 @@ wait_for_health() {
   local attempt
 
   for attempt in {1..10}; do
-    if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 2 "${health_url}" >/dev/null; then
+    if curl -fsS --noproxy '*' --connect-timeout 2 --max-time 2 "${health_url}" >/dev/null 2>&1; then
       return
     fi
     if (( attempt < 10 )); then
