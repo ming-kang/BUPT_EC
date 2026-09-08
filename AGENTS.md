@@ -1,55 +1,37 @@
 # Repository Guidelines
 
-## Project Structure & Architecture
+Use `pwsh` (PowerShell 7) or Git Bash on Windows.
 
-This repository is a Go 1.25.13+ service with a React/Vite frontend for BUPT empty-classroom queries. `main.go` composes configuration, HTTP, and JW clients. HTTP routes and handlers live in `router.go` and `handler.go`; core query, refresh, token, caching, and normalization logic lives in `service/`, with API models in `service/model/`. Shared packages are `config/` and `logs/`; JW outbound HTTP transport lives in `service/` (`jw_http.go`).
+Read [docs/development.md](docs/development.md) for setup, architecture, maintenance contracts, and known follow-ups. For deployment or release changes, also read [docs/upgrading.md](docs/upgrading.md) and [docs/release.md](docs/release.md); runtime behavior and timeout budgets live in [docs/operations.md](docs/operations.md).
 
-The frontend is in `frontend/src/`; put reusable UI in `components/` and colocate component CSS. Deployment and release scripts are in `scripts/`; user-facing operational documentation is under `docs/`.
+## Structure and conventions
 
-## Build, Test, and Development
+- `main.go` composes configuration and dependencies; `router.go` / `handler.go` own HTTP policy. Query, refresh, token, cache, and JW transport logic lives in `service/`, with API models in `service/model/`; shared packages are `config/` and `logs/`.
+- Keep mutable service state on `ClassroomService`. Inject the startup configuration, JW client, and clock; configuration is read once, with process environment taking precedence over optional `.env`. The production design is one process with an in-memory day cache.
+- Go follows `gofmt`, short lowercase package names, and `BUPT_EC/...` imports. Export only what another package needs.
+- `frontend/src/` uses strict TypeScript, React hooks, ES modules, and two-space indentation. Components are PascalCase files under `components/`, export components only, and colocate CSS. Shared selection state uses `useSelection()`.
+- Edit installer fragments in `scripts/installer/`, then regenerate tracked `scripts/install.sh`; it must remain self-contained. `scripts/bupt-ec-cli.sh` is a separate thin operations CLI. Operational documentation lives in `docs/`.
 
-Local entry points live in `Taskfile.yml` ([Task](https://taskfile.dev)):
+## Build and verification
 
 ```bash
 task build   # pnpm build → copy frontend/dist to web/dist → go build -tags embed_assets
 task test    # go test -race ./...
-task check   # gofmt/vet/tidy/verify + frontend lint/test/audits (mirrors CI; skips `pnpm size` on purpose — it needs a fresh production build)
+task check   # format/vet/dependencies + frontend/installer checks
+task installer:generate   # regenerate install.sh after editing fragments
+task installer:check      # generation, syntax, behavior, release layout, ShellCheck
 ```
 
-Native equivalents without `task`: `cd frontend && pnpm install && pnpm build && cd ..`, then `rm -rf web/dist && cp -r frontend/dist web/dist` and `go build -tags embed_assets -o bupt-ec ./` — without the `-trimpath -ldflags "-s -w -X main.version=..."` that `task build` adds, so the binary reports version `dev`. `go run ./` and bare `go build` compile without the tag and serve a placeholder page instead of the UI (this keeps clean checkouts buildable). Use `go test ./...` for backend tests and `go test -race ./...` before a substantial change. Run `gofmt -w` on changed Go files and verify `go vet ./...`.
+`go run ./` and tag-less builds serve a placeholder UI so clean checkouts compile. Native commands are in the development guide. Run `gofmt` on changed Go files, `go vet ./...`, and relevant tests; use `task test` for substantial backend changes.
 
-For frontend work, use `pnpm dev`, `pnpm build`, `pnpm lint`, and `pnpm test` from `frontend/`. Vite proxies `/api` to `http://localhost:8080`.
+Frontend work uses `pnpm dev`, `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm build` from `frontend/`. Dependency/chunk changes also need `pnpm size` after a fresh build and both dependency audits. `task check` does not run the Go tests, production build, or bundle-size gate.
 
-## Style and Testing
+Tests should cover changed behavior. Use fresh service instances, injected fakes/clocks, and `service/export_test.go` seams; unit tests must not contact JW. Frontend tests use Vitest, with jsdom for component/hook lifecycles.
 
-Follow `gofmt`; use short lowercase Go package names, imports rooted at `BUPT_EC/...`, and export APIs only when another package needs them. Keep mutable runtime state on `ClassroomService`; do not introduce package-level state. The frontend is strict TypeScript (`pnpm typecheck`; wired into CI). React components use PascalCase filenames (for example, `BuildingPicker.tsx`), hooks and ES modules, and two-space indentation. Component files should export components only.
+## Change rules
 
-Add focused Go tests beside implementation as `*_test.go`. Use injected fakes (`mockJWClient`, test clocks) and the white-box seams in `service/export_test.go` rather than shared state or real JW requests. Frontend tests use Vitest and should cover behavior changes, especially response handling and selection state.
-
-## Commits, PRs, and Configuration
-
-Use one scoped Conventional Commit, such as `fix(installer): validate checksum before extract` or `docs: clarify local setup`. Add user-visible changes to `CHANGELOG.md` under **Unreleased**. PRs need a short description, linked issue when applicable, commands run, and screenshots for UI changes.
-
-Never commit credentials, JW tokens, logs, or private `.env` files. Use `.env.example`; environment values override the optional root `.env`. Keep public behavior, endpoints, configuration, deployment, and release documentation synchronized with code changes.
-
-<!-- TRELLIS:START -->
-# Trellis Instructions
-
-These instructions are for AI assistants working in this project.
-
-This project is managed by Trellis. The working knowledge you need lives under `.trellis/`:
-
-- `.trellis/workflow.md` — development phases, when to create tasks, skill routing
-- `.trellis/spec/` — package- and layer-scoped coding guidelines (read before writing code in a given layer)
-- `.trellis/workspace/` — per-developer journals and session traces
-- `.trellis/tasks/` — active and archived tasks (PRDs, research, jsonl context)
-
-If a Trellis command is available on your platform (e.g. `/trellis:finish-work`, `/trellis:continue`), prefer it over manual steps. Not every platform exposes every command.
-
-If you're using Codex or another agent-capable tool, additional project-scoped helpers may live in:
-- `.agents/skills/` — reusable Trellis skills
-- `.codex/agents/` — optional custom subagents
-
-Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
-
-<!-- TRELLIS:END -->
+- Search with `rg` before adding helpers or changing shared values. Fix behavior in its owning layer and keep unrelated refactors separate.
+- Keep `service/model/realtime_data.go`, `frontend/src/api/types.ts`, response normalization, and consumers aligned when changing public JSON. Preserve Shanghai-day expiry, partial/stale semantics, and immutable cache publication.
+- Use `slog.*Context` for request logs and `service.SafeErrorMessage` for client errors. Keep raw JW bodies and secrets out of responses/logs. Never commit credentials, tokens, runtime logs, or private `.env` files; use `.env.example` for examples.
+- Respect intentional dependency major lines and the browser target. Treat major upgrades as separate migrations; avoid blanket `pnpm update --latest`.
+- Use scoped Conventional Commits. Update relevant docs and `CHANGELOG.md` under **Unreleased** for user-visible changes. PRs include a short description, relevant issue, checks run, and screenshots for UI changes.

@@ -3,8 +3,8 @@
  *
  * SOURCE OF TRUTH: `service/model/realtime_data.go` (public structs) and the
  * envelopes written in `handler.go`. When changing a public JSON tag or field
- * on either side, update BOTH files in the same change (see the JSON Model
- * Boundary rule in .trellis/spec/backend/directory-structure.md).
+ * on either side, update this mirror and its consumers in the same change
+ * (see docs/development.md#maintenance-contracts).
  *
  * These types describe WIRE shapes (what `normalizeResponse` validates), not
  * the post-validation normalized shape — that typing lives with the data layer.

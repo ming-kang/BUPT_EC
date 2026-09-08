@@ -59,7 +59,7 @@ cd frontend && pnpm dev  # terminal 2: Vite dev server, proxies /api to localhos
 task test                 # go test -race ./...
 task installer:generate   # regenerate tracked scripts/install.sh from fragments
 task installer:check      # Installer/CLI syntax, behavior, release-layout, ShellCheck
-task check                # Go/frontend checks plus installer:check (mirrors CI except size)
+task check                # format/vet/dependencies + frontend/installer checks
 task vuln                 # govulncheck (needs network; same pinned version as CI)
 ```
 
@@ -90,8 +90,9 @@ recursive ShellCheck, plus an embedded-assets
 build (`go build -tags embed_assets` after copying the freshly built frontend
 to `web/dist`). The other Go steps stay tag-less so a clean checkout without
 `frontend/dist` keeps building. `task check` includes `task installer:check`
-but skips `pnpm size` on purpose (it needs a fresh production build) — run it
-by hand when changing frontend dependencies or chunk splitting.
+and frontend type-checking; run `task test` and `task build` separately for Go
+race tests and the production build. Run `pnpm size` after a fresh frontend
+build when changing dependencies or chunk splitting.
 
 Installer source is modular in `scripts/installer/`, while
 `scripts/generate-install.sh` emits the deterministic tracked and
@@ -194,3 +195,36 @@ Logging is `log/slog` with a JSON handler; `LOG_CALLER` is resolved by `config.L
 - React components are PascalCase `.tsx` files with a matching `.css` beside them when needed. The frontend is strict TypeScript (`pnpm typecheck`, enforced by Taskfile check and CI); API payload shapes are typed in `src/api/types.ts`, mirrored from `service/model/realtime_data.go` — update both sides together on contract changes. ESLint enforces the configured rules (`pnpm lint`).
 - Commits follow Conventional Commits (`feat:`, `fix:`, `chore:`, `ci:`, `docs:`, `refactor:`); keep each commit scoped to one change.
 - User-visible changes should update the `[Unreleased]` section of [CHANGELOG.md](../CHANGELOG.md) in the same commit — see [release.md](release.md).
+
+## Maintenance contracts
+
+These are the implementation constraints most likely to be lost during refactors.
+
+| Boundary | Preserve |
+| --- | --- |
+| Cache publication | `publishTodayCache` in [classroom_service.go](../service/classroom_service.go) publishes the model and pre-serialized JSON together through one atomic entry. Both remain immutable; copy before decorating responses. The fast path is only for fresh, complete, error-free same-day data. |
+| API envelope | `/api/get_data` returns `code: 0` with HTTP 200 for usable full, stale, or partial data; failures use HTTP 503 and `data: null`. Both carry `version` and request-specific `log_id` outside `data`; the ID matches `X-Log-Id`. Only warming/no-cache wait failures get `Retry-After: 5`. Future response caching must account for that per-request ID. See [handler.go](../handler.go). |
+| Classroom identity | Building `name` is the selection/filter key; `display_name` is a label. A room matches only when **all** selected periods occur in `free_nodes`. `nodes` belongs to each campus; degraded room parsing may produce capacity `0` (display as unknown). See [classroom_builder.go](../service/classroom_builder.go) and [TodayClassroomTable.tsx](../frontend/src/components/TodayClassroomTable.tsx). |
+| JW boundary | Keep HTTPS/BUPT-host validation and redirect rejection. Auth recovery rechecks the rejected token inside singleflight and retries the query once; a canceled waiter must not cancel shared work. `safeRemoteMessage` normalizes Unicode controls/whitespace, redacts secrets, then caps at 256 runes; client messages still come only from `SafeErrorMessage`. See [jw_error.go](../service/jw_error.go). |
+| HTTP/static boundary | Unknown `/api/*` and missing assets return real 404s. Keep gzhttp's explicit content-type allowlist and single compression layer; `/healthz` and `/readyz` bypass compression. Hashed assets are immutable; SPA HTML uses `no-cache` and a weak ETag. See [router.go](../router.go) and [operations.md](operations.md#static-asset-caching-spa). |
+
+Frontend compatibility:
+
+- Keep the explicit ES2020/Safari 14 build target; transpilation does not polyfill browser APIs. Vite 7 pairs with plugin-react 5. React 19 with antd 5 needs `@ant-design/v5-patch-for-react-19` in both `main.tsx` and jsdom test setup. Keep the classroom table native to protect the bundle budget.
+- SWR's polling interval function must have stable identity and return a positive delay; a falsy value stops the polling chain. Give each hook test a fresh `SWRConfig` cache and retain production deduping. Fake timers need an explicit timeout-signal stub. Snapshot dates and deadlines always use the Shanghai business day.
+
+Installer/release maintenance:
+
+- Keep `DEPLOYMENT_CONFIG_KEYS` and the CLI's private-config registry aligned, including `LOG_CALLER` / `READYZ_DIAGNOSTICS`. Rendering consumes validated `CFG_*`; one-shot checksum/insecure-download switches must never be persisted. Private env stays root-owned `0600`; public metadata is `0644` and contains only `RELEASE_VERSION` / `APP_ADDR`.
+- Preserve download/checksum → staging → snapshot → same-filesystem replacement → activation/health validation. `transaction_targets` owns the eight file/link roles for both commit and rollback; restore prior existence, enablement, and activity. Keep failed-rollback recovery files. Health retries suppress individual curl errors and report failure only after exhaustion.
+- Keep Installer self-contained and bootstrap the current Installer even for an older target archive. Version/mirror rules and exact release layout are in [upgrading.md](upgrading.md) and [release.md](release.md). Check version injection with a real built binary's `/readyz` or startup log; `go test -ldflags "-X main.version=..."` and `go version -m` cannot verify it.
+
+## Known follow-ups
+
+Remaining findings checked against source on 2026-09-08; scope them separately when working in the affected area:
+
+- [useTodayClassrooms.ts](../frontend/src/useTodayClassrooms.ts): `AbortSignal.timeout` lacks a Safari 14 fallback, and generic transport errors bypass `ApiError`. Add a compatible timeout boundary and safe errors; also correct the stale 45s server-timeout comment against the [timeout budget](operations.md#timeout-budget-api-cold-path).
+- [todayClassroomsResponse.ts](../frontend/src/todayClassroomsResponse.ts): nested campus/building/room data is cast after shallow validation; e.g. `campuses: [null]` passes the boundary. Validate fields used by rendering in one decoder.
+- [warmup.go](../service/warmup.go): `Shutdown` before `Run` leaves refresh-worker admission open while waiting. Close admission under `backgroundMu` independently of whether a lifecycle context exists.
+- [40-transaction.sh](../scripts/installer/40-transaction.sh): temporary backups and an `EXIT` trap handle returned failures, but provide no durable recovery after SIGKILL/power loss. A future recovery change needs a persistent journal and interruption tests.
+- The same rollback code treats a missing unit file as a first install, which can delete a pre-existing enablement link restored from the snapshot. Preserve those states independently and add a damaged-installation fixture.
