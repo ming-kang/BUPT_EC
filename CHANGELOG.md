@@ -8,6 +8,12 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Security
+
+- Go builds and releases now require Go 1.26.9, which includes the standard
+  library fixes for the net/http, net/textproto, and crypto/tls advisories
+  reported by govulncheck against Go 1.25.13.
+
 ## [0.3.1] - 2026-09-02
 
 ### Fixed

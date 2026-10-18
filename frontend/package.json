@@ -43,7 +43,8 @@
   },
   "pnpm": {
     "overrides": {
-      "browserslist": "4.28.7"
+      "browserslist": "4.28.7",
+      "tinypool": "2.1.2"
     },
     "auditConfig": {
       "ignoreGhsas": [

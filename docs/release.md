@@ -130,7 +130,7 @@ as `dev` in a checkout and substitutes only the package copy.
 
 Pinned via the workflows and `go.mod`; no Dependabot — bump by hand:
 
-- Go 1.25.13 (`go.mod`, `actions/setup-go`; Go 1.26 users need a current patch release)
+- Go 1.26.9 (`go.mod`, `actions/setup-go`)
 - Node 22 LTS (`actions/setup-node`)
 - pnpm 9.15.x (`corepack prepare`, lockfile v9)
 
