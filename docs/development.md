@@ -154,7 +154,7 @@ scripts/
   compose-release-assets.sh    exact tar layout + package-only CLI injection
   release_layout_test.sh       stable/main package simulation
   release.sh, extract-changelog.sh
-.github/workflows/       ci.yml (PRs), release.yml (main pushes + tags), quality.yml (reusable gate)
+.github/workflows/       ci.yml (PRs), release.yml (v* tags + manual dispatch), quality.yml (reusable gate)
 ```
 
 ## Backend architecture

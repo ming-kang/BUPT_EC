@@ -5,8 +5,9 @@ How versioning, the changelog, and the release pipeline work, and how to cut a r
 ## Release channel and assets
 
 Stable `vX.Y.Z` tags are the only published release channel. A tag pushed by
-`scripts/release.sh` produces an immutable, reproducible release; pushes to
-`main` build and pack the same assets as a dry-run but publish nothing.
+`scripts/release.sh` produces an immutable, reproducible release. A manual
+workflow dispatch builds and packs the same assets as a dry-run but publishes
+nothing.
 
 A release publishes four assets, which the installer depends on by exact name:
 
@@ -95,19 +96,15 @@ Three workflows: `ci.yml` and `release.yml` both call `quality.yml` (reusable ga
 
 Runs the full quality gate on every PR to `main`: frontend production/toolchain audits + lint + test + build, the bundle size budget check (`node scripts/check-bundle-size.mjs` in `frontend/`, over the freshly built `dist/`), `go mod tidy -diff`, `go mod verify`, `gofmt` check, `go vet`, `go test -race`, `go build` (tag-less, so a clean checkout stays buildable), an embedded-assets build (`go build -tags embed_assets` with the freshly built frontend copied to `web/dist`), and pinned `govulncheck`. The installer portion is ordered as generated-artifact drift check, recursive `bash -n` over `scripts/`, behavior tests against the generated asset, then recursive ShellCheck over `scripts/` (including `installer/` and `installer_test/`).
 
-### `release.yml` — pushes to `main` and `v*` tags
+### `release.yml` — `v*` tags and manual dispatch
 
 Three jobs in sequence:
 
-1. **quality-gate** — same checks as CI (this is what validates direct pushes to `main`); the frontend it builds is uploaded as the `frontend-dist` artifact.
-2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `main-<commit>` on `main` pushes).
+1. **quality-gate** — same checks as CI; the frontend it builds is uploaded as the `frontend-dist` artifact.
+2. **build-go** — matrix over `amd64`/`arm64`; downloads the frontend artifact, embeds it, and compiles static Linux binaries (`CGO_ENABLED=0`, `-trimpath`, version injected via `-ldflags "-X main.version=..."` — the tag name, or `main-<short-sha>` when a manual dispatch is not a tag).
 3. **release** — rechecks generated-installer drift immediately before composition, then packs each binary with `.env.example`, `README.md`, the independently packaged `bupt-ec-cli`, and only the self-contained generated `install.sh` into a tarball (never source fragments or test modules). It injects the same tag or `main-<short-sha>` used by Go into the CLI's single build marker, asserts layout and Installer parity, generates `checksums.txt`, attests build provenance, then publishes:
    - **tag push**: a stable release whose body is extracted from `CHANGELOG.md` by `scripts/extract-changelog.sh`.
-   - **main push** and **manual dispatch**: a dry-run — the identical pack /
-     checksum / attest path runs and the assets are uploaded as workflow
-     artifacts, but nothing is published. This is deliberate: the packaging
-     path is exercised on every merge, so a broken tarball or checksum step
-     surfaces then instead of on release day.
+   - **manual dispatch**: a dry-run — the identical pack / checksum / attest path runs and the assets are uploaded as workflow artifacts, but nothing is published.
 
 Release assets keep this layout (the Installer depends on it):
 
