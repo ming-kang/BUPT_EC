@@ -8,6 +8,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ## [Unreleased]
 
+### Changed
+
+- The Release workflow runs on `v*` tags and manual dispatch. Pushes to `main` no longer start a packaging dry-run.
+
 ### Security
 
 - Go builds and releases now require Go 1.26.9, which includes the standard
