@@ -97,9 +97,9 @@ silently inherit the old mirror during that version change. See
 
 After committing the candidates, the installer runs `systemctl daemon-reload`, enables the unit, validates Nginx, restarts and checks `bupt-ec`, reloads Nginx, and probes loopback `/healthz`. It prints success only after these checks pass.
 
-If any commit or validation step fails, the installer exits non-zero and restores the files this run overwrote: the previous binary, private env, systemd unit, and Nginx site. The pre-commit snapshot also records whether the service was enabled and active; rollback stops any unit that may have been started during the failed commit, reloads Nginx after restoring or removing the site, and re-enables/restarts the service only when it was enabled/active before the upgrade. A failed first install removes the new files and enablement links instead, stops the newly started unit, and reloads Nginx so no half-installed service or site remains.
+If any commit or validation step fails, the installer exits non-zero and restores exactly what it snapshotted before the commit: the binary, private env, systemd unit, managed Nginx site, and both enablement links (each restored if it existed, removed if it did not). Rollback stops any unit started during the failed commit, restarts the service only if it was active before, and reloads Nginx after a successful `nginx -t`. A failed first install therefore leaves no new files, links, or running service behind.
 
-Candidate and backup directories are mode `0700`; env candidates, backups, and installed env files are mode `0600`. If automatic rollback itself is incomplete, the error output names a root-only recovery directory containing the snapshot. Preserve that directory until the service is repaired, and do not copy or expose its env file to non-root users.
+The snapshot is a persistent journal at `/var/lib/bupt-ec/transaction` (mode `0700`; the env backup is `0600`). If the installer is killed or the host loses power mid-commit, the next installer run detects the journal before doing anything else and restores the previous state automatically. If automatic rollback itself is incomplete, the journal is kept and the error output names it; rerunning the installer retries the restore. Do not copy or expose its env file to non-root users.
 
 ## Verify the upgrade
 

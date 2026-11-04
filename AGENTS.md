@@ -2,7 +2,7 @@
 
 Use `pwsh` (PowerShell 7) or Git Bash on Windows.
 
-Read [docs/development.md](docs/development.md) for setup, architecture, maintenance contracts, and known follow-ups. For deployment or release changes, also read [docs/upgrading.md](docs/upgrading.md) and [docs/release.md](docs/release.md); runtime behavior and timeout budgets live in [docs/operations.md](docs/operations.md).
+Read [docs/development.md](docs/development.md) for setup, architecture, and maintenance contracts. For deployment or release changes, also read [docs/upgrading.md](docs/upgrading.md) and [docs/release.md](docs/release.md); runtime behavior and timeout budgets live in [docs/operations.md](docs/operations.md).
 
 ## Structure and conventions
 

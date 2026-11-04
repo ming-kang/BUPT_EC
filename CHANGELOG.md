@@ -25,6 +25,14 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   uses a Safari 14-compatible request timeout.
 - The Release workflow runs on `v*` tags and manual dispatch. Pushes to `main` no longer start a packaging dry-run.
 
+### Fixed
+
+- An installer killed or interrupted by power loss mid-commit is now recovered
+  automatically on the next run from a persistent journal at
+  `/var/lib/bupt-ec/transaction`.
+- Rollback no longer deletes a pre-existing systemd enablement link when the
+  unit file was missing; enablement links are restored exactly as they were.
+
 ### Removed
 
 - The `bupt-ec` operations CLI and its `deployment.meta` file. Use

@@ -212,12 +212,12 @@ The UI keeps the last successful snapshot after a browser/network refresh failur
 
 An installer failure before commit (download, checksum, extraction, or rendering) leaves the installed binary and configuration untouched. A failure after commit starts an automatic rollback and should end with `Rollback completed.` before the installer exits non-zero.
 
-If the message instead says the automatic rollback was incomplete, note the printed recovery directory immediately. It is mode `0700` and contains the snapshot manifest plus any previous binary/config files, including a mode-`0600` env backup. Keep it root-only, inspect `systemctl status bupt-ec`, `nginx -t`, and the installer output, then restore or rerun the installer only after understanding which validation failed. The directory is intentionally preserved for manual recovery; delete it securely after recovery succeeds.
+If the message instead says the automatic rollback was incomplete, the root-only journal at `/var/lib/bupt-ec/transaction` is kept. Inspect `systemctl status bupt-ec`, `nginx -t`, and the installer output, fix the reported problem, then rerun the installer: it restores from the journal before starting a new deployment. The same applies after a crash or power loss during an install or upgrade.
 
 | Symptom | Check | Likely cause / fix |
 |---|---|---|
 | Installer exits during upgrade | Look for `Rollback completed.` and run `sudo systemctl status bupt-ec` | New Nginx/service/health validation failed; the previous installation was restored. Fix the reported cause before retrying. |
-| Installer reports incomplete rollback | Preserve the printed root-only recovery directory; run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; use the preserved snapshot for manual recovery. |
+| Installer reports incomplete rollback | Run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; fix the cause and rerun the installer to retry the restore from `/var/lib/bupt-ec/transaction`. |
 | `/readyz` 503 and startup logs mention credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Rerun with `--mode=reconfigure`, supplying corrected values. |
 | `/readyz` 503, login succeeds, refresh errors in the logs | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |

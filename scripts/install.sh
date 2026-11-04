@@ -31,6 +31,10 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 SYSTEMD_ENABLED_LINK="/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
 NGINX_SITE="/etc/nginx/sites-available/${SERVICE_NAME}.conf"
 NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
+# Persistent transaction journal: the snapshot of everything a commit may
+# overwrite plus durable progress markers. It survives SIGKILL and power loss
+# so the next installer run can finish or undo an interrupted commit.
+TRANSACTION_DIR="/var/lib/bupt-ec/transaction"
 APP_USER="bupt-ec"
 APP_GROUP="bupt-ec"
 DEFAULT_APP_ADDR="127.0.0.1:8080"
@@ -47,7 +51,6 @@ INSTALLER_MODE="install"
 
 INSTALLER_TMP_DIR=""
 TRANSACTION_ACTIVE=false
-TRANSACTION_BACKUP_DIR=""
 
 # Captured at top-level load time. Inside functions, stdin-fed scripts report a
 # fake BASH_SOURCE[0] (e.g. "main"), so entrypoint detection must not run there.
@@ -84,6 +87,7 @@ configure_installer_test_root() {
   SYSTEMD_ENABLED_LINK="${root}/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
   NGINX_SITE="${root}/etc/nginx/sites-available/${SERVICE_NAME}.conf"
   NGINX_ENABLED="${root}/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
+  TRANSACTION_DIR="${root}/var/lib/bupt-ec/transaction"
 }
 
 # -----------------------------------------------------------------------------
@@ -1539,49 +1543,74 @@ commit_installation() {
   fi
 }
 
+# Journal markers are written to a temporary name, flushed, then renamed, so
+# after a crash a marker is either absent or complete and every write that
+# preceded it is already on disk.
+write_journal_marker() {
+  local marker="${TRANSACTION_DIR}/$1"
+  (umask 077; : > "${marker}.tmp") || return
+  sync || return
+  mv -f -- "${marker}.tmp" "${marker}" || return
+  sync
+}
+
+# Journal states (TRANSACTION_DIR):
+#   absent                         no transaction in progress
+#   present, no snapshot.done      snapshot interrupted; live files untouched
+#   snapshot.done, no committed    commit interrupted; restore the snapshot
+#   committed                      validated; only cleanup was interrupted
 perform_install_transaction() {
   local staging_dir="$1"
-  local backup_dir="$2"
-  local app_addr="$3"
-  local status
+  local app_addr="$2"
 
-  snapshot_installation "${backup_dir}" || return
-  TRANSACTION_BACKUP_DIR="${backup_dir}"
+  mkdir -p "$(dirname "${TRANSACTION_DIR}")" || return
+  snapshot_installation "${TRANSACTION_DIR}" || { rm -rf -- "${TRANSACTION_DIR}"; return 1; }
+  write_journal_marker snapshot.done || return
   TRANSACTION_ACTIVE=true
-  commit_installation "${staging_dir}" "${app_addr}" || {
-    status=$?
-    return "${status}"
-  }
+  commit_installation "${staging_dir}" "${app_addr}" || return
+  write_journal_marker committed || return
   TRANSACTION_ACTIVE=false
-  if ! rm -rf "${backup_dir}"; then
-    echo "Installation validated, but the transaction backup could not be removed." >&2
+  if ! rm -rf -- "${TRANSACTION_DIR}"; then
+    echo "Installation validated, but the transaction journal ${TRANSACTION_DIR} could not be removed." >&2
     return 1
   fi
-  TRANSACTION_BACKUP_DIR=""
+}
+
+# Finish or undo a transaction that a previous run left behind (SIGKILL,
+# power loss). Runs before any configuration is read.
+recover_interrupted_transaction() {
+  if [[ ! -e "${TRANSACTION_DIR}" ]]; then
+    return 0
+  fi
+  if [[ -e "${TRANSACTION_DIR}/committed" || ! -e "${TRANSACTION_DIR}/snapshot.done" ]]; then
+    rm -rf -- "${TRANSACTION_DIR}"
+    return
+  fi
+  echo "Found an interrupted installation; restoring the previous state from ${TRANSACTION_DIR}..." >&2
+  if ! rollback_installation "${TRANSACTION_DIR}"; then
+    echo "Recovery was incomplete; root-only recovery files remain at ${TRANSACTION_DIR}. Fix the reported problem and rerun the installer." >&2
+    return 1
+  fi
+  rm -rf -- "${TRANSACTION_DIR}"
 }
 
 installer_cleanup() {
   local status="$1"
-  local rollback_status=0
-  local preserve_tmp=false
 
   trap - ERR EXIT
   set +e
-  if [[ "${TRANSACTION_ACTIVE}" == "true" && -n "${TRANSACTION_BACKUP_DIR}" ]]; then
+  if [[ "${TRANSACTION_ACTIVE}" == "true" ]]; then
     if (( status == 0 )); then
       status=1
     fi
-    rollback_installation "${TRANSACTION_BACKUP_DIR}"
-    rollback_status=$?
-    if (( rollback_status != 0 )); then
-      preserve_tmp=true
+    if rollback_installation "${TRANSACTION_DIR}"; then
+      rm -rf -- "${TRANSACTION_DIR}"
+    else
+      echo "Automatic rollback was incomplete; root-only recovery files were preserved at ${TRANSACTION_DIR}. Rerunning the installer retries the restore." >&2
     fi
   fi
-  if [[ -n "${INSTALLER_TMP_DIR}" && "${preserve_tmp}" == "false" ]]; then
+  if [[ -n "${INSTALLER_TMP_DIR}" ]]; then
     rm -rf "${INSTALLER_TMP_DIR}"
-  fi
-  if (( rollback_status != 0 )); then
-    echo "Automatic rollback was incomplete; root-only recovery files were preserved at ${TRANSACTION_BACKUP_DIR}." >&2
   fi
   exit "${status}"
 }
@@ -1609,7 +1638,7 @@ require_update_tools() {
 }
 
 execute_deployment() {
-  local arch tmp_dir archive staging_dir backup_dir previous_umask transaction_status
+  local arch tmp_dir archive staging_dir previous_umask transaction_status
 
   # update never runs apt. Check every non-core deployment command before
   # creating a session, downloading assets, or taking a transaction snapshot.
@@ -1625,7 +1654,6 @@ execute_deployment() {
   fi
   initialize_installer_session "${tmp_dir}"
   staging_dir="${tmp_dir}/staging"
-  backup_dir="${tmp_dir}/backup"
 
   if [[ "${INSTALLER_MODE}" != "update" ]]; then
     install_packages || return
@@ -1641,7 +1669,7 @@ execute_deployment() {
   previous_umask="$(umask)" || return
   umask 022 || return
   transaction_status=0
-  perform_install_transaction "${staging_dir}" "${backup_dir}" "${CFG_APP_ADDR}" || transaction_status=$?
+  perform_install_transaction "${staging_dir}" "${CFG_APP_ADDR}" || transaction_status=$?
   if ! umask "${previous_umask}"; then
     return 1
   fi
@@ -1678,6 +1706,7 @@ print_completion_summary() {
 main() {
   parse_mode "$@" || return
   require_root_environment || return
+  recover_interrupted_transaction || return
   capture_invocation_overrides || return
   if ! load_current_config; then
     current_config_load_guidance

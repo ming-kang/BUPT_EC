@@ -195,12 +195,5 @@ Frontend compatibility:
 Installer/release maintenance:
 
 - Keep `DEPLOYMENT_CONFIG_KEYS` the single registry of persisted settings. Rendering consumes validated `CFG_*`; one-shot checksum/insecure-download switches must never be persisted. Private env stays root-owned `0600`.
-- Preserve download/checksum → staging → snapshot of overwritten files and service state → replacement → activation/health validation → rollback on failure, keeping the recovery directory if rollback itself fails.
+- Preserve download/checksum → staging → persistent journal snapshot (`/var/lib/bupt-ec/transaction`, `snapshot.done`) → replacement → activation/health validation → `committed` → journal removal. Rollback restores every snapshot target literally (files and enablement links alike); `recover_interrupted_transaction` runs first on every installer start.
 - Keep Installer self-contained and bootstrap the current Installer even for an older target archive. Version/mirror rules and exact release layout are in [upgrading.md](upgrading.md) and [release.md](release.md). Check version injection with a real built binary's `/readyz` or startup log; `go test -ldflags "-X main.version=..."` and `go version -m` cannot verify it.
-
-## Known follow-ups
-
-Remaining findings checked against source on 2026-09-08; scope them separately when working in the affected area:
-
-- [install.sh](../scripts/install.sh): temporary backups and an `EXIT` trap handle returned failures, but provide no durable recovery after SIGKILL/power loss. A future recovery change needs a persistent journal and interruption tests.
-- The same rollback code treats a missing unit file as a first install, which can delete a pre-existing enablement link restored from the snapshot. Preserve those states independently and add a damaged-installation fixture.

@@ -38,10 +38,9 @@ test_checksum_failures_preserve_targets() {
 }
 
 test_snapshot_failure_preserves_targets() {
-  local case_dir staging_dir backup_dir output before after status
+  local case_dir staging_dir output before after status
   case_dir="${TEST_TMP}/snapshot-failure"
   staging_dir="${case_dir}/staging"
-  backup_dir="${case_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${case_dir}"
   setup_case "${case_dir}"
@@ -51,7 +50,7 @@ test_snapshot_failure_preserves_targets() {
   export MOCK_CP_FAIL_PATTERN="${ENV_FILE}"
 
   set +e
-  perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080" > "${output}" 2>&1
+  perform_install_transaction "${staging_dir}" "127.0.0.1:8080" > "${output}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -60,16 +59,15 @@ test_snapshot_failure_preserves_targets() {
   after="$(capture_target_state)"
   assert_eq "${before}" "${after}" "snapshot failure preserves installed targets"
   assert_eq false "${TRANSACTION_ACTIVE}" "snapshot failure transaction active flag"
-  assert_eq "" "${TRANSACTION_BACKUP_DIR}" "snapshot failure backup pointer"
+  assert_path_absent "${TRANSACTION_DIR}" "snapshot failure discards the partial journal"
   assert_command_count 0 "systemctl " "${MOCK_COMMAND_LOG}" "snapshot failure system command count"
 }
 
 test_nginx_failure_rolls_back_upgrade() {
-  local case_dir session_dir staging_dir backup_dir output before after
+  local case_dir session_dir staging_dir output before after
   case_dir="${TEST_TMP}/nginx-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
-  backup_dir="${session_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${session_dir}"
   chmod 0700 "${session_dir}"
@@ -79,7 +77,7 @@ test_nginx_failure_rolls_back_upgrade() {
   before="$(capture_target_state)"
   export MOCK_NGINX_FAIL_ON_TEST_CALL=1
 
-  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
     fail "nginx validation failure unexpectedly committed"
   fi
   after="$(capture_target_state)"
@@ -95,12 +93,11 @@ test_nginx_failure_rolls_back_upgrade() {
 }
 
 test_restart_and_health_failures_roll_back_upgrade() {
-  local failure case_dir session_dir staging_dir backup_dir output before after
+  local failure case_dir session_dir staging_dir output before after
   for failure in restart health; do
     case_dir="${TEST_TMP}/${failure}-rollback"
     session_dir="${case_dir}/session"
     staging_dir="${session_dir}/staging"
-    backup_dir="${session_dir}/backup"
     output="${case_dir}/output.log"
     mkdir -p "${session_dir}"
     chmod 0700 "${session_dir}"
@@ -116,7 +113,7 @@ test_restart_and_health_failures_roll_back_upgrade() {
       export MOCK_HEALTH_FAILURES=10
     fi
 
-    if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+    if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
       fail "${failure} failure unexpectedly committed"
     fi
     after="$(capture_target_state)"
@@ -137,11 +134,10 @@ test_restart_and_health_failures_roll_back_upgrade() {
 }
 
 test_upgrade_inactive_service_stays_inactive_on_rollback() {
-  local case_dir session_dir staging_dir backup_dir output before after
+  local case_dir session_dir staging_dir output before after
   case_dir="${TEST_TMP}/inactive-upgrade-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
-  backup_dir="${session_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${session_dir}"
   chmod 0700 "${session_dir}"
@@ -151,7 +147,7 @@ test_upgrade_inactive_service_stays_inactive_on_rollback() {
   before="$(capture_target_state)"
   export MOCK_HEALTH_FAILURES=10
 
-  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
     fail "inactive upgrade health failure unexpectedly committed"
   fi
   after="$(capture_target_state)"
@@ -167,11 +163,10 @@ test_upgrade_inactive_service_stays_inactive_on_rollback() {
 }
 
 test_damaged_installation_rollback_preserves_enablement_link() {
-  local case_dir session_dir staging_dir backup_dir output before after
+  local case_dir session_dir staging_dir output before after
   case_dir="${TEST_TMP}/damaged-installation-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
-  backup_dir="${session_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${session_dir}"
   chmod 0700 "${session_dir}"
@@ -183,7 +178,7 @@ test_damaged_installation_rollback_preserves_enablement_link() {
   before="$(capture_target_state)"
   export MOCK_NGINX_FAIL_ON_TEST_CALL=1
 
-  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
     fail "damaged installation nginx failure unexpectedly committed"
   fi
   after="$(capture_target_state)"
@@ -195,11 +190,10 @@ test_damaged_installation_rollback_preserves_enablement_link() {
 }
 
 test_first_install_failure_removes_new_targets() {
-  local case_dir session_dir staging_dir backup_dir output target
+  local case_dir session_dir staging_dir output target
   case_dir="${TEST_TMP}/first-install-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
-  backup_dir="${session_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${session_dir}"
   chmod 0700 "${session_dir}"
@@ -207,7 +201,7 @@ test_first_install_failure_removes_new_targets() {
   make_staging "${staging_dir}"
   export MOCK_NGINX_FAIL_ON_TEST_CALL=1
 
-  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
     fail "first install nginx failure unexpectedly committed"
   fi
   while IFS= read -r target; do
@@ -222,12 +216,11 @@ test_first_install_failure_removes_new_targets() {
 }
 
 test_first_install_late_failures_stop_service_and_reload_nginx() {
-  local failure case_dir session_dir staging_dir backup_dir output target
+  local failure case_dir session_dir staging_dir output target
   for failure in restart is-active reload health; do
     case_dir="${TEST_TMP}/first-install-late-${failure}"
     session_dir="${case_dir}/session"
     staging_dir="${session_dir}/staging"
-    backup_dir="${session_dir}/backup"
     output="${case_dir}/output.log"
     mkdir -p "${session_dir}"
     chmod 0700 "${session_dir}"
@@ -253,7 +246,7 @@ test_first_install_late_failures_stop_service_and_reload_nginx() {
         ;;
     esac
 
-    if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+    if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
       fail "first install late ${failure} failure unexpectedly committed"
     fi
     while IFS= read -r target; do
@@ -293,11 +286,10 @@ test_first_install_late_failures_stop_service_and_reload_nginx() {
 }
 
 test_incomplete_rollback_preserves_recovery_backup() {
-  local case_dir session_dir staging_dir backup_dir output before after
+  local case_dir session_dir staging_dir output before after
   case_dir="${TEST_TMP}/incomplete-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
-  backup_dir="${session_dir}/backup"
   output="${case_dir}/output.log"
   mkdir -p "${session_dir}"
   chmod 0700 "${session_dir}"
@@ -309,26 +301,88 @@ test_incomplete_rollback_preserves_recovery_backup() {
   export MOCK_SYSTEMCTL_FAIL_COMMAND=start
   export MOCK_SYSTEMCTL_FAIL_ON_CALL=1
 
-  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" > "${output}" 2>&1; then
     fail "incomplete rollback scenario unexpectedly succeeded"
   fi
   after="$(capture_target_state)"
   assert_eq "${before}" "${after}" "incomplete rollback still restores target files"
-  [[ -d "${backup_dir}" ]] || fail "incomplete rollback did not preserve its backup"
-  assert_mode "${session_dir}" 700 "preserved recovery directory"
-  assert_mode "${backup_dir}" 700 "preserved recovery backup"
-  assert_mode "${backup_dir}/env" 600 "preserved recovery env"
-  assert_mode "${backup_dir}/runtime_state" 600 "preserved runtime snapshot"
+  [[ -d "${TRANSACTION_DIR}" ]] || fail "incomplete rollback did not preserve its backup"
+  assert_mode "${TRANSACTION_DIR}" 700 "preserved recovery backup"
+  assert_mode "${TRANSACTION_DIR}/env" 600 "preserved recovery env"
+  assert_mode "${TRANSACTION_DIR}/runtime_state" 600 "preserved runtime snapshot"
   assert_contains "${output}" "Automatic rollback was incomplete" "incomplete rollback output"
-  assert_contains "${output}" "${backup_dir}" "incomplete rollback recovery path"
-  rm -rf "${session_dir}"
+  assert_contains "${output}" "${TRANSACTION_DIR}" "incomplete rollback recovery path"
+  assert_path_absent "${session_dir}" "incomplete rollback still removes the temporary session"
+
+  # Rerunning the installer retries the restore from the preserved journal.
+  reset_mock_state "${case_dir}"
+  rm -f -- "${MOCK_STATE_DIR}/service.active"
+  recover_interrupted_transaction > "${output}" 2>&1 || fail "recovery retry failed"
+  assert_eq "${before}" "$(capture_target_state)" "recovery retry keeps restored targets"
+  assert_service_active true "recovery retry starts the previous service"
+  assert_path_absent "${TRANSACTION_DIR}" "recovery retry removes the journal"
+}
+
+test_interrupted_commit_is_recovered_on_next_run() {
+  local case_dir staging_dir output before
+  case_dir="${TEST_TMP}/interrupted-commit"
+  staging_dir="${case_dir}/staging"
+  output="${case_dir}/output.log"
+  mkdir -p "${case_dir}"
+  setup_case "${case_dir}"
+  seed_existing_installation
+  make_staging "${staging_dir}"
+  before="$(capture_target_state)"
+
+  # SIGKILL the installer after live files were replaced but before validation.
+  # The outer group swallows bash's own "Killed" job report.
+  { (
+    # shellcheck disable=SC2329 # invoked by commit_installation
+    systemctl() {
+      if [[ "${1:-}" == "daemon-reload" ]]; then
+        kill -9 "${BASHPID}"
+      fi
+      command systemctl "$@"
+    }
+    perform_install_transaction "${staging_dir}" "127.0.0.1:8080"
+  ) > "${output}" 2>&1; } 2>/dev/null && fail "interrupted commit unexpectedly finished"
+  cmp -s "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" || fail "interruption happened before the binary was replaced"
+  [[ -e "${TRANSACTION_DIR}/snapshot.done" && ! -e "${TRANSACTION_DIR}/committed" ]] ||
+    fail "interrupted commit left an unexpected journal state"
+
+  recover_interrupted_transaction > "${output}" 2>&1 || fail "interrupted commit recovery failed"
+  assert_eq "${before}" "$(capture_target_state)" "recovery restores the pre-commit targets"
+  assert_service_active true "recovery restarts the previously active service"
+  assert_contains "${output}" "Found an interrupted installation" "recovery output"
+  assert_path_absent "${TRANSACTION_DIR}" "recovery removes the journal"
+}
+
+test_recovery_discards_harmless_journals() {
+  local state case_dir before
+  for state in snapshot-incomplete committed; do
+    case_dir="${TEST_TMP}/journal-${state}"
+    mkdir -p "${case_dir}"
+    setup_case "${case_dir}"
+    seed_existing_installation
+    before="$(capture_target_state)"
+    mkdir -p "${TRANSACTION_DIR}"
+    printf 'binary\t1\t%s\n' "${INSTALL_DIR}/bupt-ec" > "${TRANSACTION_DIR}/manifest"
+    if [[ "${state}" == "committed" ]]; then
+      : > "${TRANSACTION_DIR}/snapshot.done"
+      : > "${TRANSACTION_DIR}/committed"
+    fi
+
+    recover_interrupted_transaction || fail "${state} journal recovery failed"
+    assert_eq "${before}" "$(capture_target_state)" "${state} journal leaves targets untouched"
+    assert_command_count 0 "systemctl " "${MOCK_COMMAND_LOG}" "${state} journal runs no rollback"
+    assert_path_absent "${TRANSACTION_DIR}" "${state} journal is removed"
+  done
 }
 
 test_successful_upgrade_commits_and_cleans_backup() {
-  local case_dir staging_dir backup_dir preview_backup output
+  local case_dir staging_dir preview_backup output
   case_dir="${TEST_TMP}/successful-upgrade"
   staging_dir="${case_dir}/staging"
-  backup_dir="${case_dir}/backup"
   preview_backup="${case_dir}/preview-backup"
   output="${case_dir}/output.log"
   mkdir -p "${case_dir}"
@@ -347,7 +401,7 @@ test_successful_upgrade_commits_and_cleans_backup() {
   rm -rf "${preview_backup}"
 
   export MOCK_HEALTH_FAILURES=1
-  perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080" > "${output}" 2>&1
+  perform_install_transaction "${staging_dir}" "127.0.0.1:8080" > "${output}" 2>&1
 
   assert_not_contains "${output}" "mock curl health failure" "successful health retry hides raw curl stderr"
   cmp -s "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" || fail "successful upgrade binary mismatch"
@@ -363,8 +417,7 @@ test_successful_upgrade_commits_and_cleans_backup() {
   assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${ENV_FILE}.new." "installed env ownership"
   assert_mode "${SERVICE_FILE}" 644 "installed service"
   assert_mode "${NGINX_SITE}" 644 "installed nginx"
-  assert_path_absent "${backup_dir}" "successful upgrade backup cleanup"
+  assert_path_absent "${TRANSACTION_DIR}" "successful upgrade backup cleanup"
   assert_eq false "${TRANSACTION_ACTIVE}" "successful transaction active flag"
-  assert_eq "" "${TRANSACTION_BACKUP_DIR}" "successful transaction backup pointer"
   assert_command_count 2 "curl http://127.0.0.1:8080/healthz" "${MOCK_COMMAND_LOG}" "successful health retry count"
 }

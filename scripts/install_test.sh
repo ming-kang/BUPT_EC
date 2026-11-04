@@ -33,7 +33,7 @@ run_suite() {
   done
 }
 
-expected_test_function_count=36
+expected_test_function_count=38
 actual_test_function_count="$(declare -F | awk '$3 ~ /^test_/ { count++ } END { print count + 0 }')"
 assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
   "installer test function inventory"
@@ -79,8 +79,10 @@ run_suite transaction \
 run_suite render-config \
   test_api_proxy_read_timeout_budget
 run_suite transaction \
-  test_successful_upgrade_commits_and_cleans_backup
+  test_successful_upgrade_commits_and_cleans_backup \
+  test_interrupted_commit_is_recovered_on_next_run \
+  test_recovery_discards_harmless_journals
 
 printf 'installer behavior tests passed (%s entry scenarios; %s test functions)\n' \
-  34 \
+  36 \
   "${actual_test_function_count}"

@@ -257,7 +257,6 @@ setup_case() {
   export MOCK_SYSTEMD_ENABLED_LINK="${SYSTEMD_ENABLED_LINK}"
   reset_config_state
   TRANSACTION_ACTIVE=false
-  TRANSACTION_BACKUP_DIR=""
   reset_mock_state "${case_dir}"
 }
 
@@ -384,13 +383,12 @@ make_staging() {
 run_transaction_with_cleanup() {
   local session_dir="$1"
   local staging_dir="$2"
-  local backup_dir="$3"
   local status
 
   (
     set +e
     initialize_installer_session "${session_dir}"
-    perform_install_transaction "${staging_dir}" "${backup_dir}" "127.0.0.1:8080"
+    perform_install_transaction "${staging_dir}" "127.0.0.1:8080"
     status=$?
     exit "${status}"
   )
