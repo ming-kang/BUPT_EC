@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -26,15 +25,8 @@ type defaultJWClient struct {
 	client   HTTPDoer
 }
 
-func NewJWClient(username, password string, client HTTPDoer) (JWClient, error) {
-	if client == nil {
-		return nil, errors.New("JW HTTP client is required")
-	}
-	return &defaultJWClient{
-		username: username,
-		password: password,
-		client:   client,
-	}, nil
+func NewJWClient(username, password string, client HTTPDoer) JWClient {
+	return &defaultJWClient{username: username, password: password, client: client}
 }
 
 func (c *defaultJWClient) QueryCampus(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error) {
@@ -69,18 +61,12 @@ func (c *defaultJWClient) Login(ctx context.Context, apiURL string) (string, err
 		return "", newJWError(jwErrorConfig, "jw login", err, "build login URL failed")
 	}
 
-	userNo := c.username
-	password := c.password
-	if userNo == "" || password == "" {
-		return "", newJWError(jwErrorConfig, "jw login", nil, "JW_USERNAME or JW_PASSWORD is not configured")
-	}
-
-	encryptedPassword, err := encryptJWPassword(password)
+	encryptedPassword, err := encryptJWPassword(c.password)
 	if err != nil {
 		return "", newJWError(jwErrorConfig, "jw login", err, "encrypt login password failed")
 	}
 	req := map[string]string{
-		"userNo":      userNo,
+		"userNo":      c.username,
 		"pwd":         encryptedPassword,
 		"encode":      "1",
 		"captchaData": "",

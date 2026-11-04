@@ -3,7 +3,6 @@ package service
 import (
 	"testing"
 
-	"BUPT_EC/config"
 	"BUPT_EC/service/model"
 )
 
@@ -34,7 +33,7 @@ func TestParseRoom(t *testing.T) {
 }
 
 func TestBuildCampusInfoDeduplicatesRooms(t *testing.T) {
-	campus := buildCampusInfo(config.CampusConfig{ID: "01", Name: "西土城"}, []model.JWClassInfo{
+	campus := buildCampusInfo(campus{ID: "01", Name: "西土城"}, []model.JWClassInfo{
 		{
 			NodeName:   "1",
 			NodeTime:   "08:00-08:45",
@@ -78,7 +77,7 @@ func TestBuildingDisplayNameNormalization(t *testing.T) {
 }
 
 func TestBuildCampusInfoEmitsBuildingDisplayName(t *testing.T) {
-	campus := buildCampusInfo(config.CampusConfig{ID: "04", Name: "沙河"}, []model.JWClassInfo{
+	campus := buildCampusInfo(campus{ID: "04", Name: "沙河"}, []model.JWClassInfo{
 		{
 			NodeName:   "1",
 			NodeTime:   "08:00-08:45",

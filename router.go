@@ -11,7 +11,6 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strings"
-	"sync"
 	"time"
 
 	"BUPT_EC/logs"
@@ -24,61 +23,17 @@ func isAPIPath(path string) bool {
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// jsonBufPool avoids per-request buffer allocation for JSON encoding.
-// Each buffer is Reset before use and returned after the response is written.
-var jsonBufPool = sync.Pool{
-	New: func() any { return new(bytes.Buffer) },
-}
-
-// writeJSON encodes v as JSON into a pooled buffer and writes it as the HTTP
-// response body. The output is byte-compatible with the former json.Marshal
-// path (no trailing newline). Encode errors are unreachable for the typed
-// envelope structs used by all callers.
+// writeJSON writes v as the JSON response body. Encode errors are
+// unreachable for the typed envelope structs used by all callers.
 func writeJSON(w http.ResponseWriter, status int, v any) {
-	buf := jsonBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	err := json.NewEncoder(buf).Encode(v)
+	body, err := json.Marshal(v)
 	if err != nil {
-		jsonBufPool.Put(buf)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
-	}
-	// json.Encoder.Encode appends '\n'; trim it to match the prior Marshal
-	// output that existing tests and the gzip byte-comparison assert on.
-	body := buf.Bytes()
-	if len(body) > 0 && body[len(body)-1] == '\n' {
-		body = body[:len(body)-1]
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
 	_, _ = w.Write(body)
-	jsonBufPool.Put(buf)
-}
-
-// writePreserializedGetData writes a success /api/get_data response by
-// splicing pre-serialized "data" JSON into the envelope template. This
-// eliminates per-request reflection-based json.Marshal for the large
-// campus/room tree. The output is byte-identical to what writeJSON would
-// produce for a getDataSuccessResponse with the same data.
-func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver string, dataJSON string) {
-	buf := jsonBufPool.Get().(*bytes.Buffer)
-	buf.Reset()
-	// Build: {"code":0,"log_id":"...","version":"...","data":...}
-	// Use json.Marshal for the string fields to handle any escaping.
-	buf.WriteString(`{"code":0,"log_id":`)
-	logIDJSON, _ := json.Marshal(logID)
-	buf.Write(logIDJSON)
-	buf.WriteString(`,"version":`)
-	verJSON, _ := json.Marshal(ver)
-	buf.Write(verJSON)
-	buf.WriteString(`,"data":`)
-	buf.WriteString(dataJSON)
-	buf.WriteByte('}')
-
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(buf.Bytes())
-	jsonBufPool.Put(buf)
 }
 
 // newGzipWrapper builds the production compression wrapper. It is shared with
@@ -88,8 +43,6 @@ func writePreserializedGetData(w http.ResponseWriter, status int, logID, ver str
 // pass through untouched).
 func newGzipWrapper() func(http.Handler) http.HandlerFunc {
 	wrapper, err := gzhttp.NewWrapper(
-		// Keep the gzip-only behavior surface for now; delete this line to
-		// enable zstd later as an independent change.
 		gzhttp.EnableZstd(false),
 		// Explicit allowlist: no image/png, font/woff2, or
 		// application/octet-stream, so already-compressed static assets are
@@ -97,7 +50,7 @@ func newGzipWrapper() func(http.Handler) http.HandlerFunc {
 		gzhttp.ContentTypes([]string{
 			"application/json",
 			"text/html",
-			"text/plain", // /metrics exposition: text/plain; version=0.0.4 (parameterless entries match any parameters)
+			"text/plain",
 			"text/css",
 			"text/javascript",
 			"application/javascript",
@@ -115,8 +68,7 @@ func newGzipWrapper() func(http.Handler) http.HandlerFunc {
 }
 
 // gzipSkipProbes routes /healthz and /readyz around the gzhttp wrapper so
-// probe responses are never compressed and never carry a Vary header,
-// preserving the previous hard-coded path exemption byte for byte.
+// probe responses are never compressed and never carry a Vary header.
 func gzipSkipProbes(compressed, uncompressed http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
@@ -254,7 +206,6 @@ func (server *HTTPServer) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", server.Healthz)
 	mux.HandleFunc("GET /readyz", server.Readyz)
-	mux.HandleFunc("GET /metrics", server.Metrics)
 	mux.HandleFunc("GET /api/get_data", server.GetData)
 	mux.Handle("GET /assets/", immutableCache(staticFiles))
 	// Method-independent catch-all: the ServeMux can never answer 405, so

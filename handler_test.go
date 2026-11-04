@@ -1,7 +1,6 @@
 package main
 
 import (
-	"BUPT_EC/logs"
 	"BUPT_EC/service"
 	"BUPT_EC/service/model"
 	"bytes"
@@ -11,10 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"regexp"
 	"strings"
 	"testing"
@@ -22,151 +19,50 @@ import (
 )
 
 type fakeClassroomService struct {
-	todayClassrooms  *model.TodayClassrooms
-	todayError       error
-	runtimeStatus    service.RuntimeStatus
-	usableTodayCache bool
-	cachedDataJSON   string
+	todayClassrooms *model.TodayClassrooms
+	todayError      error
+	ready           bool
 }
 
-func (classroomService *fakeClassroomService) GetTodayClassrooms(_ context.Context) (*model.TodayClassrooms, error) {
-	return classroomService.todayClassrooms, classroomService.todayError
+func (f *fakeClassroomService) GetTodayClassrooms(context.Context) (*model.TodayClassrooms, error) {
+	return f.todayClassrooms, f.todayError
 }
 
-func (classroomService *fakeClassroomService) GetRuntimeStatus() service.RuntimeStatus {
-	return classroomService.runtimeStatus
+func (f *fakeClassroomService) Ready() bool { return f.ready }
+
+func newTestHTTPServer(classrooms *fakeClassroomService) *HTTPServer {
+	if classrooms == nil {
+		classrooms = &fakeClassroomService{}
+	}
+	return NewHTTPServer(classrooms)
 }
 
-func (classroomService *fakeClassroomService) HasUsableTodayCache() bool {
-	return classroomService.usableTodayCache
-}
-
-func (classroomService *fakeClassroomService) GetCachedDataJSON() (string, bool) {
-	if classroomService.cachedDataJSON != "" {
-		return classroomService.cachedDataJSON, true
-	}
-	return "", false
-}
-
-func newTestHTTPServer(classroomService *fakeClassroomService, hasJWCredentials bool) *HTTPServer {
-	if classroomService == nil {
-		classroomService = &fakeClassroomService{}
-	}
-	httpServer, err := NewHTTPServer(classroomService, hasJWCredentials, nil)
-	if err != nil {
-		panic(err)
-	}
-	return httpServer
-}
-
-func TestNewHTTPServerRejectsNilService(t *testing.T) {
-	if _, err := NewHTTPServer(nil, false, nil); err == nil {
-		t.Fatal("NewHTTPServer(nil) expected error")
-	}
-	if _, err := NewHTTPServer(&fakeClassroomService{}, false, nil); err != nil {
-		t.Fatalf("NewHTTPServer(valid) error = %v", err)
-	}
-}
-
-func TestReadyzRequiresConfiguredCredentialsAndUsableCache(t *testing.T) {
-	serveReadyz := func(httpServer *HTTPServer) *httptest.ResponseRecorder {
-		responseRecorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-		http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
-		return responseRecorder
-	}
-
-	// Credentials missing: not ready even with a usable cache.
-	withoutCredentials := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, false)
-	if code := serveReadyz(withoutCredentials).Code; code != http.StatusServiceUnavailable {
-		t.Fatalf("readyz without credentials status = %d, want %d", code, http.StatusServiceUnavailable)
-	}
-
-	// Credentials configured but no usable cache: still not ready.
-	classroomService := &fakeClassroomService{usableTodayCache: false}
-	withCredentials := newTestHTTPServer(classroomService, true)
-	if code := serveReadyz(withCredentials).Code; code != http.StatusServiceUnavailable {
-		t.Fatalf("readyz without cache status = %d, want %d", code, http.StatusServiceUnavailable)
-	}
-
-	// Cache becomes usable: ready.
-	classroomService.usableTodayCache = true
-	if code := serveReadyz(withCredentials).Code; code != http.StatusOK {
-		t.Fatalf("readyz with credentials and cache status = %d, want %d", code, http.StatusOK)
-	}
-}
-
-func TestReadyzDefaultsToMinimalSurfaceWithoutDiagnostics(t *testing.T) {
-	serveReadyz := func(httpServer *HTTPServer) *httptest.ResponseRecorder {
-		responseRecorder := httptest.NewRecorder()
-		request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-		http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
-		return responseRecorder
-	}
-
-	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
-	responseRecorder := serveReadyz(httpServer)
-	if responseRecorder.Code != http.StatusOK {
-		t.Fatalf("readyz status = %d, want %d", responseRecorder.Code, http.StatusOK)
-	}
-
-	var body map[string]json.RawMessage
-	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode readyz response: %v", err)
-	}
-	for _, key := range []string{"status", "version"} {
-		if _, ok := body[key]; !ok {
-			t.Fatalf("readyz minimal surface missing %q: %s", key, responseRecorder.Body.String())
+func TestReadyzIsMinimalAndFollowsCacheUsability(t *testing.T) {
+	for _, ready := range []bool{true, false} {
+		recorder := httptest.NewRecorder()
+		newTestHTTPServer(&fakeClassroomService{ready: ready}).Readyz(recorder, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		want := http.StatusServiceUnavailable
+		if ready {
+			want = http.StatusOK
+		}
+		if recorder.Code != want {
+			t.Fatalf("ready=%v status = %d, want %d", ready, recorder.Code, want)
+		}
+		wantBody := fmt.Sprintf(`{"status":%q,"version":%q}`, http.StatusText(want), version)
+		if recorder.Body.String() != wantBody {
+			t.Fatalf("readyz body = %s, want %s", recorder.Body.String(), wantBody)
 		}
 	}
-	for _, key := range []string{"runtime", "jw_credentials_configured"} {
-		if _, ok := body[key]; ok {
-			t.Fatalf("readyz minimal surface must not expose %q: %s", key, responseRecorder.Body.String())
-		}
-	}
-
-	// Not-ready keeps 503 on the minimal surface.
-	notReady := newTestHTTPServer(&fakeClassroomService{usableTodayCache: false}, true)
-	if code := serveReadyz(notReady).Code; code != http.StatusServiceUnavailable {
-		t.Fatalf("readyz not-ready status = %d, want %d", code, http.StatusServiceUnavailable)
-	}
 }
 
-func TestReadyzReportsPartialCacheDiagnostics(t *testing.T) {
-	httpServer := newTestHTTPServer(&fakeClassroomService{
-		usableTodayCache: true,
-		runtimeStatus: service.RuntimeStatus{
-			CacheAvailable:     true,
-			CacheFresh:         true,
-			CachePartial:       true,
-			PartialCampuses:    []string{"04"},
-			LastRefreshWarning: "部分校区数据刷新失败，已展示可用数据",
-		},
-	}, true)
-	httpServer.SetReadyzDiagnostics(true)
-
-	responseRecorder := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "/readyz", nil)
-	http.HandlerFunc(httpServer.Readyz).ServeHTTP(responseRecorder, request)
-	if responseRecorder.Code != http.StatusOK {
-		t.Fatalf("partial cache readyz status = %d, want %d", responseRecorder.Code, http.StatusOK)
+func TestHealthzBody(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	newTestHTTPServer(nil).Healthz(recorder, nil)
+	if recorder.Code != http.StatusOK || recorder.Body.String() != `{"status":"ok"}` {
+		t.Fatalf("healthz = %d %s", recorder.Code, recorder.Body.String())
 	}
-
-	var body struct {
-		Runtime service.RuntimeStatus `json:"runtime"`
-		Version string                `json:"version"`
-	}
-	if err := json.Unmarshal(responseRecorder.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode readyz partial response: %v", err)
-	}
-	if !body.Runtime.CachePartial || !reflect.DeepEqual(body.Runtime.PartialCampuses, []string{"04"}) {
-		t.Fatalf("readyz partial runtime = %#v", body.Runtime)
-	}
-	if body.Runtime.LastRefreshWarning == "" {
-		t.Fatalf("readyz missing partial warning: %#v", body.Runtime)
-	}
-	if body.Version != "dev" {
-		t.Fatalf("readyz version = %q, want default %q", body.Version, "dev")
+	if got := recorder.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("healthz Content-Type = %q", got)
 	}
 }
 
@@ -182,7 +78,7 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 				{ID: "01", Name: "西土城"},
 			},
 		},
-	}, true)
+	})
 
 	handler := httpServer.Routes()
 
@@ -221,46 +117,6 @@ func TestGetDataReturnsSuccessEnvelopeFromInjectedService(t *testing.T) {
 	}
 }
 
-func TestGetDataFastAndSlowPathsAreHTTPIdentical(t *testing.T) {
-	now := time.Date(2026, 8, 26, 12, 0, 0, 0, time.UTC)
-	today := &model.TodayClassrooms{
-		Date:       now.Format("2006-01-02"),
-		UpdatedAt:  now,
-		ExpiresAt:  now.Add(time.Hour),
-		StaleUntil: now.Add(12 * time.Hour),
-		Campuses:   []model.CampusInfo{{ID: "01", Name: "西土城"}},
-	}
-	dataJSON, err := json.Marshal(today)
-	if err != nil {
-		t.Fatalf("marshal fresh cache JSON: %v", err)
-	}
-	fast := newTestHTTPServer(&fakeClassroomService{
-		todayClassrooms: today,
-		cachedDataJSON:  string(dataJSON),
-	}, true)
-	slow := newTestHTTPServer(&fakeClassroomService{todayClassrooms: today}, true)
-	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil).
-		WithContext(logs.GenNewContext(context.Background()))
-
-	serve := func(server *HTTPServer) *httptest.ResponseRecorder {
-		recorder := httptest.NewRecorder()
-		server.GetData(recorder, request)
-		return recorder
-	}
-	fastResponse := serve(fast)
-	slowResponse := serve(slow)
-
-	if fastResponse.Code != slowResponse.Code {
-		t.Fatalf("fast status = %d, slow status = %d", fastResponse.Code, slowResponse.Code)
-	}
-	if !reflect.DeepEqual(fastResponse.Header(), slowResponse.Header()) {
-		t.Fatalf("fast headers = %#v, slow headers = %#v", fastResponse.Header(), slowResponse.Header())
-	}
-	if !bytes.Equal(fastResponse.Body.Bytes(), slowResponse.Body.Bytes()) {
-		t.Fatalf("fast body = %s, slow body = %s", fastResponse.Body.Bytes(), slowResponse.Body.Bytes())
-	}
-}
-
 func TestGetDataWarmingErrorsCarryRetryAfter(t *testing.T) {
 	cases := []struct {
 		name string
@@ -271,7 +127,7 @@ func TestGetDataWarmingErrorsCarryRetryAfter(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			httpServer := newTestHTTPServer(&fakeClassroomService{todayError: tc.err}, true)
+			httpServer := newTestHTTPServer(&fakeClassroomService{todayError: tc.err})
 			handler := httpServer.Routes()
 
 			responseRecorder := httptest.NewRecorder()
@@ -295,7 +151,7 @@ func TestGetDataWarmingErrorsCarryRetryAfter(t *testing.T) {
 func TestGetDataNonWarmingErrorHasNoRetryAfter(t *testing.T) {
 	// A generic upstream failure is transient too, but it is not a cold-start
 	// warming state; the retry hint must not mask real misconfiguration.
-	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: errors.New("raw upstream detail")}, true)
+	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: errors.New("raw upstream detail")})
 	handler := httpServer.Routes()
 
 	responseRecorder := httptest.NewRecorder()
@@ -312,7 +168,7 @@ func TestGetDataNonWarmingErrorHasNoRetryAfter(t *testing.T) {
 
 func TestGetDataReturnsSafeErrorEnvelopeWithLogID(t *testing.T) {
 	upstreamError := errors.New("raw upstream token detail should not leak")
-	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: upstreamError}, true)
+	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: upstreamError})
 
 	handler := httpServer.Routes()
 
@@ -385,7 +241,7 @@ func TestGetDataEnvelopesCarryBuildVersion(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			handler := newTestHTTPServer(tc.service, true).Routes()
+			handler := newTestHTTPServer(tc.service).Routes()
 
 			responseRecorder := httptest.NewRecorder()
 			request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
@@ -413,7 +269,7 @@ func TestGetDataEnvelopesCarryBuildVersion(t *testing.T) {
 }
 
 func TestNoRouteServesSPAFallback(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	responseRecorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
@@ -510,9 +366,9 @@ func largeTodayClassrooms(now time.Time) *model.TodayClassrooms {
 
 func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	httpServer := newTestHTTPServer(&fakeClassroomService{
-		todayClassrooms:  largeTodayClassrooms(time.Now()),
-		usableTodayCache: true,
-	}, true)
+		todayClassrooms: largeTodayClassrooms(time.Now()),
+		ready:           true,
+	})
 	handler := httpServer.Routes()
 
 	// Identity baseline: no Accept-Encoding means no compression.
@@ -606,126 +462,6 @@ func TestGzipWrapperSkipsAlreadyCompressedAssetTypes(t *testing.T) {
 		}
 		if !bytes.Equal(responseRecorder.Body.Bytes(), payload) {
 			t.Fatalf("%s body was altered by the wrapper", contentType)
-		}
-	}
-}
-
-type allocationResponseWriter struct {
-	header http.Header
-	status int
-	bytes  int
-}
-
-func newAllocationResponseWriter() *allocationResponseWriter {
-	return &allocationResponseWriter{header: make(http.Header)}
-}
-
-func (w *allocationResponseWriter) Header() http.Header {
-	return w.header
-}
-
-func (w *allocationResponseWriter) WriteHeader(status int) {
-	w.status = status
-}
-
-func (w *allocationResponseWriter) Write(p []byte) (int, error) {
-	w.bytes += len(p)
-	return len(p), nil
-}
-
-func TestHealthzHandlerHasZeroAllocations(t *testing.T) {
-	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
-	writer := newAllocationResponseWriter()
-	allocations := testing.AllocsPerRun(1000, func() {
-		writer.status = 0
-		writer.bytes = 0
-		httpServer.Healthz(writer, nil)
-	})
-	if allocations != 0 {
-		t.Fatalf("Healthz allocations = %v, want 0", allocations)
-	}
-	if writer.status != http.StatusOK || writer.bytes != len(healthzBody) {
-		t.Fatalf("Healthz result = status %d, bytes %d", writer.status, writer.bytes)
-	}
-	if got := writer.header.Get("Content-Type"); got != "application/json; charset=utf-8" {
-		t.Fatalf("Healthz Content-Type = %q", got)
-	}
-}
-
-// --- Benchmarks ---
-
-// discardBenchmarkSlog prevents GetData's request log from dominating benchmark
-// output and timing. It restores the package logger when the benchmark ends.
-func discardBenchmarkSlog(b *testing.B) {
-	b.Helper()
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	b.Cleanup(func() { slog.SetDefault(previousLogger) })
-}
-
-func BenchmarkGetDataSuccess(b *testing.B) {
-	discardBenchmarkSlog(b)
-	now := time.Now()
-	todayData := largeTodayClassrooms(now)
-	// Pre-serialize the data JSON like the real service does at refresh time.
-	dataJSON, err := json.Marshal(todayData)
-	if err != nil {
-		b.Fatalf("pre-marshal: %v", err)
-	}
-	httpServer := newTestHTTPServer(&fakeClassroomService{
-		todayClassrooms: todayData,
-		cachedDataJSON:  string(dataJSON),
-	}, true)
-	handler := httpServer.Routes()
-	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		responseRecorder := httptest.NewRecorder()
-		handler.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusOK {
-			b.Fatalf("status = %d", responseRecorder.Code)
-		}
-	}
-}
-
-func BenchmarkHealthz(b *testing.B) {
-	httpServer := newTestHTTPServer(&fakeClassroomService{usableTodayCache: true}, true)
-	writer := newAllocationResponseWriter()
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		writer.status = 0
-		writer.bytes = 0
-		httpServer.Healthz(writer, nil)
-	}
-}
-
-func BenchmarkGetDataHandlerOnly(b *testing.B) {
-	discardBenchmarkSlog(b)
-	now := time.Now()
-	todayData := largeTodayClassrooms(now)
-	dataJSON, err := json.Marshal(todayData)
-	if err != nil {
-		b.Fatalf("pre-marshal: %v", err)
-	}
-	httpServer := newTestHTTPServer(&fakeClassroomService{
-		todayClassrooms: todayData,
-		cachedDataJSON:  string(dataJSON),
-	}, true)
-	// Test the handler directly to isolate GetData from gzip/recovery/log middleware.
-	handler := http.HandlerFunc(httpServer.GetData)
-	request := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
-
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		responseRecorder := httptest.NewRecorder()
-		handler.ServeHTTP(responseRecorder, request)
-		if responseRecorder.Code != http.StatusOK {
-			b.Fatalf("status = %d", responseRecorder.Code)
 		}
 	}
 }

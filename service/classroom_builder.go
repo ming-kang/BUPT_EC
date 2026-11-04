@@ -1,7 +1,6 @@
 package service
 
 import (
-	"BUPT_EC/config"
 	"BUPT_EC/service/model"
 	"regexp"
 	"sort"
@@ -34,7 +33,7 @@ func buildingDisplayName(name string) string {
 	return name
 }
 
-func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo) model.CampusInfo {
+func buildCampusInfo(c campus, rows []model.JWClassInfo) model.CampusInfo {
 	buildingMap := map[string]map[string]*roomAccumulator{}
 	nodeRooms := map[int]map[string]struct{}{}
 	nodeTimes := map[int]string{}
@@ -115,8 +114,8 @@ func buildCampusInfo(campusConfig config.CampusConfig, rows []model.JWClassInfo)
 	}
 
 	return model.CampusInfo{
-		ID:        campusConfig.ID,
-		Name:      campusConfig.Name,
+		ID:        c.ID,
+		Name:      c.Name,
 		Buildings: buildings,
 		Nodes:     nodes,
 	}

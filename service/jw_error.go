@@ -6,7 +6,6 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-	"unicode/utf8"
 )
 
 type jwErrorKind string
@@ -86,97 +85,30 @@ func SafeErrorMessage(err error) string {
 
 const safeRemoteMessageRuneLimit = 256
 
-// safeRemoteMessage normalizes upstream JW text for internal errors and logs.
-// Clients never receive this string; they only see SafeErrorMessage.
-func safeRemoteMessage(message string) string {
-	normalized := sanitizeRemoteMessage(message)
-	if normalized == "" {
-		return "remote service returned failure"
-	}
-	return normalized
-}
-
-func sanitizeRemoteMessage(message string) string {
-	if message == "" {
-		return ""
-	}
-
-	// Normalize first so redaction regexes only need ASCII space, then redact
-	// secrets, then bound length. Order matters: Unicode whitespace must not
-	// bypass key/value matching, and truncation must not leave a secret half.
-	out := normalizeRemoteMessageRunes(message)
-	if out == "" {
-		return ""
-	}
-
-	out = redactSensitiveRemoteFragments(out)
-	out = truncateRunes(out, safeRemoteMessageRuneLimit)
-	return strings.TrimSpace(out)
-}
-
-// normalizeRemoteMessageRunes folds unsafe Unicode runs to a single ASCII space
-// and trims edges. Safe text (letters, digits, punctuation, emoji) is kept.
-func normalizeRemoteMessageRunes(message string) string {
-	var b strings.Builder
-	b.Grow(len(message))
-	lastSpace := false
-	for _, r := range message {
-		if isUnsafeRemoteRune(r) {
-			if !lastSpace {
-				b.WriteByte(' ')
-				lastSpace = true
-			}
-			continue
-		}
-		b.WriteRune(r)
-		lastSpace = false
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// isUnsafeRemoteRune reports runes that must not appear in internal log lines:
-// Unicode whitespace (incl. Zl/Zp), C0/C1 controls, and format controls (Cf)
-// such as bidi overrides and zero-width characters.
-func isUnsafeRemoteRune(r rune) bool {
-	if unicode.IsSpace(r) || unicode.IsControl(r) {
-		return true
-	}
-	// Cf is not always covered by IsControl; fold format/bidi/zero-width runes.
-	return unicode.In(r, unicode.Cf)
-}
-
 var (
-	remoteASCIISecretKV = regexp.MustCompile(`(?i)\b(token|authorization|password|passwd|username|account)\b\s*[:=：]\s*[^\s,;]+`)
-	remoteCJKSecretKV   = regexp.MustCompile(`(令牌|密码|账号|学号)\s*[:=：]\s*[^\s,;]+`)
-	remoteBearerSecret  = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
+	remoteSecretKV     = regexp.MustCompile(`(?i)(\btoken\b|\bauthorization\b|\bpassword\b|\bpasswd\b|\busername\b|\baccount\b|令牌|密码|账号|学号)\s*[:=：]\s*[^\s,;]+`)
+	remoteBearerSecret = regexp.MustCompile(`(?i)\bbearer\s+[^\s,;]+`)
 )
 
-func redactSensitiveRemoteFragments(message string) string {
-	out := remoteASCIISecretKV.ReplaceAllStringFunc(message, func(match string) string {
-		// Keep the sensitive key label; drop only the value.
-		idx := strings.IndexAny(match, ":=：")
-		if idx < 0 {
-			return "[REDACTED]"
-		}
-		return strings.TrimSpace(match[:idx]) + "=[REDACTED]"
-	})
-	out = remoteCJKSecretKV.ReplaceAllStringFunc(out, func(match string) string {
-		idx := strings.IndexAny(match, ":=：")
-		if idx < 0 {
-			return "[REDACTED]"
-		}
-		return strings.TrimSpace(match[:idx]) + "=[REDACTED]"
-	})
+// safeRemoteMessage normalizes upstream JW text for internal errors and logs:
+// unsafe runes (whitespace, controls, bidi/zero-width) fold to single spaces,
+// secret-looking values are redacted, then the result is capped. Clients
+// never receive this string; they only see SafeErrorMessage.
+func safeRemoteMessage(message string) string {
+	out := strings.Join(strings.FieldsFunc(message, isUnsafeRemoteRune), " ")
+	out = remoteSecretKV.ReplaceAllString(out, "$1=[REDACTED]")
 	out = remoteBearerSecret.ReplaceAllString(out, "Bearer [REDACTED]")
+	if runes := []rune(out); len(runes) > safeRemoteMessageRuneLimit {
+		out = strings.TrimSpace(string(runes[:safeRemoteMessageRuneLimit]))
+	}
+	if out == "" {
+		return "remote service returned failure"
+	}
 	return out
 }
 
-func truncateRunes(s string, limit int) string {
-	if limit <= 0 || utf8.RuneCountInString(s) <= limit {
-		return s
-	}
-	runes := []rune(s)
-	return string(runes[:limit])
+func isUnsafeRemoteRune(r rune) bool {
+	return unicode.IsSpace(r) || unicode.IsControl(r) || unicode.In(r, unicode.Cf)
 }
 
 func isAuthFailureCode(code string) bool {

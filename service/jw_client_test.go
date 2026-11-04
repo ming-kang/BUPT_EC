@@ -7,8 +7,6 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-
-	"BUPT_EC/config"
 )
 
 type serviceHTTPDoerFunc func(*http.Request) (*http.Response, error)
@@ -18,9 +16,6 @@ func (fn serviceHTTPDoerFunc) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestNewJWClientUsesInjectedCredentials(t *testing.T) {
-	t.Setenv(config.JWUsernameKey, "environment-user")
-	t.Setenv(config.JWPasswordKey, "environment-password")
-
 	expectedPassword, err := encryptJWPassword("injected-password")
 	if err != nil {
 		t.Fatalf("encrypt expected password: %v", err)
@@ -47,42 +42,12 @@ func TestNewJWClientUsesInjectedCredentials(t *testing.T) {
 		}, nil
 	})
 
-	client, err := NewJWClient("injected-user", "injected-password", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient("injected-user", "injected-password", doer)
 	token, err := client.Login(context.Background(), DefaultAPIURL)
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
 	}
 	if token != "login-token" {
 		t.Fatal("Login() returned an unexpected token")
-	}
-}
-
-func TestNewJWClientRejectsNilDoerWithoutLeakingCredentials(t *testing.T) {
-	username := "constructor-secret-user"
-	password := "constructor-secret-password"
-	_, err := NewJWClient(username, password, nil)
-	if err == nil {
-		t.Fatal("NewJWClient() expected nil doer error")
-	}
-	if strings.Contains(err.Error(), username) || strings.Contains(err.Error(), password) {
-		t.Fatalf("NewJWClient() error leaked credentials: %v", err)
-	}
-}
-
-func TestJWClientLoginRejectsMissingInjectedCredentialsBeforeRequest(t *testing.T) {
-	doer := serviceHTTPDoerFunc(func(req *http.Request) (*http.Response, error) {
-		t.Fatal("Login() made an HTTP request without injected credentials")
-		return nil, nil
-	})
-	client, err := NewJWClient("", "", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
-	_, err = client.Login(context.Background(), DefaultAPIURL)
-	if err == nil || !isJWErrorKind(err, jwErrorConfig) {
-		t.Fatalf("Login() error = %v, want configuration error", err)
 	}
 }

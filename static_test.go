@@ -41,7 +41,7 @@ func TestImmutableCacheSetsHeader(t *testing.T) {
 }
 
 func TestAssetsMissingFileReturnsNotFound(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	// An /assets/ miss must be a true 404 from the file server, never the SPA
 	// fallback (previously a missing asset name incorrectly returned
@@ -57,7 +57,7 @@ func TestAssetsMissingFileReturnsNotFound(t *testing.T) {
 }
 
 func TestAssetsDirectoryListingIsRejected(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	// Directory paths under /assets/ must 404 instead of producing a file
 	// server listing: listings have no content hash, so neither the listing
@@ -81,7 +81,7 @@ func TestEmbeddedAssetsCarryImmutableCacheControl(t *testing.T) {
 		t.Fatalf("embedded build has no assets/ files (err = %v)", err)
 	}
 
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 	recorder := serveStatic(t, handler, http.MethodGet, "/"+names[0], nil)
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("/%s status = %d, want %d", names[0], recorder.Code, http.StatusOK)
@@ -95,7 +95,7 @@ func TestEmbeddedAssetsCarryImmutableCacheControl(t *testing.T) {
 }
 
 func TestIndexAndSPAFallbackUseWeakETagAndNoCache(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	var etag string
 	for _, path := range []string{"/", "/some/deep/link", "/index.html"} {
@@ -125,7 +125,7 @@ func TestIndexAndSPAFallbackUseWeakETagAndNoCache(t *testing.T) {
 }
 
 func TestIndexIfNoneMatchReturnsNotModified(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	first := serveStatic(t, handler, http.MethodGet, "/", nil)
 	etag := first.Header().Get("ETag")
@@ -143,7 +143,7 @@ func TestIndexIfNoneMatchReturnsNotModified(t *testing.T) {
 }
 
 func TestUnknownAPIMethodAndPathReturnJSONNotFound(t *testing.T) {
-	handler := newTestHTTPServer(nil, true).Routes()
+	handler := newTestHTTPServer(nil).Routes()
 
 	// The catch-all "/" pattern is method-independent, so a POST to an
 	// unknown API path must produce the JSON 404 envelope, never a 405.

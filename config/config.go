@@ -1,3 +1,5 @@
+// Package config loads the immutable startup configuration. Process
+// environment values take precedence over an optional .env file.
 package config
 
 import (
@@ -10,49 +12,20 @@ import (
 	"github.com/joho/godotenv"
 )
 
-const (
-	JWUsernameKey = "JW_USERNAME"
-	JWPasswordKey = "JW_PASSWORD"
-	JWTokenKey    = "JW_TOKEN"
-	AppAddrKey    = "APP_ADDR"
-	LogCallerKey  = "LOG_CALLER"
-	// ReadyzDiagnosticsKey gates the full runtime diagnostics on /readyz.
-	// Default off: public responses then carry only status+version.
-	ReadyzDiagnosticsKey = "READYZ_DIAGNOSTICS"
-
-	DefaultAppAddr = "127.0.0.1:8080"
-)
+const DefaultAppAddr = "127.0.0.1:8080"
 
 var errInvalidAppAddr = errors.New("APP_ADDR must be a valid host:port with port 1-65535")
 
-type CampusConfig struct {
-	ID   string
-	Name string
-}
-
-type JWCredentials struct {
-	Username string
-	Password string
-	Token    string
-}
-
 type RuntimeConfig struct {
-	JW        JWCredentials
-	AppAddr   string
-	LogCaller bool
-	// ReadyzDiagnostics enables the full runtime diagnostics block on
-	// /readyz (opt-in; see ReadyzDiagnosticsKey).
-	ReadyzDiagnostics bool
-	Campuses          []CampusConfig
+	JWUsername string
+	JWPassword string
+	AppAddr    string
+	LogCaller  bool
 }
 
 type LookupEnv func(string) (string, bool)
 
 func Load(dotenvPath string, lookup LookupEnv) (RuntimeConfig, error) {
-	if lookup == nil {
-		return RuntimeConfig{}, errors.New("environment lookup is required")
-	}
-
 	dotenv, err := readDotenv(dotenvPath)
 	if err != nil {
 		return RuntimeConfig{}, err
@@ -64,41 +37,23 @@ func Load(dotenvPath string, lookup LookupEnv) (RuntimeConfig, error) {
 		return dotenv[key]
 	}
 
+	logCaller := resolve("LOG_CALLER")
 	cfg := RuntimeConfig{
-		JW: JWCredentials{
-			Username: resolve(JWUsernameKey),
-			Password: resolve(JWPasswordKey),
-			Token:    resolve(JWTokenKey),
-		},
-		AppAddr:           resolve(AppAddrKey),
-		LogCaller:         parseLogCaller(resolve(LogCallerKey)),
-		ReadyzDiagnostics: parseLogCaller(resolve(ReadyzDiagnosticsKey)),
-		Campuses: []CampusConfig{
-			{ID: "01", Name: "西土城"},
-			{ID: "04", Name: "沙河"},
-		},
+		JWUsername: resolve("JW_USERNAME"),
+		JWPassword: resolve("JW_PASSWORD"),
+		AppAddr:    resolve("APP_ADDR"),
+		LogCaller:  logCaller == "1" || strings.EqualFold(logCaller, "true"),
 	}
 	if cfg.AppAddr == "" {
 		cfg.AppAddr = DefaultAppAddr
 	}
-	if err := cfg.validate(); err != nil {
+	if cfg.JWUsername == "" || cfg.JWPassword == "" {
+		return RuntimeConfig{}, errors.New("JW_USERNAME and JW_PASSWORD are required")
+	}
+	if err := validateAppAddr(cfg.AppAddr); err != nil {
 		return RuntimeConfig{}, err
 	}
 	return cfg, nil
-}
-
-func (c RuntimeConfig) HasJWCredentials() bool {
-	return c.JW.Token != "" || (c.JW.Username != "" && c.JW.Password != "")
-}
-
-func (c RuntimeConfig) validate() error {
-	if !c.HasJWCredentials() {
-		return errors.New("JW_TOKEN or JW_USERNAME/JW_PASSWORD is required")
-	}
-	if err := validateAppAddr(c.AppAddr); err != nil {
-		return err
-	}
-	return nil
 }
 
 func readDotenv(path string) (map[string]string, error) {
@@ -109,15 +64,12 @@ func readDotenv(path string) (map[string]string, error) {
 	if errors.Is(err, os.ErrNotExist) {
 		return map[string]string{}, nil
 	}
+	// Never echo the parser error: it may quote file contents.
 	return nil, errors.New("load .env file failed")
 }
 
-func parseLogCaller(value string) bool {
-	return value == "1" || strings.EqualFold(value, "true")
-}
-
 func validateAppAddr(addr string) error {
-	if addr == "" || strings.ContainsAny(addr, "/; \t\r\n") {
+	if strings.ContainsAny(addr, "/; \t\r\n") {
 		return errInvalidAppAddr
 	}
 	_, port, err := net.SplitHostPort(addr)

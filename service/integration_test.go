@@ -13,75 +13,27 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"BUPT_EC/config"
+	"time"
 )
 
-func newIntegrationService(t *testing.T) *ClassroomService {
+func requireJWCredentials(t *testing.T) (username, password string) {
 	t.Helper()
-	return newTestServiceWithOverride(t,
-		newHTTPJWClientForTest(t, os.Getenv(config.JWUsernameKey), os.Getenv(config.JWPasswordKey)),
-		os.Getenv(config.JWTokenKey),
-	)
+	username, password = os.Getenv("JW_USERNAME"), os.Getenv("JW_PASSWORD")
+	if username == "" || password == "" {
+		t.Skip("JW_USERNAME/JW_PASSWORD are required for integration tests")
+	}
+	return username, password
 }
 
-func requireJWCredentials(t *testing.T) {
-	t.Helper()
-	if os.Getenv(config.JWTokenKey) != "" {
-		return
-	}
-	if os.Getenv(config.JWUsernameKey) == "" || os.Getenv(config.JWPasswordKey) == "" {
-		t.Skip("JW_TOKEN or JW_USERNAME/JW_PASSWORD are required for integration login/query tests")
-	}
-}
-
-func requireJWLoginCredentials(t *testing.T) {
-	t.Helper()
-	if os.Getenv(config.JWUsernameKey) == "" || os.Getenv(config.JWPasswordKey) == "" {
-		t.Skip("JW_USERNAME/JW_PASSWORD are required for the integration login test")
-	}
-}
-
-func TestLogin(t *testing.T) {
-	requireJWLoginCredentials(t)
-	client := newHTTPJWClientForTest(t, os.Getenv(config.JWUsernameKey), os.Getenv(config.JWPasswordKey))
-	apiURL, err := client.FetchAPIURL(context.Background())
-	if err != nil {
-		t.Fatalf("FetchAPIURL() error = %v", err)
-	}
-	token, err := client.Login(context.Background(), apiURL)
-	if err != nil {
+func TestRefreshAgainstLiveJW(t *testing.T) {
+	username, password := requireJWCredentials(t)
+	svc, _ := newTestService(t, newHTTPJWClientForTest(t, username, password))
+	svc.clock = time.Now
+	if err := svc.refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if token == "" {
-		t.Error("expected a non-empty login token")
-	}
-}
-
-func TestQueryOne(t *testing.T) {
-	requireJWCredentials(t)
-	svc := newIntegrationService(t)
-	rows, err := svc.queryOne(context.Background(), "01")
-	if err != nil {
-		t.Error(err)
-	}
-	if len(rows) == 0 {
-		t.Error("expected classroom rows")
-	}
-}
-
-func TestQueryAll(t *testing.T) {
-	requireJWCredentials(t)
-	svc := newIntegrationService(t)
-	ans, err := svc.queryAll(context.Background())
-	if err != nil {
-		t.Error(err)
-	}
-	if ans == nil {
-		t.Fatal("expected response")
-	}
-	if len(ans.Campuses) != 2 {
-		t.Fatalf("expected 2 campuses, got %d", len(ans.Campuses))
+	if got := svc.cache.Load(); got == nil || len(got.Campuses) != 2 || got.Error != nil {
+		t.Fatalf("live refresh snapshot = %+v", got)
 	}
 }
 
@@ -93,8 +45,8 @@ func TestQueryAll(t *testing.T) {
 // this test fails and both the builder assumptions and api-contract.md need
 // revisiting.
 func TestJWRoomTokensCarryPositiveCapacitySuffix(t *testing.T) {
-	requireJWCredentials(t)
-	client := newHTTPJWClientForTest(t, os.Getenv(config.JWUsernameKey), os.Getenv(config.JWPasswordKey))
+	username, password := requireJWCredentials(t)
+	client := newHTTPJWClientForTest(t, username, password)
 	apiURL, err := client.FetchAPIURL(context.Background())
 	if err != nil {
 		t.Fatalf("FetchAPIURL() error = %v", err)

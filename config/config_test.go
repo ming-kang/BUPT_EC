@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -17,47 +16,29 @@ func TestLoadDotenvAndEnvironmentPrecedence(t *testing.T) {
 	}{
 		{
 			name:        "missing dotenv uses environment and defaults",
-			environment: map[string]string{JWTokenKey: "runtime-token"},
-			want: RuntimeConfig{
-				JW:        JWCredentials{Token: "runtime-token"},
-				AppAddr:   DefaultAppAddr,
-				LogCaller: false,
-				Campuses:  defaultCampusesForTest(),
-			},
+			environment: map[string]string{"JW_USERNAME": "user", "JW_PASSWORD": "pass"},
+			want:        RuntimeConfig{JWUsername: "user", JWPassword: "pass", AppAddr: DefaultAppAddr},
 		},
 		{
-			name: "valid dotenv is loaded without mutating process environment",
+			name: "dotenv values are loaded",
 			dotenv: strings.Join([]string{
 				"JW_USERNAME=dotenv-user",
 				"JW_PASSWORD=dotenv-password",
 				"APP_ADDR=localhost:9090",
 				"LOG_CALLER=TrUe",
 			}, "\n"),
-			want: RuntimeConfig{
-				JW:        JWCredentials{Username: "dotenv-user", Password: "dotenv-password"},
-				AppAddr:   "localhost:9090",
-				LogCaller: true,
-				Campuses:  defaultCampusesForTest(),
-			},
+			want: RuntimeConfig{JWUsername: "dotenv-user", JWPassword: "dotenv-password", AppAddr: "localhost:9090", LogCaller: true},
 		},
 		{
-			name: "environment wins over dotenv including explicit empty defaults",
+			name: "environment wins over dotenv including explicit empty values",
 			dotenv: strings.Join([]string{
-				"JW_TOKEN=dotenv-token",
+				"JW_USERNAME=dotenv-user",
+				"JW_PASSWORD=dotenv-password",
 				"APP_ADDR=localhost:9090",
 				"LOG_CALLER=true",
 			}, "\n"),
-			environment: map[string]string{
-				JWTokenKey:   "runtime-token",
-				AppAddrKey:   "",
-				LogCallerKey: "0",
-			},
-			want: RuntimeConfig{
-				JW:        JWCredentials{Token: "runtime-token"},
-				AppAddr:   DefaultAppAddr,
-				LogCaller: false,
-				Campuses:  defaultCampusesForTest(),
-			},
+			environment: map[string]string{"JW_USERNAME": "env-user", "APP_ADDR": "", "LOG_CALLER": "0"},
+			want:        RuntimeConfig{JWUsername: "env-user", JWPassword: "dotenv-password", AppAddr: DefaultAppAddr},
 		},
 	}
 
@@ -69,203 +50,67 @@ func TestLoadDotenvAndEnvironmentPrecedence(t *testing.T) {
 					t.Fatalf("write dotenv fixture: %v", err)
 				}
 			}
-			before, existed := os.LookupEnv(JWTokenKey)
 			got, err := Load(dotenvPath, mapLookup(tt.environment))
 			if err != nil {
 				t.Fatalf("Load() error = %v", err)
 			}
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Fatal("Load() returned an unexpected runtime configuration")
-			}
-			after, stillExists := os.LookupEnv(JWTokenKey)
-			if existed != stillExists || before != after {
-				t.Fatal("Load() mutated the process environment")
+			if got != tt.want {
+				t.Fatalf("Load() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}
 }
 
-func TestLoadRejectsPresentInvalidDotenvWithoutLeakingContents(t *testing.T) {
-	path := filepath.Join(t.TempDir(), ".env")
+func TestLoadRejectsBadDotenvWithoutLeakingContents(t *testing.T) {
+	malformed := filepath.Join(t.TempDir(), ".env")
 	secret := "secret-value-must-not-appear"
-	if err := os.WriteFile(path, []byte("JW_TOKEN='"+secret), 0600); err != nil {
+	if err := os.WriteFile(malformed, []byte("JW_PASSWORD='"+secret), 0600); err != nil {
 		t.Fatalf("write malformed dotenv: %v", err)
 	}
-
-	_, err := Load(path, mapLookup(nil))
-	if err == nil {
-		t.Fatal("Load() expected malformed dotenv error")
-	}
-	if strings.Contains(err.Error(), secret) {
-		t.Fatalf("Load() error leaked dotenv contents: %v", err)
+	for name, path := range map[string]string{"malformed": malformed, "unreadable": t.TempDir()} {
+		_, err := Load(path, mapLookup(nil))
+		if err == nil || err.Error() != "load .env file failed" {
+			t.Fatalf("%s: Load() error = %v, want safe dotenv error", name, err)
+		}
 	}
 }
 
-func TestLoadRejectsUnreadableDotenv(t *testing.T) {
-	_, err := Load(t.TempDir(), mapLookup(map[string]string{JWTokenKey: "token"}))
-	if err == nil {
-		t.Fatal("Load() expected unreadable dotenv error")
+func TestLoadValidation(t *testing.T) {
+	valid := map[string]string{"JW_USERNAME": "user", "JW_PASSWORD": "password"}
+	with := func(key, value string) map[string]string {
+		values := map[string]string{key: value}
+		for k, v := range valid {
+			if k != key {
+				values[k] = v
+			}
+		}
+		return values
 	}
-	if err.Error() != "load .env file failed" {
-		t.Fatalf("Load() error = %q, want safe dotenv error", err)
-	}
-}
-
-func TestLoadCredentialValidation(t *testing.T) {
 	tests := []struct {
 		name    string
 		values  map[string]string
 		wantErr bool
 	}{
-		{name: "token only", values: map[string]string{JWTokenKey: "token"}},
-		{name: "username and password", values: map[string]string{JWUsernameKey: "user", JWPasswordKey: "password"}},
-		{name: "token permits incomplete login pair", values: map[string]string{JWTokenKey: "token", JWUsernameKey: "user"}},
-		{name: "username only", values: map[string]string{JWUsernameKey: "user"}, wantErr: true},
-		{name: "password only", values: map[string]string{JWPasswordKey: "password"}, wantErr: true},
-		{name: "empty", values: map[string]string{}, wantErr: true},
+		{name: "valid", values: valid},
+		{name: "loopback", values: with("APP_ADDR", "127.0.0.1:8080")},
+		{name: "all interfaces", values: with("APP_ADDR", ":8080")},
+		{name: "bracketed IPv6", values: with("APP_ADDR", "[::1]:8080")},
+		{name: "username missing", values: with("JW_USERNAME", ""), wantErr: true},
+		{name: "password missing", values: with("JW_PASSWORD", ""), wantErr: true},
+		{name: "missing port", values: with("APP_ADDR", "localhost"), wantErr: true},
+		{name: "non numeric port", values: with("APP_ADDR", "localhost:http"), wantErr: true},
+		{name: "port zero", values: with("APP_ADDR", "localhost:0"), wantErr: true},
+		{name: "port too large", values: with("APP_ADDR", "localhost:65536"), wantErr: true},
+		{name: "URL is not listen address", values: with("APP_ADDR", "http://localhost:8080"), wantErr: true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(tt.values))
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("Load() expected credential error")
-				}
-				for _, value := range tt.values {
-					if value != "" && strings.Contains(err.Error(), value) {
-						t.Fatalf("Load() error leaked credential value: %v", err)
-					}
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if !cfg.HasJWCredentials() {
-				t.Fatal("HasJWCredentials() = false, want true")
+			_, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(tt.values))
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
-	}
-}
-
-func TestLoadAppAddrValidation(t *testing.T) {
-	tests := []struct {
-		name    string
-		addr    string
-		want    string
-		wantErr bool
-	}{
-		{name: "default", want: DefaultAppAddr},
-		{name: "loopback", addr: "127.0.0.1:8080", want: "127.0.0.1:8080"},
-		{name: "all interfaces", addr: ":8080", want: ":8080"},
-		{name: "hostname", addr: "localhost:9090", want: "localhost:9090"},
-		{name: "bracketed IPv6", addr: "[::1]:8080", want: "[::1]:8080"},
-		{name: "missing port", addr: "localhost", wantErr: true},
-		{name: "non numeric port", addr: "localhost:http", wantErr: true},
-		{name: "port zero", addr: "localhost:0", wantErr: true},
-		{name: "port too large", addr: "localhost:65536", wantErr: true},
-		{name: "URL is not listen address", addr: "http://localhost:8080", wantErr: true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			values := map[string]string{JWTokenKey: "token", AppAddrKey: tt.addr}
-			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(values))
-			if tt.wantErr {
-				if err == nil {
-					t.Fatal("Load() expected APP_ADDR error")
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if cfg.AppAddr != tt.want {
-				t.Fatalf("AppAddr = %q, want %q", cfg.AppAddr, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadLogCaller(t *testing.T) {
-	tests := []struct {
-		name          string
-		logCaller     string
-		wantLogCaller bool
-	}{
-		{name: "defaults"},
-		{name: "one", logCaller: "1", wantLogCaller: true},
-		{name: "mixed true", logCaller: "TrUe", wantLogCaller: true},
-		{name: "false", logCaller: "false"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(map[string]string{
-				JWTokenKey:   "token",
-				LogCallerKey: tt.logCaller,
-			}))
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if cfg.LogCaller != tt.wantLogCaller {
-				t.Fatalf("log caller = %v, want %v", cfg.LogCaller, tt.wantLogCaller)
-			}
-		})
-	}
-}
-
-func TestLoadReadyzDiagnostics(t *testing.T) {
-	tests := []struct {
-		name string
-		in   string
-		want bool
-	}{
-		{name: "defaults"},
-		{name: "one", in: "1", want: true},
-		{name: "mixed true", in: "TRUE", want: true},
-		// Invalid values parse as false (opt-in switch, same policy as LOG_CALLER).
-		{name: "garbage", in: "yes-please"},
-		{name: "zero", in: "0"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cfg, err := Load(filepath.Join(t.TempDir(), "missing.env"), mapLookup(map[string]string{
-				JWTokenKey:           "token",
-				ReadyzDiagnosticsKey: tt.in,
-			}))
-			if err != nil {
-				t.Fatalf("Load() error = %v", err)
-			}
-			if cfg.ReadyzDiagnostics != tt.want {
-				t.Fatalf("readyz diagnostics = %v, want %v", cfg.ReadyzDiagnostics, tt.want)
-			}
-		})
-	}
-}
-
-func TestLoadReturnsIndependentCampusSlices(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "missing.env")
-	first, err := Load(path, mapLookup(map[string]string{JWTokenKey: "token"}))
-	if err != nil {
-		t.Fatalf("first Load() error = %v", err)
-	}
-	first.Campuses[0].Name = "changed"
-	second, err := Load(path, mapLookup(map[string]string{JWTokenKey: "token"}))
-	if err != nil {
-		t.Fatalf("second Load() error = %v", err)
-	}
-	if !reflect.DeepEqual(second.Campuses, defaultCampusesForTest()) {
-		t.Fatalf("second campuses = %#v, want fixed defaults", second.Campuses)
-	}
-}
-
-func TestLoadRequiresLookup(t *testing.T) {
-	_, err := Load(filepath.Join(t.TempDir(), "missing.env"), nil)
-	if err == nil {
-		t.Fatal("Load() expected missing lookup error")
 	}
 }
 
@@ -273,12 +118,5 @@ func mapLookup(values map[string]string) LookupEnv {
 	return func(key string) (string, bool) {
 		value, ok := values[key]
 		return value, ok
-	}
-}
-
-func defaultCampusesForTest() []CampusConfig {
-	return []CampusConfig{
-		{ID: "01", Name: "西土城"},
-		{ID: "04", Name: "沙河"},
 	}
 }

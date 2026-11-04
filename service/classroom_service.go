@@ -2,202 +2,400 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"BUPT_EC/config"
 	"BUPT_EC/service/model"
 )
 
-// businessLocation is the calendar used for "today" and day-boundary cache expiry.
-// Asia/Shanghai matches BUPT academic operations; FixedZone covers hosts without tzdata.
-var businessLocation = loadBusinessLocation()
+const (
+	ServerConfigURL = "https://jwglweixin.bupt.edu.cn/sjd/serverconfig.json"
+	DefaultAPIURL   = "https://jwglweixin.bupt.edu.cn/bjyddx/"
 
-func loadBusinessLocation() *time.Location {
+	// ColdWaitTimeout bounds how long a request without usable cache waits for
+	// the refresh loop. The refresh itself keeps running.
+	ColdWaitTimeout = 5 * time.Second
+
+	jwRequestTimeout  = 12 * time.Second
+	refreshTimeout    = 30 * time.Second
+	freshTTL          = 5 * time.Minute
+	partialRetryDelay = 30 * time.Second
+)
+
+var (
+	ErrNoTodayCache = errors.New("no today classroom cache")
+	// ErrRefreshWaitTimeout means a cold request waited ColdWaitTimeout and the
+	// refresh had not finished yet.
+	ErrRefreshWaitTimeout = errors.New("refresh still running after cold wait timeout")
+)
+
+const partialCampusErrorMessage = "部分校区数据刷新失败，已展示可用数据"
+
+type campus struct {
+	ID   string
+	Name string
+}
+
+var defaultCampuses = []campus{
+	{ID: "01", Name: "西土城"},
+	{ID: "04", Name: "沙河"},
+}
+
+// businessLocation is the calendar for "today" and day-boundary expiry.
+// FixedZone covers hosts without tzdata.
+var businessLocation = func() *time.Location {
 	loc, err := time.LoadLocation("Asia/Shanghai")
 	if err != nil {
 		return time.FixedZone("CST", 8*3600)
 	}
 	return loc
-}
+}()
 
-// Clock provides the wall clock for cache policy, refresh backoff, login, and
-// runtime status timestamps. Implementations must be safe for concurrent use.
-type Clock interface {
-	Now() time.Time
-}
-
-type systemClock struct{}
-
-func (systemClock) Now() time.Time { return time.Now() }
-
-// todayCacheEntry is the complete immutable same-day cache generation. Its
-// model and serialized fresh response always travel together so readers can
-// never validate one refresh generation and return JSON from another.
-type todayCacheEntry struct {
-	today     *model.TodayClassrooms
-	freshJSON string
-}
-
-// ClassroomService owns all runtime state for classroom queries:
-// token/API URL caching, refresh coordination and runtime status.
+// ClassroomService serves today's classroom snapshot from memory. A single
+// refresh loop (Run) owns all JW traffic and token state; request handlers
+// only read the published snapshot and may nudge the loop.
 type ClassroomService struct {
-	tokenManager *TokenManager
-	// todayCache stores one complete immutable cache generation. Responses copy
-	// entry.today before mutation, and same-day rejection happens on read, so no
-	// TTL/janitor is needed.
-	todayCache atomic.Pointer[todayCacheEntry]
-	campuses   []config.CampusConfig
-	jwClient   JWClient
-	clock      Clock
-	// backoffRandom returns one sample in [0,1] for total-failure jitter.
-	// Always non-nil after construction (production or injected).
-	backoffRandom RandomSample
+	jw       JWClient
+	campuses []campus
+	clock    func() time.Time
+	coldWait time.Duration
 
-	refreshMu                sync.Mutex
-	refreshInFlight          bool
-	refreshAttempt           *classroomRefreshAttempt
-	nextRefreshAllowed       time.Time
-	lastRefreshErr           error
-	consecutiveTotalFailures int
-	refreshWorkers           sync.WaitGroup
-	metrics                  RuntimeMetrics
+	// cache holds the latest published snapshot. Published values are never
+	// mutated; responses that need different Stale/Error fields copy first.
+	cache atomic.Pointer[model.TodayClassrooms]
+	kick  chan struct{}
 
-	backgroundMu    sync.Mutex
-	lifecycleCtx    context.Context    // nil until Run starts the scheduler
-	lifecycleCancel context.CancelFunc // set by Run; canceled by Run/Shutdown under backgroundMu
-	schedulerDone   chan struct{}      // closed when the Run scheduler goroutine exits
-	warmupJitter    func() time.Duration
-	// coldWaitTimeout bounds the cache-miss wait in GetTodayClassrooms.
-	// Always positive after construction (default or injected).
-	coldWaitTimeout time.Duration
+	mu          sync.Mutex
+	lastErr     error         // last total refresh failure; nil after any usable result
+	nextAllowed time.Time     // request nudges before this instant are ignored
+	refreshed   chan struct{} // closed (and replaced) after each refresh attempt
 
-	statusMu sync.RWMutex
-	status   RuntimeStatus
+	// Owned by the Run goroutine.
+	apiURL string
+	token  string
 }
 
-// RandomSample returns a unit-interval sample used by total-failure jitter.
-// Implementations should return a value intended for [0,1]; the policy clamps
-// invalid samples and never trusts callers to supply an arbitrary duration.
-type RandomSample func() float64
-
-type ClassroomServiceOptions struct {
-	Campuses      []config.CampusConfig
-	TokenOverride string
-	// Clock is optional; nil uses the real wall clock. Instants are converted to
-	// Asia/Shanghai for business-day logic by ClassroomService.now.
-	Clock Clock
-	// Metrics is optional; nil uses NoopMetrics (no runtime metric emission).
-	Metrics RuntimeMetrics
-	// BackoffRandom is optional; nil uses a concurrent-safe production source.
-	// Only unit samples are accepted — the jitter policy clamps and bounds them.
-	BackoffRandom RandomSample
-	// WarmupJitter is optional; nil uses the randomized production jitter added
-	// to the warmup midnight rollover wait (randomWarmupJitter).
-	WarmupJitter func() time.Duration
-	// ColdWaitTimeout bounds how long a cache-miss request waits for the
-	// in-flight cold-start refresh before returning ErrRefreshWaitTimeout.
-	// Zero or negative values resolve to defaultColdWaitTimeout. The refresh
-	// itself keeps running; only the wait is bounded.
-	ColdWaitTimeout time.Duration
+func NewClassroomService(jw JWClient) *ClassroomService {
+	return &ClassroomService{
+		jw:        jw,
+		campuses:  defaultCampuses,
+		clock:     time.Now,
+		coldWait:  ColdWaitTimeout,
+		kick:      make(chan struct{}, 1),
+		refreshed: make(chan struct{}),
+	}
 }
 
-// defaultColdWaitTimeout covers a typical login + two-campus query (~1-3s)
-// with headroom, while failing fast enough that cold-start users see a clear
-// error instead of a 30s spinner.
-// DefaultColdWaitTimeout is the production cold-miss wait bound used when
-// ClassroomServiceOptions.ColdWaitTimeout is zero or negative.
-const DefaultColdWaitTimeout = 5 * time.Second
-
-const defaultColdWaitTimeout = DefaultColdWaitTimeout
-
-func NewClassroomService(options ClassroomServiceOptions, client JWClient) (*ClassroomService, error) {
-	if client == nil {
-		return nil, errors.New("JW client is required")
-	}
-	if len(options.Campuses) == 0 {
-		return nil, errors.New("at least one campus is required")
-	}
-
-	clock := options.Clock
-	if clock == nil {
-		clock = systemClock{}
-	}
-	backoffRandom := options.BackoffRandom
-	if backoffRandom == nil {
-		backoffRandom = productionBackoffRandom
-	}
-	warmupJitter := options.WarmupJitter
-	if warmupJitter == nil {
-		warmupJitter = randomWarmupJitter
-	}
-	coldWaitTimeout := options.ColdWaitTimeout
-	if coldWaitTimeout <= 0 {
-		coldWaitTimeout = defaultColdWaitTimeout
-	}
-	metrics := options.Metrics
-	if metrics == nil {
-		metrics = NoopMetrics{}
-	}
-	s := &ClassroomService{
-		campuses:        append([]config.CampusConfig(nil), options.Campuses...),
-		jwClient:        client,
-		clock:           clock,
-		backoffRandom:   backoffRandom,
-		warmupJitter:    warmupJitter,
-		metrics:         metrics,
-		coldWaitTimeout: coldWaitTimeout,
-	}
-	s.tokenManager = &TokenManager{
-		jwClient:       client,
-		overrideToken:  options.TokenOverride,
-		clock:          clock,
-		metrics:        metrics,
-		onLoginSuccess: s.recordLoginSuccess,
-		onLoginFailure: s.recordLoginFailure,
-	}
-	return s, nil
-}
-
-// now returns the business-location instant from the injected Clock.
-// Production and tests share this single time seam (same instance as
-// TokenManager); the constructor guarantees a non-nil clock.
 func (s *ClassroomService) now() time.Time {
-	return s.clock.Now().In(businessLocation)
+	return s.clock().In(businessLocation)
 }
 
-// publishTodayCache builds and publishes one complete cache generation. The
-// model pointer and fresh JSON string are immutable after this single Store.
-// A marshal failure (unreachable for the fixed model types) leaves freshJSON
-// empty, which safely sends callers through the typed serialization path.
-func (s *ClassroomService) publishTodayCache(today *model.TodayClassrooms) {
-	fresh := *today
-	fresh.Stale = false
-	fresh.Error = nil
-	data, err := json.Marshal(&fresh)
-	if err != nil {
-		data = nil
-	}
-	s.todayCache.Store(&todayCacheEntry{today: today, freshJSON: string(data)})
-}
-
-// GetCachedDataJSON returns the pre-serialized fresh TodayClassrooms JSON
-// from one usable cache generation. Date, freshness, partial/error state, and
-// serialized data are all read from the same loaded entry.
-func (s *ClassroomService) GetCachedDataJSON() (string, bool) {
+// GetTodayClassrooms returns usable same-day data, nudging the refresh loop
+// when it is stale or partial. Without usable data it waits up to
+// ColdWaitTimeout for the next refresh attempt.
+func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.TodayClassrooms, error) {
 	now := s.now()
-	entry, ok := s.getCachedTodayCacheEntryAt(now)
-	if !ok {
-		return "", false
+	if cached := s.todayCache(now); cached != nil {
+		if now.Before(cached.ExpiresAt) {
+			if cached.Error != nil {
+				s.requestRefresh()
+			}
+			return cached, nil
+		}
+		s.requestRefresh()
+		stale := *cached
+		stale.Stale = true
+		if err := s.lastError(); err != nil {
+			stale.Error = &model.APIError{
+				Type:    classifyError(err),
+				Message: "教务系统暂时不可用，当前展示的是今天最后一次成功刷新数据",
+			}
+		}
+		return &stale, nil
 	}
-	cached := entry.today
-	// Only a fully fresh, complete success has the same shape as freshJSON.
-	// Stale and partial responses require request-time response decoration.
-	if cached.ExpiresAt.Before(now) || cached.Error != nil || len(cached.PartialCampuses) > 0 || entry.freshJSON == "" {
-		return "", false
+
+	s.mu.Lock()
+	refreshed, lastErr, backingOff := s.refreshed, s.lastErr, now.Before(s.nextAllowed)
+	s.mu.Unlock()
+	if backingOff && lastErr != nil {
+		return nil, lastErr
 	}
-	return entry.freshJSON, true
+	s.requestRefresh()
+
+	timer := time.NewTimer(s.coldWait)
+	defer timer.Stop()
+	select {
+	case <-refreshed:
+		if cached := s.todayCache(s.now()); cached != nil {
+			return cached, nil
+		}
+		if err := s.lastError(); err != nil {
+			return nil, err
+		}
+		return nil, ErrNoTodayCache
+	case <-timer.C:
+		return nil, ErrRefreshWaitTimeout
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// Ready reports whether usable same-day data is available.
+func (s *ClassroomService) Ready() bool {
+	return s.todayCache(s.now()) != nil
+}
+
+// todayCache returns the published snapshot if it belongs to now's business day.
+func (s *ClassroomService) todayCache(now time.Time) *model.TodayClassrooms {
+	cached := s.cache.Load()
+	if cached == nil || cached.Date != now.Format(time.DateOnly) {
+		return nil
+	}
+	return cached
+}
+
+func (s *ClassroomService) lastError() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastErr
+}
+
+func (s *ClassroomService) requestRefresh() {
+	select {
+	case s.kick <- struct{}{}:
+	default:
+	}
+}
+
+// Run refreshes immediately, then keeps today's snapshot current until ctx is
+// canceled: at midnight, after failures (30s/1m/2m/5m), every 5 minutes while
+// partial, and whenever a request nudges it outside the backoff window.
+func (s *ClassroomService) Run(ctx context.Context) {
+	failures := 0
+	for {
+		err := s.refresh(ctx)
+		if ctx.Err() != nil {
+			return
+		}
+		now := s.now()
+		var wait, block time.Duration
+		switch {
+		case err != nil:
+			failures++
+			wait = failureBackoff(failures)
+			block = wait
+		case s.cache.Load().Error != nil:
+			failures = 0
+			wait, block = freshTTL, partialRetryDelay
+		default:
+			failures = 0
+			wait, block = endOfDay(now).Sub(now), freshTTL
+		}
+		wait = min(wait, endOfDay(now).Sub(now))
+
+		s.mu.Lock()
+		s.lastErr = err
+		s.nextAllowed = now.Add(block)
+		close(s.refreshed)
+		s.refreshed = make(chan struct{})
+		s.mu.Unlock()
+
+		if !s.sleep(ctx, wait) {
+			return
+		}
+	}
+}
+
+// sleep waits for the scheduled delay or an admissible request nudge.
+func (s *ClassroomService) sleep(ctx context.Context, wait time.Duration) bool {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-timer.C:
+			return true
+		case <-s.kick:
+			s.mu.Lock()
+			allowed := !s.now().Before(s.nextAllowed)
+			s.mu.Unlock()
+			if allowed {
+				return true
+			}
+		}
+	}
+}
+
+func failureBackoff(failures int) time.Duration {
+	switch failures {
+	case 1:
+		return 30 * time.Second
+	case 2:
+		return time.Minute
+	case 3:
+		return 2 * time.Minute
+	default:
+		return 5 * time.Minute
+	}
+}
+
+// endOfDay returns the next Asia/Shanghai midnight after t.
+func endOfDay(t time.Time) time.Time {
+	t = t.In(businessLocation)
+	year, month, day := t.Date()
+	return time.Date(year, month, day+1, 0, 0, 0, 0, businessLocation)
+}
+
+// refresh queries every campus and publishes a snapshot when at least one
+// campus succeeded. Failed campuses keep their previous same-day data. The
+// returned error is non-nil only when every campus failed.
+func (s *ClassroomService) refresh(parent context.Context) error {
+	ctx, cancel := context.WithTimeout(parent, refreshTimeout)
+	defer cancel()
+	started := time.Now()
+
+	results := s.queryCampuses(ctx)
+
+	var failures []error
+	var partial []string
+	for i, result := range results {
+		if result.err != nil {
+			failures = append(failures, fmt.Errorf("campus %s: %w", s.campuses[i].ID, result.err))
+			partial = append(partial, s.campuses[i].ID)
+		}
+	}
+	elapsed := time.Since(started)
+	if len(partial) == len(s.campuses) {
+		err := errors.Join(failures...)
+		slog.WarnContext(ctx, "classroom refresh failed", "elapsed", elapsed, "err", err)
+		return err
+	}
+
+	// Stamp at completion so a refresh straddling midnight belongs to the new day.
+	now := s.now()
+	previous := map[string]model.CampusInfo{}
+	if cached := s.todayCache(now); cached != nil {
+		for _, info := range cached.Campuses {
+			previous[info.ID] = info
+		}
+	}
+	campuses := make([]model.CampusInfo, len(s.campuses))
+	for i, c := range s.campuses {
+		switch prev, ok := previous[c.ID]; {
+		case results[i].err == nil:
+			campuses[i] = buildCampusInfo(c, results[i].rows)
+		case ok:
+			campuses[i] = prev
+		default:
+			campuses[i] = buildCampusInfo(c, nil)
+		}
+	}
+
+	today := &model.TodayClassrooms{
+		Date:            now.Format(time.DateOnly),
+		UpdatedAt:       now,
+		ExpiresAt:       now.Add(freshTTL),
+		StaleUntil:      endOfDay(now),
+		Campuses:        campuses,
+		PartialCampuses: partial,
+	}
+	if len(partial) > 0 {
+		today.Error = &model.APIError{Type: string(jwErrorQuery), Message: partialCampusErrorMessage}
+		slog.WarnContext(ctx, "classroom refresh partially succeeded",
+			"elapsed", elapsed, "failed_campuses", partial, "errors", errors.Join(failures...))
+	} else {
+		slog.InfoContext(ctx, "classroom refresh succeeded", "elapsed", elapsed)
+	}
+	s.cache.Store(today)
+	return nil
+}
+
+type campusResult struct {
+	rows []model.JWClassInfo
+	err  error
+}
+
+// queryCampuses queries all campuses in parallel with the cached token. Campuses
+// rejected for authentication are retried once after a fresh login.
+func (s *ClassroomService) queryCampuses(ctx context.Context) []campusResult {
+	results := make([]campusResult, len(s.campuses))
+	fail := func(indexes []int, err error) {
+		for _, i := range indexes {
+			results[i].err = errors.Join(results[i].err, err)
+		}
+	}
+	all := make([]int, len(s.campuses))
+	for i := range all {
+		all[i] = i
+	}
+
+	if s.apiURL == "" {
+		apiURL, err := s.jw.FetchAPIURL(ctx)
+		if err != nil {
+			fail(all, err)
+			return results
+		}
+		s.apiURL = apiURL
+	}
+	if s.token == "" {
+		if err := s.login(ctx); err != nil {
+			fail(all, err)
+			return results
+		}
+	}
+
+	s.queryIndexes(ctx, all, results)
+	var rejected []int
+	for i, result := range results {
+		if isJWErrorKind(result.err, jwErrorAuth) {
+			rejected = append(rejected, i)
+		}
+	}
+	if len(rejected) == 0 {
+		return results
+	}
+	if err := s.login(ctx); err != nil {
+		fail(rejected, err)
+		return results
+	}
+	firstErrs := make([]error, len(results))
+	for _, i := range rejected {
+		firstErrs[i], results[i] = results[i].err, campusResult{}
+	}
+	s.queryIndexes(ctx, rejected, results)
+	for _, i := range rejected {
+		if results[i].err != nil {
+			results[i].err = errors.Join(firstErrs[i], results[i].err)
+		}
+	}
+	return results
+}
+
+func (s *ClassroomService) queryIndexes(ctx context.Context, indexes []int, results []campusResult) {
+	var wg sync.WaitGroup
+	for _, i := range indexes {
+		wg.Go(func() {
+			rows, err := s.jw.QueryCampus(ctx, s.apiURL, s.campuses[i].ID, s.token)
+			results[i] = campusResult{rows: rows, err: err}
+		})
+	}
+	wg.Wait()
+}
+
+func (s *ClassroomService) login(ctx context.Context) error {
+	s.token = ""
+	started := time.Now()
+	token, err := s.jw.Login(ctx, s.apiURL)
+	if err != nil {
+		slog.WarnContext(ctx, "jw login failed", "elapsed", time.Since(started), "err", err)
+		return err
+	}
+	slog.InfoContext(ctx, "jw login succeeded", "elapsed", time.Since(started))
+	s.token = token
+	return nil
 }

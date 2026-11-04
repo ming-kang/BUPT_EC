@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -16,114 +15,57 @@ import (
 	"BUPT_EC/logs"
 	"BUPT_EC/service"
 	"BUPT_EC/web"
-
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// version is the build version reported by the startup log and /readyz. It
-// defaults to "dev" and is overridden at release build time via
-// -ldflags "-X main.version=<tag>".
+// version is the build version reported by the startup log, /readyz and the
+// API envelope. Release builds override it via -ldflags "-X main.version=<tag>".
 var version = "dev"
 
-type application struct {
-	runtimeConfig    config.RuntimeConfig
-	classroomService *service.ClassroomService
-	httpServer       *HTTPServer
-}
-
-func Init() (*application, error) {
-	runtimeConfig, err := config.Load(".env", os.LookupEnv)
-	if err != nil {
-		return nil, fmt.Errorf("load runtime config: %w", err)
-	}
-
-	if err := logs.Init(true, runtimeConfig.LogCaller); err != nil {
-		return nil, fmt.Errorf("init logging: %w", err)
-	}
-
-	httpClient := service.NewJWHTTPClient()
-	jwClient, err := service.NewJWClient(runtimeConfig.JW.Username, runtimeConfig.JW.Password, httpClient)
-	if err != nil {
-		return nil, fmt.Errorf("create JW client: %w", err)
-	}
-	runtimeMetrics, err := service.NewPrometheusMetrics()
-	if err != nil {
-		return nil, fmt.Errorf("create runtime metrics: %w", err)
-	}
-	classroomService, err := service.NewClassroomService(service.ClassroomServiceOptions{
-		Campuses:      runtimeConfig.Campuses,
-		TokenOverride: runtimeConfig.JW.Token,
-		Metrics:       runtimeMetrics,
-	}, jwClient)
-	if err != nil {
-		return nil, fmt.Errorf("create classroom service: %w", err)
-	}
-	// DisableCompression: the gzhttp wrapper in Routes is the sole
-	// Accept-Encoding owner. Leaving promhttp compression on double-gzips
-	// responses and breaks scrapers.
-	metricsHandler := promhttp.HandlerFor(runtimeMetrics.Registry(), promhttp.HandlerOpts{
-		DisableCompression: true,
-	})
-	httpServer, err := NewHTTPServer(classroomService, runtimeConfig.HasJWCredentials(), metricsHandler)
-	if err != nil {
-		return nil, fmt.Errorf("create HTTP server: %w", err)
-	}
-	httpServer.SetReadyzDiagnostics(runtimeConfig.ReadyzDiagnostics)
-
-	return &application{
-		runtimeConfig:    runtimeConfig,
-		classroomService: classroomService,
-		httpServer:       httpServer,
-	}, nil
-}
-
-// httpWriteTimeout bounds how long the server may spend writing a response,
-// including any handler wait. The only handler that can wait on JW work is
-// /api/get_data, and its wait is bounded by service.DefaultColdWaitTimeout
-// (cold misses fail fast while the refresh continues in the background), so
-// this stays well under the old refresh-budget-sized value.
+// httpWriteTimeout bounds response writes including handler waits. The only
+// waiting handler is /api/get_data, bounded by service.ColdWaitTimeout.
 const httpWriteTimeout = 15 * time.Second
 
-// gracefulShutdownTimeout covers HTTP draining plus any shared refresh worker
-// that was already running when shutdown began.
-const gracefulShutdownTimeout = httpWriteTimeout + 5*time.Second
+// shutdownTimeout covers HTTP draining after the refresh loop is canceled.
+const shutdownTimeout = httpWriteTimeout + 5*time.Second
 
 func main() {
-	app, err := Init()
+	cfg, err := config.Load(".env", os.LookupEnv)
 	if err != nil {
 		log.Fatalf("invalid startup configuration: %v", err)
 	}
-
-	appCtx, stopLifecycle := context.WithCancel(context.Background())
-	defer stopLifecycle()
+	if err := logs.Init(true, cfg.LogCaller); err != nil {
+		log.Fatalf("init logging: %v", err)
+	}
 	if _, embedded := web.Dist(); !embedded {
 		slog.Warn("serving placeholder frontend (built without embed_assets)")
 	}
-	// Run owns the warmup scheduler and blocks until appCtx is canceled;
-	// cancellation also stops in-flight JW refreshes/logins at shutdown.
-	runErr := make(chan error, 1)
+
+	jwClient := service.NewJWClient(cfg.JWUsername, cfg.JWPassword, service.NewJWHTTPClient())
+	classrooms := service.NewClassroomService(jwClient)
+
+	// The refresh loop owns all JW work; canceling appCtx stops it and any
+	// in-flight JW request.
+	appCtx, stopLoop := context.WithCancel(context.Background())
+	loopDone := make(chan struct{})
 	go func() {
-		runErr <- app.classroomService.Run(appCtx)
+		classrooms.Run(appCtx)
+		close(loopDone)
 	}()
-	addr := app.runtimeConfig.AppAddr
 
 	server := &http.Server{
-		Addr:              addr,
-		Handler:           app.httpServer.Routes(),
+		Addr:              cfg.AppAddr,
+		Handler:           NewHTTPServer(classrooms).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		// Must exceed service.ClassroomRefreshLimit: cold /api/get_data waits for a
-		// shared refresh (up to that budget) before writing JSON. Keep margin for
-		// response serialization after a near-limit refresh.
-		WriteTimeout:   httpWriteTimeout,
-		IdleTimeout:    60 * time.Second,
-		MaxHeaderBytes: 1 << 20,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Printf("BUPT_EC %s listening on %s", version, addr)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		log.Printf("BUPT_EC %s listening on %s", version, cfg.AppAddr)
+		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 			return
 		}
@@ -132,8 +74,6 @@ func main() {
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(stop)
-
 	var serveErr error
 	select {
 	case serveErr = <-serverErr:
@@ -141,20 +81,16 @@ func main() {
 		log.Printf("received %s, shutting down", sig)
 	}
 
-	// Cancel the service lifecycle first: the warmup scheduler exits,
-	// in-flight JW work stops immediately, and the gate in
-	// startClassroomRefresh rejects new workers while the server drains.
-	stopLifecycle()
-	ctx, cancel := context.WithTimeout(context.Background(), gracefulShutdownTimeout)
+	stopLoop()
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("server shutdown did not finish cleanly: %v", err)
 	}
-	if err := app.classroomService.Shutdown(ctx); err != nil {
-		log.Printf("background work did not finish before shutdown: %v", err)
-	}
-	if err := <-runErr; err != nil {
-		log.Printf("service lifecycle exited with error: %v", err)
+	select {
+	case <-loopDone:
+	case <-ctx.Done():
+		log.Printf("refresh loop did not stop before shutdown deadline")
 	}
 	if serveErr != nil {
 		log.Fatalf("server failed: %v", serveErr)

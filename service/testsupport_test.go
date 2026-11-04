@@ -11,10 +11,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
-	"BUPT_EC/config"
 	"BUPT_EC/logs"
 	"BUPT_EC/service/model"
 )
@@ -52,51 +52,54 @@ func (m *mockJWClient) FetchAPIURL(ctx context.Context) (string, error) {
 	return m.fetchAPIURL(ctx)
 }
 
-func newTestService(t *testing.T, client JWClient) *ClassroomService {
-	return newTestServiceWithOverride(t, client, "")
+// fakeClock is a concurrency-safe settable clock for the refresh loop.
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
 }
 
-func newTestServiceWithOverride(t *testing.T, client JWClient, tokenOverride string) *ClassroomService {
-	t.Helper()
-	return newTestServiceWithOptions(t, client, ClassroomServiceOptions{
-		TokenOverride: tokenOverride,
-	})
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
 }
 
-// newTestServiceWithOptions builds an isolated ClassroomService for unit tests.
-// Nil Clock keeps the real wall clock; nil BackoffRandom defaults to sample 0.5
-// so total-failure deadlines stay deterministic unless a test injects its own.
-func newTestServiceWithOptions(t *testing.T, client JWClient, options ClassroomServiceOptions) *ClassroomService {
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// testNoon is a fixed business-day instant far from midnight.
+var testNoon = time.Date(2026, 9, 1, 12, 0, 0, 0, businessLocation)
+
+// newTestService builds an isolated service on a fake clock at testNoon.
+func newTestService(t *testing.T, client JWClient) (*ClassroomService, *fakeClock) {
 	t.Helper()
-	if len(options.Campuses) == 0 {
-		options.Campuses = []config.CampusConfig{
-			{ID: "01", Name: "西土城"},
-			{ID: "04", Name: "沙河"},
-		}
-	}
-	if options.BackoffRandom == nil {
-		options.BackoffRandom = func() float64 { return 0.5 }
-	}
-	svc, err := NewClassroomService(options, client)
-	if err != nil {
-		t.Fatalf("NewClassroomService() error = %v", err)
-	}
+	clock := &fakeClock{now: testNoon}
+	svc := NewClassroomService(client)
+	svc.clock = clock.Now
+	return svc, clock
+}
+
+// startRun runs the refresh loop until the test ends.
+func startRun(t *testing.T, svc *ClassroomService) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		svc.Run(ctx)
+		close(done)
+	}()
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		if err := svc.Shutdown(ctx); err != nil {
-			t.Errorf("Shutdown() cleanup error = %v", err)
-		}
+		cancel()
+		<-done
 	})
-	return svc
 }
 
 func newHTTPJWClientForTest(t *testing.T, username, password string) JWClient {
 	t.Helper()
-	client, err := NewJWClient(username, password, NewJWHTTPClient())
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient(username, password, NewJWHTTPClient())
 	return client
 }
 

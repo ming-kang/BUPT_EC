@@ -35,10 +35,7 @@ func TestJWClientQueryCampusProtocolContract(t *testing.T) {
 		}, nil
 	})
 
-	client, err := NewJWClient("fixture-user", "fixture-pass", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient("fixture-user", "fixture-pass", doer)
 	rows, err := client.QueryCampus(context.Background(), apiURL, campusID, token)
 	if err != nil {
 		t.Fatalf("QueryCampus() error = %v", err)
@@ -120,10 +117,7 @@ func TestJWClientQueryCampusClassifiesAuthAndParseFailures(t *testing.T) {
 					Body:       io.NopCloser(strings.NewReader(tc.body)),
 				}, nil
 			})
-			client, err := NewJWClient("u", "p", doer)
-			if err != nil {
-				t.Fatalf("NewJWClient() error = %v", err)
-			}
+			client := NewJWClient("u", "p", doer)
 			rows, err := client.QueryCampus(context.Background(), apiURL, "01", "tok")
 			if tc.wantKind == "" {
 				if err != nil {
@@ -155,10 +149,7 @@ func TestJWClientQueryCampusHonorsContextCancellation(t *testing.T) {
 			}, nil
 		}
 	})
-	client, err := NewJWClient("u", "p", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient("u", "p", doer)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -211,10 +202,7 @@ func TestJWClientLoginProtocolContract(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"code":"1","Msg":"ok","data":{"token":"login-token"}}`)),
 		}, nil
 	})
-	client, err := NewJWClient("fixture-user", "fixture-pass", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient("fixture-user", "fixture-pass", doer)
 	token, err := client.Login(context.Background(), "https://jwglweixin.bupt.edu.cn/api/")
 	if err != nil {
 		t.Fatalf("Login() error = %v", err)
@@ -342,10 +330,7 @@ func TestJWClientFetchAPIURLFallsBackOnInvalidConfig(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"ApiUrl":"http://evil.example/api"}`)),
 		}, nil
 	})
-	client, err := NewJWClient("u", "p", doer)
-	if err != nil {
-		t.Fatalf("NewJWClient() error = %v", err)
-	}
+	client := NewJWClient("u", "p", doer)
 	got, err := client.FetchAPIURL(context.Background())
 	if err != nil {
 		t.Fatalf("FetchAPIURL() error = %v", err)
