@@ -9,19 +9,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Dispatch } from "react";
 import { SelectionContext, type SelectionAction } from "../selectionContext";
 import type { CampusInfo } from "../api/types";
-import type { Envelope } from "../todayClassroomsResponse";
+import type { Envelope } from "../api/decode";
 import CampusButtonGroup from "./CampusButtonGroup";
 
-const CAMPUSES = [
-  { id: "04", name: "沙河" },
-  { id: "02", name: "西土城" },
+const CAMPUSES: CampusInfo[] = [
+  { id: "04", name: "沙河", buildings: [], nodes: [] },
+  { id: "02", name: "西土城", buildings: [], nodes: [] },
 ];
 
 // antd inserts a space between two-CJK-character button labels.
 const SHAHE = /沙\s*河/;
 const XITUCHENG = "西土城";
 
-const TODAY_DATA = { code: 0, msg: "", data: { campuses: CAMPUSES } };
+const TODAY_DATA: Envelope = { code: 0, msg: "", data: null };
 
 function renderGroup({
   activeCampusId = "04",
@@ -44,8 +44,8 @@ function renderGroup({
       }}
     >
       <CampusButtonGroup
-        campuses={CAMPUSES as CampusInfo[]}
-        todayData={TODAY_DATA as unknown as Envelope}
+        campuses={CAMPUSES}
+        todayData={TODAY_DATA}
         activeCampusId={activeCampusId}
       />
     </SelectionContext.Provider>
@@ -88,8 +88,8 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
         }}
       >
         <CampusButtonGroup
-          campuses={CAMPUSES as CampusInfo[]}
-          todayData={TODAY_DATA as unknown as Envelope}
+          campuses={CAMPUSES}
+          todayData={TODAY_DATA}
           activeCampusId="02"
         />
       </SelectionContext.Provider>

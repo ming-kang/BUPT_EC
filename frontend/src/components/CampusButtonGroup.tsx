@@ -1,5 +1,5 @@
 import { Button } from "antd";
-import type { Envelope } from "../todayClassroomsResponse";
+import type { Envelope } from "../api/decode";
 import type { CampusInfo } from "../api/types";
 import { Fragment, Suspense, lazy, useState } from "react";
 import { SettingIcon } from "./icons";

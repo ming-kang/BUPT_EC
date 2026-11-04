@@ -8,7 +8,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import GlobalEmpty from "./components/GlobalEmpty";
 import Footer from "./components/Footer";
 import useTodayClassrooms from "./useTodayClassrooms";
-import { classroomWarningMessage } from "./todayClassroomsResponse";
+import { classroomWarningMessage } from "./api/decode";
 import SelectionProvider from "./SelectionProvider";
 import { useSelection } from "./selectionContext";
 import { applyDarkClass, getSystemPrefersDark } from "./darkMode";

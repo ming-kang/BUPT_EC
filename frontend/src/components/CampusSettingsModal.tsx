@@ -1,5 +1,5 @@
 import { Button, Divider, Modal, Switch } from "antd";
-import type { Envelope } from "../todayClassroomsResponse";
+import type { Envelope } from "../api/decode";
 import { GithubIcon } from "./icons";
 import { formatShanghaiDateTime } from "../classTimeUtils";
 import { useSelection } from "../selectionContext";

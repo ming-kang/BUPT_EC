@@ -1,18 +1,15 @@
 import { useCallback, useState } from "react";
 import useSWR from "swr";
-import { ApiError } from "./apiError";
-import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
-import { MIN_FRESH_DELAY_MS, nextReloadDelay } from "./reloadSchedule";
 import {
-  extractMessage,
-  extractVersion,
+  ApiError,
+  decodeGetData,
   fallbackErrorMessage,
+  isUsableBusinessDaySnapshot,
   loadingResponse,
-  normalizeResponse,
   readJson,
   type Envelope,
-  type PayloadView,
-} from "./todayClassroomsResponse";
+} from "./api/decode";
+import { MIN_FRESH_DELAY_MS, nextReloadDelay } from "./reloadSchedule";
 
 /**
  * Client fetch budget: above ClassroomRefreshLimit (30s), below Go WriteTimeout
@@ -31,8 +28,8 @@ export const FOCUS_THROTTLE_MS = 15_000;
 
 const EXPIRED_SNAPSHOT_MESSAGE = "当前缓存已失效，正在重新获取";
 
-/** Hook-facing envelope: normalized shape plus the optional client log id. */
-export type HookEnvelope = Envelope & { logId?: string };
+/** Hook-facing envelope: the decoded shape is already logId-capable. */
+export type HookEnvelope = Envelope;
 
 /** Structural view for pure helpers that run before shapes are trusted. */
 export interface EnvelopeView {
@@ -148,6 +145,34 @@ function errorAsEnvelope(error: unknown): HookEnvelope {
 }
 
 /**
+ * Loose pre-decode reads for failure envelopes (decode itself may have
+ * thrown before producing an envelope). Values stay unknown until checked.
+ */
+function wireRecord(payload: unknown): Record<string, unknown> | null {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
+    return null;
+  }
+  return payload as Record<string, unknown>;
+}
+
+function wireString(
+  record: Record<string, unknown> | null,
+  key: string
+): string {
+  const value = record?.[key];
+  return typeof value === "string" && value.trim() !== "" ? value.trim() : "";
+}
+
+function wireCode(record: Record<string, unknown> | null): number | undefined {
+  const value = record?.code;
+  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/**
  * SWR fetcher. Throwing is the single error channel: any outcome that must
  * not replace the cached snapshot (transport failure, malformed payload,
  * service error envelope, unusable business-day metadata) throws an ApiError;
@@ -155,7 +180,7 @@ function errorAsEnvelope(error: unknown): HookEnvelope {
  * last snapshot") and routes scheduling through onErrorRetry.
  */
 export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
-  let response;
+  let response: Response;
   try {
     response = await fetch(url, {
       headers: { Accept: "application/json" },
@@ -169,49 +194,50 @@ export async function fetchTodayClassrooms(url: string): Promise<Envelope> {
   }
 
   const payload = await readJson(response);
-  const record = payload as PayloadView | null;
-  const logId = record?.log_id || response.headers?.get("X-Log-Id") || "";
-  // Rides along on every throw so the settings dialog can still name the build
-  // while the UI is in its error state.
-  const version = extractVersion(record);
-  const businessCode = Number(record?.code);
-  const code = Number.isFinite(businessCode) ? businessCode : undefined;
+  const record = wireRecord(payload);
+  const logId =
+    wireString(record, "log_id") || response.headers?.get("X-Log-Id") || "";
+  // Rides along on every throw so the settings dialog can still name the
+  // build while the UI is in its error state.
+  const version = wireString(record, "version");
 
   if (!response.ok) {
     throw new ApiError(
-      extractMessage(record) || `请求失败 (${response.status})`,
-      { status: response.status, code, logId, version }
+      wireString(record, "msg") || `请求失败 (${response.status})`,
+      { status: response.status, code: wireCode(record), logId, version }
     );
   }
 
-  const normalized = normalizeResponse(payload);
-  if (!normalized.ok) {
-    throw new ApiError(normalized.reason, {
-      status: response.status,
-      code,
-      logId,
-      version,
-    });
+  let normalized: Envelope;
+  try {
+    normalized = decodeGetData(payload);
+  } catch (error) {
+    if (error instanceof ApiError) {
+      // Malformed payload under HTTP 2xx: fail closed as a client failure
+      // (status would shadow the business code the UI never got).
+      throw new ApiError(error.message, { status: response.status, logId, version });
+    }
+    throw error;
   }
-  if (normalized.resp.code !== 0) {
+  if (normalized.code !== 0) {
     // Legitimate service error envelope over HTTP 2xx: the business code is
     // the envelope code (no status attached, 2xx would shadow it).
-    throw new ApiError(normalized.resp.msg, {
-      code: normalized.resp.code,
+    throw new ApiError(normalized.msg, {
+      code: normalized.code,
       logId,
       version,
     });
   }
-  if (!hasUsableClassroomData(normalized.resp)) {
-    // Success envelope with cross-day/expired/malformed cache metadata fails
-    // closed as a client failure (code 500) so the retry ladder, not the 1s
-    // poll floor, paces the next attempt (Nginx 30 req/min budget).
-    throw new ApiError(extractMessage(record) || fallbackErrorMessage, {
+  if (!isUsableBusinessDaySnapshot(normalized.data)) {
+    // Success envelope with cross-day/expired cache metadata fails closed as
+    // a client failure (code 500) so the retry ladder, not the 1s poll floor,
+    // paces the next attempt (Nginx 30 req/min budget).
+    throw new ApiError(normalized.msg || fallbackErrorMessage, {
       logId,
       version,
     });
   }
-  return normalized.resp;
+  return normalized;
 }
 
 /**

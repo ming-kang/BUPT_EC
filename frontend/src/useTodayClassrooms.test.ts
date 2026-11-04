@@ -6,7 +6,7 @@ import {
   retryDelayFor,
   shouldFullPageSpin,
 } from "./useTodayClassrooms";
-import { fallbackErrorMessage } from "./todayClassroomsResponse";
+import { fallbackErrorMessage } from "./api/decode";
 import {
   MIN_FRESH_DELAY_MS,
   PARTIAL_POLL_MS,

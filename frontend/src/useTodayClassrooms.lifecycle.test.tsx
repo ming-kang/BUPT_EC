@@ -49,15 +49,19 @@ function usablePayload(
     ...topOverrides,
     data: {
       date,
+      updated_at: `${date}T08:00:00+08:00`,
       expires_at: `${date}T23:50:00+08:00`,
       stale_until: `${date}T23:59:59.999+08:00`,
+      stale: false,
       campuses: [
         {
           id: "04",
           name: "沙河",
-          buildings: [{ name: "S1", rooms: [] }],
+          buildings: [{ name: "S1", display_name: "S1", rooms: [] }],
+          nodes: [],
         },
       ],
+      error: null,
       ...dataOverrides,
     },
   };

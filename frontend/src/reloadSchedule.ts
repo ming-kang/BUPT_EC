@@ -1,4 +1,4 @@
-import { isUsableBusinessDaySnapshot } from "./classroomDataValidity";
+import { isUsableBusinessDaySnapshot } from "./api/decode";
 import type { TodayClassroomsData } from "./api/types";
 
 // Rate-aware schedule tuned for Nginx 30 req/min /api limit with multi-tab users.
