@@ -17,12 +17,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import TodayClassroomTable from "./TodayClassroomTable";
 import type { CampusInfo } from "../api/types";
 
-const campusData = {
+const campusData: CampusInfo = {
+  id: "04",
+  name: "沙河",
   buildings: [
     {
       name: "教三",
+      display_name: "教三",
       rooms: [
         {
+          name: "3-201",
           display_name: "3-201",
           capacity: 120,
           free_nodes: [1, 2, 3, 5],
@@ -32,6 +36,7 @@ const campusData = {
           ],
         },
         {
+          name: "3-101",
           display_name: "3-101",
           capacity: 0,
           free_nodes: [2, 3],
@@ -41,14 +46,17 @@ const campusData = {
     },
     {
       name: "教四",
+      display_name: "教四",
       rooms: [
         {
+          name: "4-102",
           display_name: "4-102",
           capacity: 60,
           free_nodes: [2, 3, 4],
           free_times: [],
         },
         {
+          name: "4-103",
           display_name: "4-103",
           capacity: 45,
           free_nodes: [4, 5],
@@ -57,6 +65,7 @@ const campusData = {
       ],
     },
   ],
+  nodes: [],
 };
 
 function renderTable(
@@ -68,7 +77,7 @@ function renderTable(
 ) {
   return render(
     <TodayClassroomTable
-      selectedCampusData={campusData as CampusInfo}
+      selectedCampusData={campusData}
       selectedBuildings={["教三", "教四"]}
       selectedClassTimes={[2, 3]}
       {...overrides}
@@ -201,8 +210,10 @@ describe("TodayClassroomTable room modal (R9)", () => {
       buildings: [
         {
           name: "教三",
+          display_name: "教三",
           rooms: [
             {
+              name: "3-201",
               display_name: "3-201",
               capacity: 120,
               free_nodes: [2, 3],
@@ -226,8 +237,10 @@ describe("TodayClassroomTable room modal (R9)", () => {
       buildings: [
         {
           name: "教四",
+          display_name: "教四",
           rooms: [
             {
+              name: "4-102",
               display_name: "4-102",
               capacity: 60,
               free_nodes: [2, 3, 4],
@@ -258,8 +271,10 @@ describe("TodayClassroomTable room modal (R9)", () => {
       buildings: [
         {
           name: "教三",
+          display_name: "教三",
           rooms: [
             {
+              name: "3-201",
               display_name: "3-201",
               capacity: 120,
               free_nodes: [9],
@@ -284,8 +299,10 @@ describe("TodayClassroomTable room modal (R9)", () => {
       buildings: [
         {
           name: "教三",
+          display_name: "教三",
           rooms: [
             {
+              name: "3-101",
               display_name: "3-101",
               capacity: 45,
               free_nodes: [2, 3],

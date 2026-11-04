@@ -27,13 +27,14 @@ const BASE_NOW = new Date("2026-07-27T02:00:00.000Z");
 const LATER_SAME_DAY = new Date("2026-07-27T10:00:00.000Z");
 const TODAY = "2026-07-27";
 
-const CAMPUS = {
+const CAMPUS: CampusInfo = {
   id: "04",
   name: "沙河",
+  buildings: [],
   nodes: [
-    { node: 1, time: "08:00-08:45" }, // already ended at BASE_NOW
-    { node: 2, time: "15:00-15:45" }, // ends between BASE_NOW and LATER_SAME_DAY
-    { node: 3, time: "19:00-19:45" }, // never ends in these tests
+    { node: 1, time: "08:00-08:45", room_count: 0 }, // already ended at BASE_NOW
+    { node: 2, time: "15:00-15:45", room_count: 0 }, // ends between BASE_NOW and LATER_SAME_DAY
+    { node: 3, time: "19:00-19:45", room_count: 0 }, // never ends in these tests
   ],
 };
 
@@ -58,7 +59,7 @@ function makeValue(
 function renderPicker({ value = makeValue() }: { value?: SelectionValue } = {}) {
   const view = render(
     <SelectionContext.Provider value={value}>
-      <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
+      <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
     </SelectionContext.Provider>
   );
   return { ...view, value };
@@ -127,7 +128,7 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
       <SelectionContext.Provider
         value={makeValue({ selectedClassTimes: [3] })}
       >
-        <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
+        <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
       </SelectionContext.Provider>
     );
     expect(pressedOf("03")).toBe("true");

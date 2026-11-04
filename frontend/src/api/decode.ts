@@ -100,6 +100,25 @@ function readNumberArray(value: unknown): number[] | null {
   return out;
 }
 
+/** Strict array decode: every item must pass, or the whole field is null. */
+function readArray<T>(
+  value: unknown,
+  decode: (item: unknown) => T | null
+): T[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const out: T[] = [];
+  for (const item of value) {
+    const decoded = decode(item);
+    if (decoded === null) {
+      return null;
+    }
+    out.push(decoded);
+  }
+  return out;
+}
+
 /* ------------------------- nested payload decoders ------------------------- */
 
 function decodeFreeTime(value: unknown): FreeTime | null {
@@ -128,16 +147,9 @@ function decodeRoom(value: unknown): RoomInfo | null {
   // Pre-0.3.x same-day caches may lack display_name — fall back to the raw
   // name instead of rejecting an otherwise usable payload.
   const displayName = readString(value.display_name) ?? name;
-  if (!Array.isArray(value.free_times)) {
+  const freeTimes = readArray(value.free_times, decodeFreeTime);
+  if (freeTimes === null) {
     return null;
-  }
-  const freeTimes: FreeTime[] = [];
-  for (const item of value.free_times) {
-    const freeTime = decodeFreeTime(item);
-    if (freeTime === null) {
-      return null;
-    }
-    freeTimes.push(freeTime);
   }
   return {
     name,
@@ -153,16 +165,12 @@ function decodeBuilding(value: unknown): BuildingInfo | null {
     return null;
   }
   const name = readString(value.name);
-  if (name === null || !Array.isArray(value.rooms)) {
+  if (name === null) {
     return null;
   }
-  const rooms: RoomInfo[] = [];
-  for (const item of value.rooms) {
-    const room = decodeRoom(item);
-    if (room === null) {
-      return null;
-    }
-    rooms.push(room);
+  const rooms = readArray(value.rooms, decodeRoom);
+  if (rooms === null) {
+    return null;
   }
   return {
     name,
@@ -193,24 +201,10 @@ function decodeCampus(value: unknown): CampusInfo | null {
   if (id === null || name === null) {
     return null;
   }
-  if (!Array.isArray(value.buildings) || !Array.isArray(value.nodes)) {
+  const buildings = readArray(value.buildings, decodeBuilding);
+  const nodes = readArray(value.nodes, decodeNodeInfo);
+  if (buildings === null || nodes === null) {
     return null;
-  }
-  const buildings: BuildingInfo[] = [];
-  for (const item of value.buildings) {
-    const building = decodeBuilding(item);
-    if (building === null) {
-      return null;
-    }
-    buildings.push(building);
-  }
-  const nodes: NodeInfo[] = [];
-  for (const item of value.nodes) {
-    const node = decodeNodeInfo(item);
-    if (node === null) {
-      return null;
-    }
-    nodes.push(node);
   }
   return { id, name, buildings, nodes };
 }
@@ -268,15 +262,11 @@ function decodeSnapshotData(value: unknown): TodayClassroomsData {
   if (typeof value.stale !== "boolean") {
     throw new ApiError("服务返回数据格式异常");
   }
-  const campuses: CampusInfo[] = [];
-  for (const item of value.campuses) {
-    const campus = decodeCampus(item);
-    if (campus === null) {
-      // Reject shallow-valid containers with broken items (e.g. campuses:
-      // [null]) instead of letting a cast slip them into the UI.
-      throw new ApiError("服务返回校区数据异常");
-    }
-    campuses.push(campus);
+  // Reject shallow-valid containers with broken items (e.g. campuses:
+  // [null]) instead of letting a cast slip them into the UI.
+  const campuses = readArray(value.campuses, decodeCampus);
+  if (campuses === null) {
+    throw new ApiError("服务返回校区数据异常");
   }
   const partialCampuses =
     value.partial_campuses === undefined

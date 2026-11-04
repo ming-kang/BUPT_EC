@@ -35,10 +35,7 @@ function AppContent() {
   const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
 
   const campuses = useMemo(
-    () =>
-      resp.code === 0 && Array.isArray(resp.data?.campuses)
-        ? resp.data.campuses
-        : [],
+    () => (resp.code === 0 && resp.data ? resp.data.campuses : []),
     [resp]
   );
   // Derive the effective campus during render so the first data frame

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  chooseCampusId,
-  hasCampusSnapshot,
-  PREFERRED_CAMPUS_NAME,
-} from "./campusSelection";
+import { chooseCampusId } from "./campusSelection";
 
 const shaheEmpty = {
   id: "04",
@@ -33,14 +29,6 @@ const xituchengEmpty = {
   nodes: [],
 };
 
-describe("hasCampusSnapshot", () => {
-  it("detects buildings or nodes", () => {
-    expect(hasCampusSnapshot(shaheEmpty)).toBe(false);
-    expect(hasCampusSnapshot(shaheWithData)).toBe(true);
-    expect(hasCampusSnapshot({ id: "x", nodes: [{ node: 1 }] })).toBe(true);
-  });
-});
-
 describe("chooseCampusId", () => {
   it("prefers non-partial Shahe when both campuses are usable", () => {
     expect(
@@ -50,7 +38,6 @@ describe("chooseCampusId", () => {
         selectedCampusId: "",
       })
     ).toBe("04");
-    expect(PREFERRED_CAMPUS_NAME).toBe("沙河");
   });
 
   it("selects Xitucheng when cold Shahe is a partial empty placeholder", () => {

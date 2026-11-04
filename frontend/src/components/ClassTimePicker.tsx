@@ -56,9 +56,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
     };
   }, []);
 
-  const options = Array.isArray(selectedCampusData?.nodes)
-    ? selectedCampusData.nodes
-    : [];
+  const options = selectedCampusData?.nodes ?? [];
   const nowTime = formatShanghaiTime(now);
   const isToday = todayDate === formatShanghaiDate(now);
 
@@ -75,14 +73,15 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
     if (!selectedCampusData) {
       return;
     }
-    const nodes = Array.isArray(selectedCampusData.nodes)
-      ? selectedCampusData.nodes
-      : [];
-    const next = pruneEndedClassTimes(selectedClassTimes, nodes, {
-      nowTime,
-      isToday,
-      canSelectAllDay,
-    });
+    const next = pruneEndedClassTimes(
+      selectedClassTimes,
+      selectedCampusData.nodes,
+      {
+        nowTime,
+        isToday,
+        canSelectAllDay,
+      }
+    );
     if (
       next.length !== selectedClassTimes.length ||
       next.some((node, index) => node !== selectedClassTimes[index])

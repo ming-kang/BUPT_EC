@@ -1,5 +1,5 @@
 /** Preferred default campus name when multiple usable campuses exist. */
-export const PREFERRED_CAMPUS_NAME = "沙河";
+const PREFERRED_CAMPUS_NAME = "沙河";
 
 /**
  * Minimal structural view of a campus payload. Real payloads come from the
@@ -14,10 +14,10 @@ export interface CampusLike {
 }
 
 /**
- * True when a campus payload carries buildings or nodes that can drive the UI.
- * Empty placeholders used for cold partial failures return false.
+ * True when a campus payload carries buildings or nodes that can drive the
+ * UI. Empty placeholders used for cold partial failures return false.
  */
-export function hasCampusSnapshot(campus: unknown): boolean {
+function hasCampusSnapshot(campus: unknown): boolean {
   const view = campus as CampusLike | null | undefined;
   if (!view || typeof view !== "object") {
     return false;

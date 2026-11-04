@@ -1,25 +1,16 @@
 import { Empty, Modal } from "antd";
 import { useMemo, useState } from "react";
+import type { BuildingInfo, RoomInfo } from "../api/types";
 import Panel from "./Panel";
 import "./TodayClassroomTable.css";
 
-/** Structural minimum the table reads off a campus payload. */
-interface BuildingView {
-  name: string;
-  rooms?: {
-    display_name: string;
-    capacity?: number;
-    free_nodes?: number[];
-    free_times?: { node: number; time: string }[] | null;
-  }[];
-}
-
-type RoomRecord = NonNullable<BuildingView["rooms"]>[number] & {
+type RoomRecord = RoomInfo & {
   building: string;
 };
 
 interface TodayClassroomTableProps {
-  selectedCampusData?: { buildings?: BuildingView[] } | null;
+  /** decode() guarantees the full CampusInfo shape before it reaches here. */
+  selectedCampusData?: { buildings?: BuildingInfo[] } | null;
   selectedBuildings?: string[];
   selectedClassTimes?: number[];
 }
@@ -66,17 +57,13 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
     return buildings
       .filter((building) => selectedBuildings.includes(building.name))
       .flatMap((building) =>
-        (Array.isArray(building.rooms) ? building.rooms : []).map((room) => ({
+        building.rooms.map((room) => ({
           ...room,
           building: building.name,
         }))
       )
       .filter((room) =>
-        selectedClassTimes.every((node) =>
-          Array.isArray(room.free_nodes)
-            ? room.free_nodes.includes(node)
-            : false
-        )
+        selectedClassTimes.every((node) => room.free_nodes.includes(node))
       )
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [
@@ -96,7 +83,7 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
     return (
       buildings
         .flatMap((building) =>
-          (Array.isArray(building.rooms) ? building.rooms : []).map((room) => ({
+          building.rooms.map((room) => ({
             ...room,
             building: building.name,
           }))
@@ -109,9 +96,7 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
     return null;
   }
 
-  const activeFreeTimes = Array.isArray(activeRoom?.free_times)
-    ? activeRoom!.free_times
-    : [];
+  const activeFreeTimes = activeRoom?.free_times ?? [];
 
   // Rendered by BOTH branches below: the modal must survive the empty-state
   // early return, otherwise a background refresh that empties the table
@@ -225,10 +210,7 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
                     </td>
                     <td>{record.capacity || "未知"}</td>
                     <td>
-                      {(Array.isArray(record.free_nodes)
-                        ? record.free_nodes
-                        : []
-                      )
+                      {record.free_nodes
                         .filter((node) => selectedClassTimes.includes(node))
                         .map((node) => (
                           <span key={node} className="node-tag">
