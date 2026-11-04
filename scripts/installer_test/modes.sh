@@ -896,37 +896,3 @@ test_transaction_directory_umask_is_safe_and_restored() (
   fi
 )
 
-test_generator_executable_mode_contract() (
-  local case_dir fixture fragment
-
-  if [[ "${POSIX_MODES_SUPPORTED}" == "false" ]]; then
-    return
-  fi
-  case_dir="${TEST_TMP}/generator-mode-contract"
-  fixture="${case_dir}/fixture"
-  mkdir -p "${fixture}/scripts/installer"
-  setup_case "${case_dir}"
-  cp "${INSTALLER_TEST_SCRIPT_DIR}/generate-install.sh" "${fixture}/scripts/generate-install.sh"
-  for fragment in \
-    00-preamble.sh 10-config.sh 20-release.sh 30-render.sh 40-transaction.sh 50-main.sh
-  do
-    cp "${INSTALLER_TEST_SCRIPT_DIR}/installer/${fragment}" "${fixture}/scripts/installer/${fragment}"
-  done
-
-  bash "${fixture}/scripts/generate-install.sh"
-  assert_mode "${fixture}/scripts/install.sh" 755 "generated installer"
-
-  # Executable mode is part of the tracked release artifact, not only its bytes.
-  chmod 0644 "${fixture}/scripts/install.sh"
-  if bash "${fixture}/scripts/generate-install.sh" --check >/dev/null 2>&1; then
-    fail "generator --check accepted a non-executable installer"
-  fi
-  bash "${fixture}/scripts/generate-install.sh"
-  assert_mode "${fixture}/scripts/install.sh" 755 "regenerated installer"
-
-  printf '\n# intentional drift probe\n' >> \
-    "${fixture}/scripts/installer/50-main.sh"
-  if bash "${fixture}/scripts/generate-install.sh" --check >/dev/null 2>&1; then
-    fail "generator --check accepted a stale generated installer"
-  fi
-)

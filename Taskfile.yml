@@ -45,15 +45,9 @@ tasks:
     cmds:
       - go test -race ./...
 
-  installer:generate:
-    desc: Regenerate the tracked self-contained installer from its source fragments
-    cmds:
-      - bash scripts/generate-install.sh
-
   installer:check:
-    desc: Check installer generation, syntax, behavior, release layout, and ShellCheck recursively
+    desc: Check installer syntax, behavior, release layout, and ShellCheck recursively
     cmds:
-      - bash scripts/generate-install.sh --check
       # Run recursive discovery inside Bash: Task's portable shell has a
       # deliberately limited built-in find implementation.
       - bash -c "find scripts -type f -name '*.sh' -exec bash -c 'for script; do bash -n \"\$script\" || exit 1; done' bash {} +"

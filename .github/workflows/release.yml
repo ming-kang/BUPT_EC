@@ -94,9 +94,6 @@ jobs:
           name: bupt-ec-linux-arm64
           path: release/bupt-ec-linux-arm64
 
-      - name: Check generated installer
-        run: bash scripts/generate-install.sh --check
-
       - name: Compose release assets
         # The helper asserts the tar layout/parity and keeps fragments/tests
         # outside release assets.

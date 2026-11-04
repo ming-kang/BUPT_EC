@@ -52,7 +52,6 @@ assert_layout() {
   [[ -x "${release_dir}/install.sh" ]]
 }
 
-bash "${SCRIPT_DIR}/generate-install.sh" --check
 bash "${SCRIPT_DIR}/compose-release-assets.sh" "${release_dir}" v0.3.0
 assert_layout
 bash "${SCRIPT_DIR}/compose-release-assets.sh" "${release_dir}" main-deadbeef

@@ -6,8 +6,6 @@ set -euo pipefail
 INSTALLER_TEST_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly INSTALLER_TEST_SCRIPT_DIR
 
-bash "${INSTALLER_TEST_SCRIPT_DIR}/generate-install.sh" --check
-# shellcheck source-path=SCRIPTDIR
 # shellcheck source=install.sh
 source "${INSTALLER_TEST_SCRIPT_DIR}/install.sh"
 # shellcheck source-path=SCRIPTDIR/installer_test
@@ -35,7 +33,7 @@ run_suite() {
   done
 }
 
-expected_test_function_count=39
+expected_test_function_count=38
 actual_test_function_count="$(declare -F | awk '$3 ~ /^test_/ { count++ } END { print count + 0 }')"
 assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
   "installer test function inventory"
@@ -55,8 +53,7 @@ run_suite modes \
   test_update_explicit_version_reaches_download \
   test_update_preflight_failures \
   test_execute_deployment_cleans_failed_session_setup \
-  test_transaction_directory_umask_is_safe_and_restored \
-  test_generator_executable_mode_contract
+  test_transaction_directory_umask_is_safe_and_restored
 run_suite policy \
   test_version_policy \
   test_app_addr_validation \
@@ -87,5 +84,5 @@ run_suite transaction \
   test_successful_upgrade_commits_and_cleans_backup
 
 printf 'installer behavior tests passed (%s entry scenarios; %s test functions)\n' \
-  37 \
+  36 \
   "${actual_test_function_count}"
