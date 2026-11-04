@@ -98,8 +98,7 @@ jobs:
         run: bash scripts/generate-install.sh --check
 
       - name: Compose release assets
-        # The helper injects the exact Go build version into the independently
-        # packaged CLI, asserts the tar layout/parity, and keeps fragments/tests
+        # The helper asserts the tar layout/parity and keeps fragments/tests
         # outside release assets.
         run: |
           set -euo pipefail

@@ -153,27 +153,20 @@ test_no_arg_main_default_completion_output() (
   prompt_required() {
     case "$1" in
       "GitHub repository" | "Backend listen address") printf '%s' "$2" ;;
+      "BUPT JW username") printf '%s' "default-user" ;;
       "Domain name") printf '%s' "classroom.example.com" ;;
       "SSL certificate path") printf '%s' "${cert_path}" ;;
       "SSL private key path") printf '%s' "${key_path}" ;;
       *) fail "unexpected required prompt in no-arg main: $1" ;;
     esac
   }
-  prompt() {
-    if [[ "$1" == "BUPT JW username, optional when JW token is set" ]]; then
-      printf '%s' "default-user"
-    else
-      fail "unexpected prompt in no-arg main: $1"
-    fi
-  }
-  prompt_optional_secret() {
+  prompt_secret() {
     case "$1" in
-      "JW token override, usually leave empty") printf '%s' "default-token" ;;
       "BUPT JW password") printf '%s' "default-password" ;;
-      *) fail "unexpected optional secret prompt in no-arg main: $1" ;;
+      *) fail "unexpected required secret prompt in no-arg main: $1" ;;
     esac
   }
-  prompt_secret() { fail "unexpected required secret prompt in no-arg main"; }
+  prompt_optional_secret() { fail "unexpected optional secret prompt in no-arg main: $1"; }
   execute_deployment() { printf 'execute\n' >> "${deployment_log}"; }
 
   main > "${output_file}" 2>&1
@@ -216,17 +209,9 @@ test_no_mode_install_prompt_order_baseline() (
       *) fail "unexpected required prompt: $1" ;;
     esac
   }
-  prompt() {
-    printf 'prompt|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf '%s' "baseline-user"
-  }
   prompt_optional_secret() {
     printf 'optional-secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    if [[ "$1" == "JW token override, usually leave empty" ]]; then
-      printf '%s' "baseline-token"
-    else
-      printf '%s' "baseline-password"
-    fi
+    printf '%s' "baseline-password"
   }
   prompt_secret() {
     printf 'secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
@@ -239,15 +224,14 @@ required|GitHub repository|ming-kang/BUPT_EC
 required|Domain name|
 required|SSL certificate path|/etc/letsencrypt/live/classroom.example.com/fullchain.pem
 required|SSL private key path|/etc/letsencrypt/live/classroom.example.com/privkey.pem
-optional-secret|JW token override, usually leave empty|false
-prompt|BUPT JW username, optional when JW token is set|
-optional-secret|BUPT JW password|false
+required|BUPT JW username|
+secret|BUPT JW password|false
 required|Backend listen address|127.0.0.1:8080
 EOF
   cmp -s "${expected_log}" "${prompt_log}" || fail "no-mode install prompt order/defaults changed"
   assert_contains "${output_file}" "BUPT_EC installer" "no-mode install banner"
   assert_eq latest "${CFG_RELEASE_VERSION}" "no-mode install version default"
-  assert_eq baseline-token "${CFG_JW_TOKEN}" "no-mode install token prompt result"
+  assert_eq baseline-user "${CFG_JW_USERNAME}" "no-mode install username prompt result"
   assert_eq baseline-password "${CFG_JW_PASSWORD}" "no-mode install password prompt result"
 )
 
@@ -265,7 +249,6 @@ test_no_mode_install_existing_prompt_defaults() (
   CFG_SSL_KEY="/saved/privkey.pem"
   CFG_JW_USERNAME="saved-user"
   CFG_JW_PASSWORD="saved-password"
-  CFG_JW_TOKEN="saved-token"
   CFG_APP_ADDR="127.0.0.1:9090"
   CFG_DOWNLOAD_BASE_URL="https://mirror.example/releases"
   mkdir -p "${CONFIG_DIR}"
@@ -283,10 +266,6 @@ test_no_mode_install_existing_prompt_defaults() (
     printf 'required|%s|%s\n' "$1" "$2" >> "${prompt_log}"
     printf '%s' "$2"
   }
-  prompt() {
-    printf 'prompt|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf '%s' "$2"
-  }
   prompt_optional_secret() {
     printf 'optional-secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
     printf ''
@@ -302,14 +281,13 @@ required|GitHub repository|saved/repository
 required|Domain name|saved.example.com
 required|SSL certificate path|/saved/fullchain.pem
 required|SSL private key path|/saved/privkey.pem
-optional-secret|JW token override, usually leave empty|true
-prompt|BUPT JW username, optional when JW token is set|saved-user
-optional-secret|BUPT JW password|true
+required|BUPT JW username|saved-user
+secret|BUPT JW password|true
 required|Backend listen address|127.0.0.1:9090
 EOF
   cmp -s "${expected_log}" "${prompt_log}" || fail "existing no-mode prompt defaults changed"
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "existing no-mode version default"
-  assert_eq saved-token "${CFG_JW_TOKEN}" "existing no-mode token retention"
+  assert_eq saved-user "${CFG_JW_USERNAME}" "existing no-mode username retention"
   assert_eq saved-password "${CFG_JW_PASSWORD}" "existing no-mode password retention"
 )
 
@@ -514,7 +492,6 @@ test_runtime_flags_across_modes() (
   CFG_RELEASE_VERSION="v1.2.3"
   CFG_DOWNLOAD_BASE_URL="https://mirror.example/releases"
   CFG_LOG_CALLER="current-log-caller"
-  CFG_READYZ_DIAGNOSTICS="current-readyz"
   render_env_file "${ENV_FILE}"
 
   prompt_log="${case_dir}/prompts.log"
@@ -537,50 +514,39 @@ test_runtime_flags_across_modes() (
 
   unset_deployment_invocation_environment
   LOG_CALLER="install-log-caller"
-  READYZ_DIAGNOSTICS="install-readyz"
   capture_invocation_overrides
   load_current_config
   : > "${prompt_log}"
   collect_config_interactive install > /dev/null
   assert_eq install-log-caller "${CFG_LOG_CALLER}" "install LOG_CALLER override"
-  assert_eq install-readyz "${CFG_READYZ_DIAGNOSTICS}" "install READYZ override"
   assert_not_contains "${prompt_log}" "LOG_CALLER" "install has no LOG_CALLER prompt"
-  assert_not_contains "${prompt_log}" "READYZ_DIAGNOSTICS" "install has no READYZ prompt"
   env_file="${case_dir}/install.env"
   render_env_file "${env_file}"
   assert_contains "${env_file}" "LOG_CALLER='install-log-caller'" "install persists LOG_CALLER"
-  assert_contains "${env_file}" "READYZ_DIAGNOSTICS='install-readyz'" "install persists READYZ"
 
   reset_config_state
   unset_deployment_invocation_environment
   LOG_CALLER="reconfigure-log-caller"
-  READYZ_DIAGNOSTICS="reconfigure-readyz"
   capture_invocation_overrides
   load_current_config
   : > "${prompt_log}"
   collect_config_interactive reconfigure > /dev/null
   assert_eq reconfigure-log-caller "${CFG_LOG_CALLER}" "reconfigure LOG_CALLER override"
-  assert_eq reconfigure-readyz "${CFG_READYZ_DIAGNOSTICS}" "reconfigure READYZ override"
   assert_not_contains "${prompt_log}" "LOG_CALLER" "reconfigure has no LOG_CALLER prompt"
-  assert_not_contains "${prompt_log}" "READYZ_DIAGNOSTICS" "reconfigure has no READYZ prompt"
   env_file="${case_dir}/reconfigure.env"
   render_env_file "${env_file}"
   assert_contains "${env_file}" "LOG_CALLER='reconfigure-log-caller'" "reconfigure persists LOG_CALLER"
-  assert_contains "${env_file}" "READYZ_DIAGNOSTICS='reconfigure-readyz'" "reconfigure persists READYZ"
 
   reset_config_state
   unset_deployment_invocation_environment
   LOG_CALLER="ignored-update-log-caller"
-  READYZ_DIAGNOSTICS="ignored-update-readyz"
   capture_invocation_overrides
   load_current_config
   adopt_current_config
   assert_eq current-log-caller "${CFG_LOG_CALLER}" "update keeps saved LOG_CALLER"
-  assert_eq current-readyz "${CFG_READYZ_DIAGNOSTICS}" "update keeps saved READYZ"
   env_file="${case_dir}/update.env"
   render_env_file "${env_file}"
   assert_contains "${env_file}" "LOG_CALLER='current-log-caller'" "update persists saved LOG_CALLER"
-  assert_contains "${env_file}" "READYZ_DIAGNOSTICS='current-readyz'" "update persists saved READYZ"
 )
 
 test_update_noninteractive_skips_packages() (
@@ -809,7 +775,6 @@ test_update_preflight_failures() (
   unset_deployment_invocation_environment
   set_valid_test_config
   CFG_DOMAIN=""
-  CFG_JW_TOKEN="token-that-must-not-leak"
   CFG_JW_PASSWORD="password-that-must-not-leak"
   mkdir -p "${CONFIG_DIR}"
   render_env_file "${ENV_FILE}"
@@ -824,7 +789,6 @@ test_update_preflight_failures() (
     fail "update with invalid saved config unexpectedly succeeded"
   fi
   assert_contains "${output_file}" "--mode=reconfigure" "invalid current config recovery guidance"
-  assert_not_contains "${output_file}" "token-that-must-not-leak" "invalid config output hides token"
   assert_not_contains "${output_file}" "password-that-must-not-leak" "invalid config output hides password"
   [[ ! -s "${deployment_log}" ]] || fail "invalid current config reached deployment"
 

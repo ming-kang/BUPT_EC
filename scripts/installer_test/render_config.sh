@@ -14,10 +14,10 @@ test_deployment_config_key_contract() {
 
   # Keep this literal contract independent from the production registry so a
   # simultaneous producer/consumer omission cannot make the test pass.
-  expected=$'RELEASE_REPO\nRELEASE_VERSION\nDOMAIN\nSSL_CERT\nSSL_KEY\nJW_USERNAME\nJW_PASSWORD\nJW_TOKEN\nAPP_ADDR\nDOWNLOAD_BASE_URL\nLOG_CALLER\nREADYZ_DIAGNOSTICS'
+  expected=$'RELEASE_REPO\nRELEASE_VERSION\nDOMAIN\nSSL_CERT\nSSL_KEY\nJW_USERNAME\nJW_PASSWORD\nAPP_ADDR\nDOWNLOAD_BASE_URL\nLOG_CALLER'
   actual="$(printf '%s\n' "${DEPLOYMENT_CONFIG_KEYS[@]}")"
   assert_eq "${expected}" "${actual}" "deployment config key contract"
-  assert_eq 12 "${#DEPLOYMENT_CONFIG_KEYS[@]}" "deployment config key count"
+  assert_eq 10 "${#DEPLOYMENT_CONFIG_KEYS[@]}" "deployment config key count"
 }
 
 write_current_config_fixture() {
@@ -30,7 +30,6 @@ write_current_config_fixture() {
   done
   CFG_JW_PASSWORD=$'current password\nwith a newline\n'
   CFG_LOG_CALLER=$'current caller\nwith a newline\n'
-  CFG_READYZ_DIAGNOSTICS="current diagnostics"
   mkdir -p "${CONFIG_DIR}"
   render_env_file "${ENV_FILE}"
   if [[ "${include_one_shot_flags}" == "true" ]]; then
@@ -69,9 +68,6 @@ test_config_registry_precedence_and_isolation() (
         ;;
       LOG_CALLER)
         expected_value=$'current caller\nwith a newline\n'
-        ;;
-      READYZ_DIAGNOSTICS)
-        expected_value="current diagnostics"
         ;;
     esac
     assert_eq "${expected_value}" "${!current_name}" "${key} current config load"
@@ -233,7 +229,7 @@ test_current_config_load_security_and_snapshot() (
   target="${case_dir}/env-target"
   marker="${case_dir}/symlink-sourced"
   set_valid_test_config
-  CFG_JW_TOKEN="symlink-secret"
+  CFG_JW_PASSWORD="symlink-secret"
   render_env_file "${target}"
   printf 'touch %q\n' "${marker}" >> "${target}"
   chmod 0600 "${target}"
@@ -257,7 +253,7 @@ test_current_config_load_security_and_snapshot() (
   # UID seam also lets this test run without a root-owned fixture.
   rm -f -- "${ENV_FILE}"
   set_valid_test_config
-  CFG_JW_TOKEN="mode-secret"
+  CFG_JW_PASSWORD="mode-secret"
   render_env_file "${ENV_FILE}"
   chmod 0644 "${ENV_FILE}"
   if [[ "${POSIX_MODES_SUPPORTED}" == "false" ]]; then
@@ -325,7 +321,7 @@ EOF
   assert_temp_dir_empty
 
   # An EXIT trap installed by the sourced file writes only after the loader
-  # serializes all 12 frames, exercising the exact EOF/trailing-data check.
+  # serializes all 10 frames, exercising the exact EOF/trailing-data check.
   cat > "${ENV_FILE}" <<'EOF'
 trap 'printf "%s" "trailing-output-secret"' EXIT
 EOF
@@ -428,70 +424,6 @@ test_render_failure_propagation() (
   fi
 )
 
-test_deployment_metadata_render_contract() {
-  local case_dir metadata_file expected_file target_roles expected_roles
-
-  case_dir="${TEST_TMP}/deployment-metadata"
-  mkdir -p "${case_dir}"
-  setup_case "${case_dir}"
-  set_valid_test_config
-  CFG_RELEASE_VERSION="v0.3.0"
-  CFG_APP_ADDR="[::1]:8080"
-  metadata_file="${case_dir}/deployment.meta"
-  expected_file="${case_dir}/expected.meta"
-  render_deployment_metadata "${metadata_file}"
-
-  printf 'RELEASE_VERSION=v0.3.0\nAPP_ADDR=[::1]:8080\n' > "${expected_file}"
-  cmp -s "${expected_file}" "${metadata_file}" || fail "metadata exact records"
-  assert_mode "${metadata_file}" 644 "rendered metadata"
-  assert_contains "${MOCK_COMMAND_LOG}" "chown root:root ${metadata_file}" "metadata ownership"
-  assert_not_contains "${metadata_file}" "RELEASE_REPO=" "metadata excludes repository"
-  assert_not_contains "${metadata_file}" "JW_" "metadata excludes JW fields"
-  assert_not_contains "${metadata_file}" "DOWNLOAD_BASE_URL" "metadata excludes mirror"
-  assert_not_contains "${metadata_file}" "LOG_CALLER" "metadata excludes logging flag"
-  assert_not_contains "${metadata_file}" "READYZ_DIAGNOSTICS" "metadata excludes readiness flag"
-  expected_roles=$'binary\nenv\ncli\nmetadata\nservice\nsystemd_enabled\nnginx_site\nnginx_enabled'
-  target_roles="$(transaction_targets | cut -f1)"
-  assert_eq "${expected_roles}" "${target_roles}" "eight transaction target roles"
-}
-
-test_cli_archive_staging_matrix() {
-  local case_dir work_dir staging_dir before after output status
-
-  case_dir="${TEST_TMP}/missing-cli-archive"
-  work_dir="${case_dir}/work"
-  staging_dir="${case_dir}/staging"
-  output="${case_dir}/output.log"
-  mkdir -p "${case_dir}" "${work_dir}"
-  setup_case "${case_dir}"
-  set_valid_test_config
-  CFG_RELEASE_VERSION="v0.3.0"
-  seed_existing_installation
-  before="$(capture_target_state)"
-  set +e
-  prepare_staging "${MISSING_CLI_ARCHIVE}" "${work_dir}" "${staging_dir}" > "${output}" 2>&1
-  status=$?
-  set -e
-  if (( status == 0 )); then
-    fail "CLI-bearing archive without CLI unexpectedly staged"
-  fi
-  after="$(capture_target_state)"
-  assert_eq "${before}" "${after}" "missing CLI archive preserves installed targets"
-  assert_contains "${output}" "does not contain bupt-ec-cli" "missing CLI archive error"
-
-  case_dir="${TEST_TMP}/legacy-cli-archive"
-  work_dir="${case_dir}/work"
-  staging_dir="${case_dir}/staging"
-  mkdir -p "${case_dir}" "${work_dir}"
-  setup_case "${case_dir}"
-  set_valid_test_config
-  CFG_RELEASE_VERSION="v0.2.0"
-  prepare_staging "${LEGACY_ARCHIVE}" "${work_dir}" "${staging_dir}"
-  assert_eq remove "$(< "${staging_dir}/cli.action")" "legacy staging action"
-  assert_path_absent "${staging_dir}/bupt-ec-cli" "legacy staging CLI candidate"
-  assert_path_absent "${staging_dir}/deployment.meta" "legacy staging metadata candidate"
-}
-
 test_config_render_round_trip() (
   local case_dir env_file expected_file actual_file key value_name
 
@@ -504,7 +436,6 @@ test_config_render_round_trip() (
   done
   CFG_JW_PASSWORD=$'password with spaces\nsecond line\n'
   CFG_LOG_CALLER=$'caller=true\nsecond line\n'
-  CFG_READYZ_DIAGNOSTICS=$'diagnostics with a newline\n'
 
   env_file="${case_dir}/round-trip.env"
   expected_file="${case_dir}/expected.nul"
@@ -602,6 +533,4 @@ test_api_proxy_read_timeout_budget() {
   if [[ "${spa_timeout}" != *"proxy_read_timeout 30s;"* ]]; then
     fail "spa location keeps 30s read timeout: got '${spa_timeout}'"
   fi
-  assert_contains "${conf_file}" "location = /metrics" "nginx denies public metrics path"
-  assert_contains "${conf_file}" "return 404;" "metrics path returns 404"
 }

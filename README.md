@@ -23,7 +23,7 @@ Endpoints:
 
 - `GET /api/get_data` — the single public API used by the frontend.
 - `GET /healthz` — liveness probe.
-- `GET /readyz` — readiness probe with runtime diagnostics.
+- `GET /readyz` — readiness probe.
 
 ## Deploy to a server
 
@@ -44,32 +44,27 @@ saved or explicit version selects `latest`.
 | `--mode=update` | Existing deployment update with no prompts | `VERSION` → saved version; no TTY and no apt package install |
 | `--mode=reconfigure` | Interactively change saved deployment settings | Keeps the saved version and ignores `VERSION`; requires a TTY |
 
-After installing v0.3.0 or newer, use the installed operations command for
-normal work:
+Manage and inspect the installation with the standard tools:
 
 ```bash
-bupt-ec status                 # rootless state and strict health summary
-sudo bupt-ec update            # reuse the saved selector without prompts
-sudo bupt-ec update v0.3.1     # choose a CLI-bearing stable release
-sudo bupt-ec config            # interactive reconfiguration
-bupt-ec logs -f
+sudo systemctl status bupt-ec      # service state
+sudo systemctl restart bupt-ec     # apply a config change by hand
+sudo journalctl -u bupt-ec -f      # logs
+curl -s http://127.0.0.1:8080/readyz   # readiness (minimal status+version body)
 ```
 
-The CLI delegates deployment to the current self-contained Installer. It accepts
-`latest` and stable versions **v0.3.0 or newer**. It deliberately rejects a
-pre-v0.3 target before downloading anything because those archives predate the
-CLI. Use the current Installer fallback for a legacy rollback (or if the CLI is
-missing):
+To update to a new release (or roll back to an earlier stable one), rerun the
+current Installer in update mode:
 
 ```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
+  sudo bash -s -- --mode=update
+# Or pin a specific stable release (also the rollback selector):
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
   sudo VERSION=v0.2.0 bash -s -- --mode=update
 ```
 
-That direct current-Installer path remains compatible with legacy archives and
-removes the CLI/public metadata transactionally so the installed release stays
-consistent. See [docs/upgrading.md](docs/upgrading.md) for mirror and rollback
-rules.
+See [docs/upgrading.md](docs/upgrading.md) for mirror and rollback rules.
 
 If update reports repairable saved settings, use interactive
 `--mode=reconfigure`; if saved release metadata is missing, use the default
@@ -110,7 +105,7 @@ Requires Go 1.26.9+, Node 22, pnpm 9.15.x, [Task](https://taskfile.dev) for the 
 
 ## Security
 
-- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-owned mode `0600`) on servers; configuration is snapshotted at startup and tokens are held in memory only. Installed v0.3+ hosts additionally expose only `RELEASE_VERSION` and `APP_ADDR` through root-owned `0644` `/etc/bupt-ec/deployment.meta` for rootless CLI probes.
+- Credentials come from the process environment or `.env` locally and `/etc/bupt-ec/bupt-ec.env` (root-owned mode `0600`) on servers; configuration is snapshotted at startup and tokens are held in memory only.
 - Never commit real credentials, tokens, or logs.
 
 ## Limitations

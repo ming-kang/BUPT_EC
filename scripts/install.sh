@@ -11,11 +11,10 @@ GITHUB_HOST="github.com"
 INSTALL_DIR="/opt/bupt-ec"
 CONFIG_DIR="/etc/bupt-ec"
 ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
-# The independently packaged operations CLI and its non-secret metadata are
-# transaction targets, not runtime dependencies of this self-contained script.
+# Legacy v0.3 operations CLI and its non-secret metadata file. Both were
+# dropped; commit removes stale copies best-effort with no rollback role.
 CLI_FILE="/usr/local/bin/bupt-ec"
 DEPLOYMENT_METADATA_FILE="${CONFIG_DIR}/deployment.meta"
-CLI_MIN_RELEASE="v0.3.0"
 # Installed configuration is trusted only when root owns this exact file.
 # configure_installer_test_root changes this test seam for portable fixtures.
 ENV_FILE_EXPECTED_UID=0
@@ -32,8 +31,7 @@ TTY="/dev/tty"
 # (for example SKIP_CHECKSUM) deliberately do not appear here.
 DEPLOYMENT_CONFIG_KEYS=(
   RELEASE_REPO RELEASE_VERSION DOMAIN SSL_CERT SSL_KEY
-  JW_USERNAME JW_PASSWORD JW_TOKEN APP_ADDR DOWNLOAD_BASE_URL
-  LOG_CALLER READYZ_DIAGNOSTICS
+  JW_USERNAME JW_PASSWORD APP_ADDR DOWNLOAD_BASE_URL LOG_CALLER
 )
 readonly DEPLOYMENT_CONFIG_KEYS
 
@@ -512,8 +510,8 @@ prompt_optional_secret() {
 
 collect_config_interactive() {
   local mode="$1"
-  local token_input password_input
-  local has_password has_token
+  local password_input
+  local has_password
 
   case "${mode}" in
     install)
@@ -554,24 +552,8 @@ collect_config_interactive() {
     return 1
   fi
 
-  set_cfg_from_precedence JW_TOKEN ""
-  has_token=false
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    has_token=true
-  fi
-  if ! token_input="$(prompt_optional_secret "JW token override, usually leave empty" "${has_token}")"; then
-    return 1
-  fi
-  if [[ -n "${token_input}" ]]; then
-    CFG_JW_TOKEN="${token_input}"
-  fi
-
   set_cfg_from_precedence JW_USERNAME ""
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    if ! CFG_JW_USERNAME="$(prompt "BUPT JW username, optional when JW token is set" "${CFG_JW_USERNAME}")"; then
-      return 1
-    fi
-  elif ! CFG_JW_USERNAME="$(prompt_required "BUPT JW username" "${CFG_JW_USERNAME}")"; then
+  if ! CFG_JW_USERNAME="$(prompt_required "BUPT JW username" "${CFG_JW_USERNAME}")"; then
     return 1
   fi
 
@@ -580,11 +562,7 @@ collect_config_interactive() {
   if [[ -n "${CFG_JW_PASSWORD}" ]]; then
     has_password=true
   fi
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    if ! password_input="$(prompt_optional_secret "BUPT JW password" "${has_password}")"; then
-      return 1
-    fi
-  elif ! password_input="$(prompt_secret "BUPT JW password" "${has_password}")"; then
+  if ! password_input="$(prompt_secret "BUPT JW password" "${has_password}")"; then
     return 1
   fi
   if [[ -n "${password_input}" ]]; then
@@ -596,10 +574,9 @@ collect_config_interactive() {
     return 1
   fi
   set_cfg_from_precedence DOWNLOAD_BASE_URL ""
-  # These runtime settings are supported by the service but deliberately have
-  # no interactive prompts.
+  # This runtime setting is supported by the service but deliberately has no
+  # interactive prompt.
   set_cfg_from_precedence LOG_CALLER ""
-  set_cfg_from_precedence READYZ_DIAGNOSTICS ""
 }
 
 shell_quote() {
@@ -888,8 +865,8 @@ validate_config() {
     config_recovery_guidance
     return 1
   fi
-  if [[ -z "${CFG_JW_TOKEN}" && ( -z "${CFG_JW_USERNAME}" || -z "${CFG_JW_PASSWORD}" ) ]]; then
-    echo "JW_TOKEN or both JW_USERNAME and JW_PASSWORD are required." >&2
+  if [[ -z "${CFG_JW_USERNAME}" || -z "${CFG_JW_PASSWORD}" ]]; then
+    echo "JW_USERNAME and JW_PASSWORD are required." >&2
     config_recovery_guidance
     return 1
   fi
@@ -1267,45 +1244,12 @@ download_release() {
   (cd "${work_dir}" && grep " ${package_name}$" checksums.txt | sha256sum -c -)
 }
 
-# latest and stable releases at or above the first CLI-bearing release stage
-# the independently packaged command. Legacy archives deliberately stage a
-# remove action instead, so direct current-installer rollback stays consistent.
-is_cli_bearing_release() {
-  local version="$1"
-  local major minor patch floor_major floor_minor floor_patch
-
-  if [[ "${version}" == "latest" ]]; then
-    return 0
-  fi
-  if [[ ! "${version}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    return 1
-  fi
-  major=$((10#${BASH_REMATCH[1]}))
-  minor=$((10#${BASH_REMATCH[2]}))
-  patch=$((10#${BASH_REMATCH[3]}))
-  if [[ ! "${CLI_MIN_RELEASE}" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
-    return 1
-  fi
-  floor_major=$((10#${BASH_REMATCH[1]}))
-  floor_minor=$((10#${BASH_REMATCH[2]}))
-  floor_patch=$((10#${BASH_REMATCH[3]}))
-  if (( major != floor_major )); then
-    (( major > floor_major ))
-    return
-  fi
-  if (( minor != floor_minor )); then
-    (( minor > floor_minor ))
-    return
-  fi
-  (( patch >= floor_patch ))
-}
-
 stage_release() {
   local archive="$1"
   local work_dir="$2"
   local staging_dir="$3"
   local extract_dir="${work_dir}/extract"
-  local binary_path cli_path
+  local binary_path
 
   rm -rf "${extract_dir}" "${staging_dir}" || return
   mkdir -p "${extract_dir}" "${staging_dir}" || return
@@ -1315,7 +1259,6 @@ stage_release() {
     return 1
   fi
 
-  # Keep this exact service-binary selection separate from the CLI member.
   if ! binary_path="$(find "${extract_dir}" -type f -name bupt-ec -print -quit)"; then
     echo "Failed to inspect extracted release archive." >&2
     return 1
@@ -1326,19 +1269,6 @@ stage_release() {
   fi
   install -m 0755 "${binary_path}" "${staging_dir}/bupt-ec" || return
   chown root:root "${staging_dir}/bupt-ec" || return
-
-  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
-    if ! cli_path="$(find "${extract_dir}" -type f -name bupt-ec-cli -print -quit)"; then
-      echo "Failed to inspect extracted release archive." >&2
-      return 1
-    fi
-    if [[ -z "${cli_path}" ]]; then
-      echo "CLI-bearing release archive does not contain bupt-ec-cli." >&2
-      return 1
-    fi
-    install -m 0755 "${cli_path}" "${staging_dir}/bupt-ec-cli" || return
-    chown root:root "${staging_dir}/bupt-ec-cli" || return
-  fi
 }
 
 # shellcheck shell=bash
@@ -1357,40 +1287,6 @@ render_env_file() {
         printf '\n' || exit 1
       done
     } > "${destination}" || exit 1
-  ) || return 1
-  chmod 0600 "${destination}" || return 1
-  chown root:root "${destination}" || return 1
-}
-
-# Public metadata intentionally contains only values needed by rootless CLI
-# probes. It is rendered from validated CFG_* values, never copied from env.
-render_deployment_metadata() {
-  local destination="$1"
-
-  (
-    umask 077 || exit 1
-    {
-      printf 'RELEASE_VERSION=%s\n' "${CFG_RELEASE_VERSION}" || exit 1
-      printf 'APP_ADDR=%s\n' "${CFG_APP_ADDR}" || exit 1
-    } > "${destination}" || exit 1
-  ) || return 1
-  chmod 0644 "${destination}" || return 1
-  chown root:root "${destination}" || return 1
-}
-
-# The marker makes commit behavior explicit; it must not infer a legacy remove
-# action from a missing staging candidate.
-render_cli_action() {
-  local destination="$1"
-  local action="$2"
-
-  case "${action}" in
-    install | remove) ;;
-    *) return 1 ;;
-  esac
-  (
-    umask 077 || exit 1
-    printf '%s\n' "${action}" > "${destination}" || exit 1
   ) || return 1
   chmod 0600 "${destination}" || return 1
   chown root:root "${destination}" || return 1
@@ -1467,11 +1363,6 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
 
-    # Runtime metrics are loopback-only; do not proxy them to the public site.
-    location = /metrics {
-        return 404;
-    }
-
     location /api/ {
         limit_req zone=bupt_ec_api burst=20 nodelay;
         proxy_pass http://${CFG_APP_ADDR};
@@ -1513,12 +1404,6 @@ prepare_staging() {
   render_env_file "${staging_dir}/bupt-ec.env" || return
   render_systemd_service "${staging_dir}/${SERVICE_NAME}.service" || return
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" || return
-  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
-    render_deployment_metadata "${staging_dir}/deployment.meta" || return
-    render_cli_action "${staging_dir}/cli.action" install || return
-  else
-    render_cli_action "${staging_dir}/cli.action" remove || return
-  fi
 }
 
 # shellcheck shell=bash
@@ -1528,8 +1413,6 @@ transaction_targets() {
   printf '%s\t%s\n' \
     binary "${INSTALL_DIR}/bupt-ec" \
     env "${ENV_FILE}" \
-    cli "${CLI_FILE}" \
-    metadata "${DEPLOYMENT_METADATA_FILE}" \
     service "${SERVICE_FILE}" \
     systemd_enabled "${SYSTEMD_ENABLED_LINK}" \
     nginx_site "${NGINX_SITE}" \
@@ -1782,95 +1665,10 @@ wait_for_health() {
   return 1
 }
 
-validate_cli_staging_directory() {
-  local staging_dir="$1"
-  local owner mode
-
-  if [[ -L "${staging_dir}" || ! -d "${staging_dir}" ]]; then
-    return 1
-  fi
-  owner="$(stat -c '%u' -- "${staging_dir}" 2>/dev/null)" || return 1
-  mode="$(stat -c '%a' -- "${staging_dir}" 2>/dev/null)" || return 1
-  [[ "${owner}" == "${ENV_FILE_EXPECTED_UID}" && "${mode}" == "700" ]]
-}
-
-validate_cli_staging_regular_file() {
-  local candidate="$1"
-  local expected_mode="$2"
-  local owner mode
-
-  if [[ -L "${candidate}" || ! -f "${candidate}" ]]; then
-    return 1
-  fi
-  owner="$(stat -c '%u' -- "${candidate}" 2>/dev/null)" || return 1
-  mode="$(stat -c '%a' -- "${candidate}" 2>/dev/null)" || return 1
-  [[ "${owner}" == "${ENV_FILE_EXPECTED_UID}" && "${mode}" == "${expected_mode}" ]]
-}
-
-read_cli_staging_action() {
-  local action_file="$1"
-  local action="" extra=""
-
-  validate_cli_staging_regular_file "${action_file}" 600 || return 1
-  {
-    IFS= read -r action || return 1
-    if IFS= read -r extra; then
-      return 1
-    fi
-    [[ -z "${extra}" ]] || return 1
-  } < "${action_file}" || return 1
-  case "${action}" in
-    install | remove) ;;
-    *) return 1 ;;
-  esac
-  # `read` drops NUL bytes. The byte comparison also requires the terminating
-  # newline and rejects an action whose valid-looking first line has trailers.
-  cmp -s -- "${action_file}" <(printf '%s\n' "${action}") || return 1
-  printf '%s' "${action}"
-}
-
-staged_metadata_matches_config() {
-  local metadata_file="$1"
-
-  cmp -s -- "${metadata_file}" <(
-    printf 'RELEASE_VERSION=%s\nAPP_ADDR=%s\n' "${CFG_RELEASE_VERSION}" "${CFG_APP_ADDR}"
-  )
-}
-
 commit_installation() {
   local staging_dir="$1"
   local app_addr="$2"
-  local health_url cli_action expected_cli_action
-
-  if ! validate_cli_staging_directory "${staging_dir}"; then
-    echo "Staging directory is missing or unsafe." >&2
-    return 1
-  fi
-  if ! cli_action="$(read_cli_staging_action "${staging_dir}/cli.action")"; then
-    echo "Staged CLI action is missing or invalid." >&2
-    return 1
-  fi
-  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
-    expected_cli_action=install
-  else
-    expected_cli_action=remove
-  fi
-  if [[ "${cli_action}" != "${expected_cli_action}" ]]; then
-    echo "Staged CLI action does not match the selected release." >&2
-    return 1
-  fi
-  if [[ "${cli_action}" == "install" ]]; then
-    if ! validate_cli_staging_regular_file "${staging_dir}/bupt-ec-cli" 755 ||
-       ! validate_cli_staging_regular_file "${staging_dir}/deployment.meta" 644 ||
-       ! staged_metadata_matches_config "${staging_dir}/deployment.meta"; then
-      echo "Staged CLI candidates are missing or invalid." >&2
-      return 1
-    fi
-  elif [[ -e "${staging_dir}/bupt-ec-cli" || -L "${staging_dir}/bupt-ec-cli" ||
-          -e "${staging_dir}/deployment.meta" || -L "${staging_dir}/deployment.meta" ]]; then
-    echo "Staged CLI remove action must not include CLI candidates." >&2
-    return 1
-  fi
+  local health_url
 
   mkdir -p "${INSTALL_DIR}/run_log" "${CONFIG_DIR}" || return
   chmod 0755 "${INSTALL_DIR}" || return
@@ -1880,13 +1678,9 @@ commit_installation() {
 
   atomic_install_file "${staging_dir}/bupt-ec" "${INSTALL_DIR}/bupt-ec" 0755 root:root || return
   atomic_install_file "${staging_dir}/bupt-ec.env" "${ENV_FILE}" 0600 root:root || return
-  if [[ "${cli_action}" == "install" ]]; then
-    atomic_install_file "${staging_dir}/bupt-ec-cli" "${CLI_FILE}" 0755 root:root || return
-    atomic_install_file "${staging_dir}/deployment.meta" "${DEPLOYMENT_METADATA_FILE}" 0644 root:root || return
-  else
-    rm -f -- "${CLI_FILE}" || return
-    rm -f -- "${DEPLOYMENT_METADATA_FILE}" || return
-  fi
+  # The v0.3 operations CLI and its public metadata file were dropped; remove
+  # stale copies from older releases best-effort. This has no rollback role.
+  rm -f -- "${CLI_FILE}" "${DEPLOYMENT_METADATA_FILE}" 2>/dev/null || true
   atomic_install_file "${staging_dir}/${SERVICE_NAME}.service" "${SERVICE_FILE}" 0644 root:root || return
   atomic_install_file "${staging_dir}/${SERVICE_NAME}.conf" "${NGINX_SITE}" 0644 root:root || return
   atomic_install_symlink "${NGINX_SITE}" "${NGINX_ENABLED}" || return

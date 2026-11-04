@@ -4,80 +4,19 @@ Day-to-day operation of a deployed BUPT_EC server: service management, health ch
 
 ## Service management
 
-On v0.3.0+ installations, prefer the packaged operations CLI:
-
-```bash
-bupt-ec status
-bupt-ec version
-bupt-ec health
-bupt-ec logs -f
-bupt-ec logs -n 200
-sudo bupt-ec restart
-sudo bupt-ec stop
-sudo bupt-ec start
-sudo bupt-ec config
-sudo bupt-ec config show
-```
-
-| Command | Root | Exit behavior |
-| --- | :---: | --- |
-| `status` | no | 0 only for active unit plus 2xx `/healthz` and `/readyz` |
-| `health` | no | 0 only when both probes are 2xx |
-| `version` | no | reports selector/running/CLI versions; a valid readyz 503 body still reports the running build |
-| `logs` | no | fixed `journalctl -u bupt-ec`; local journal ACL success/failure is propagated |
-| `update`, `config`, `config show`, controls | yes | rejects without root and prints a `sudo bupt-ec ...` retry |
-
-A readiness 503 during warmup is normal after restart, but `status` and
-`health` intentionally show it as degraded/not-ready and return nonzero for
-automation. `start`, `stop`, and `restart` report their `systemctl` result and
-do not turn normal warmup into a control-command failure.
-
-The underlying commands remain fallback diagnostics for pre-v0.3/legacy hosts
-or a missing CLI:
-
 ```bash
 sudo systemctl status bupt-ec
 sudo systemctl restart bupt-ec
 sudo systemctl stop bupt-ec
+sudo systemctl start bupt-ec
 sudo journalctl -u bupt-ec -f
 sudo journalctl -u bupt-ec -n 200
 ```
 
+A readiness 503 during warmup is normal right after a restart; `/readyz`
+returns 200 once the first classroom refresh succeeds.
+
 On shutdown the server drains gracefully: it stops accepting connections, finishes in-flight requests, and waits (within a 10-second budget) for any background classroom refresh to complete.
-
-## Metrics (loopback)
-
-The process exposes Prometheus metrics at `GET /metrics` on `APP_ADDR` (default
-`127.0.0.1:8080`). The installer Nginx site returns 404 for public `/metrics`
-and does not proxy it. Scrape from the host only, for example:
-
-```bash
-curl -s http://127.0.0.1:8080/metrics | head
-```
-
-Useful series include `bupt_ec_refresh_total`, `bupt_ec_refresh_duration_seconds`,
-`bupt_ec_cache_serves_total`, `bupt_ec_login_total`,
-`bupt_ec_login_duration_seconds`, and `bupt_ec_refresh_suppressed_total`
-(adaptive backoff). Labels are low-cardinality enums only (`outcome`, `source`,
-campus id, error kind). Never expect tokens, usernames, URLs, or raw errors as
-labels.
-
-Login series (`bupt_ec_login_total` / `bupt_ec_login_duration_seconds`) count
-shared JW network login operations only (not override install, cache hits, or
-singleflight waiters). `source` is `override` when recovery was caused by a
-rejected startup `JW_TOKEN`, otherwise `login`. `outcome` is `success` or
-`failed`.
-
-Response encoding: the gzhttp wrapper is the only compressor for `/metrics`
-(it compresses only responses larger than 1 KB whose content type is on a
-compressible allow-list — JSON, HTML, plain text, CSS, JavaScript, SVG, XML,
-wasm). Prometheus client compression is disabled so scrapers with
-`Accept-Encoding: gzip` decompress once into Prometheus text format. Health and
-readiness stay uncompressed.
-
-Suggested alerts: sustained `refresh` outcome `failed`, rising
-`refresh_suppressed_total`, login failures (`bupt_ec_login_total{outcome="failed"}`),
-and refresh durations near 30s.
 
 ## Timeout budget (API cold path)
 
@@ -106,42 +45,16 @@ Returns `200 {"status":"ok"}` whenever the process is up.
 
 Returns `200` when JW credentials are configured **and** a usable same-day cache exists; `503` otherwise.
 
-By default the body is minimal (no runtime internals on the public surface):
+The body is deliberately minimal (no runtime internals on the public surface):
 
 ```json
 {
   "status": "OK",
-  "version": "v0.1.6"
-}
-```
-
-Set `READYZ_DIAGNOSTICS=1` (environment or `/etc/bupt-ec/bupt-ec.env`) to also
-return the full diagnostics block for troubleshooting:
-
-```json
-{
-  "status": "OK",
-  "jw_credentials_configured": true,
-  "runtime": {
-    "last_login_success_at": "2026-07-03T08:15:04+08:00",
-    "last_login_error": "",
-    "last_refresh_success_at": "2026-07-03T08:15:05+08:00",
-    "last_refresh_warning": "",
-    "last_refresh_error": "",
-    "cache_available": true,
-    "cache_fresh": true,
-    "cache_stale": false,
-    "cache_partial": false,
-    "cache_date": "2026-07-03"
-  },
   "version": "v0.1.6"
 }
 ```
 
 - `version`: build version string. Release binaries get the tag injected via `-ldflags "-X main.version=..."` (`main-<short-sha>` for unreleased `main` builds); locally built binaries report `dev`.
-- The troubleshooting table below references `runtime` fields — those require
-  `READYZ_DIAGNOSTICS=1`, or use the structured logs (`journalctl -u bupt-ec`),
-  which always carry the same diagnostics with a `log_id`.
 - `cache_fresh`: within the ~5 minute fresh TTL.
 - `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
 - `cache_partial`: at least one configured campus used prior same-day data or an empty skeleton during the latest usable refresh. `partial_campuses` lists the affected campus IDs when present.
@@ -173,16 +86,12 @@ tokens.
 
 Set `LOG_CALLER=1` in the environment file to add source file/line to each record (useful when debugging, off by default).
 
-### Persisted logging and readiness settings
+### Persisted logging settings
 
-`LOG_CALLER` and `READYZ_DIAGNOSTICS` are both persisted installer deployment
-settings. A normal `--mode=update` copies their saved values unchanged; the
-interactive `install` and `reconfigure` paths use an explicitly supplied value
-before a saved value, without adding prompts for either setting. To change them
-through the installer, use a terminal and reconfigure, for example:
+`LOG_CALLER` is a persisted installer deployment setting. A normal `--mode=update` copies its saved value unchanged; the interactive `install` and `reconfigure` paths use an explicitly supplied value before a saved value, without adding a prompt for it. To change it through the installer, use a terminal and reconfigure, for example:
 
 ```bash
-sudo LOG_CALLER=1 READYZ_DIAGNOSTICS=1 bash /tmp/bupt-ec-install.sh --mode=reconfigure
+sudo LOG_CALLER=1 bash /tmp/bupt-ec-install.sh --mode=reconfigure
 ```
 
 The service snapshots its environment at startup; it does not watch the env
@@ -193,18 +102,10 @@ effect only after an explicit service restart.
 The installed `/etc/bupt-ec/bupt-ec.env` must remain a regular, root-owned
 `0600` file in a root-owned configuration directory that group/other users
 cannot modify; do not replace it with a symlink. Before it uses saved values,
-the Installer and root-only CLI commands evaluate it only in an isolated child
-and frame the fixed supported fields. `sudo bupt-ec config show` never prints
-its raw contents: `JW_PASSWORD` and `JW_TOKEN` are always `***` and all other
-values are shell-escaped on one line. If the safe loader rejects the file,
-repair its ownership, mode, or syntax as root (or move it aside and rebuild
-with default install) rather than sourcing an untrusted file.
-
-For rootless CLI queries, `/etc/bupt-ec/deployment.meta` is a separate,
-root-owned exact-`0644` regular file with only `RELEASE_VERSION` and `APP_ADDR`.
-The CLI parses and validates exactly those two ordered lines; if it is missing
-or untrusted, `status`, `version`, and `health` fail rather than falling back to
-the private env or an assumed loopback address.
+the Installer evaluates it only in an isolated child and frames the fixed
+supported fields. If the safe loader rejects the file, repair its ownership,
+mode, or syntax as root (or move it aside and rebuild with default install)
+rather than sourcing an untrusted file.
 
 ### Tracing a request with `log_id`
 
@@ -281,7 +182,7 @@ Each process privately owns:
 - same-day classroom cache
 - JW token / API URL cache
 - refresh singleflight and adaptive backoff
-- runtime readiness / metrics
+- runtime readiness
 
 Restart clears that memory until warmup succeeds again. Running two or more
 `bupt-ec` instances behind round-robin is **not** recommended: each instance
@@ -297,7 +198,7 @@ return briefly different readiness or stale flags. In-process singleflight is
 | Scale-out | Vertical (larger host / better JW headroom), not multi-app replicas |
 | Restart | Cache miss until warmup; brief `/readyz` 503 is expected |
 | JW outage | Adaptive backoff + stale/partial cache while still same Shanghai day |
-| Signals | `/readyz`, structured logs (`log_id`), loopback `/metrics` |
+| Signals | `/readyz`, structured logs (`log_id`) |
 
 No SLA or QPS figure is claimed without capacity testing.
 
@@ -332,10 +233,10 @@ If the message instead says the automatic rollback was incomplete, note the prin
 |---|---|---|
 | Installer exits during upgrade | Look for `Rollback completed.` and run `sudo systemctl status bupt-ec` | New Nginx/service/health validation failed; the previous installation was restored. Fix the reported cause before retrying. |
 | Installer reports incomplete rollback | Preserve the printed root-only recovery directory; run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; use the preserved snapshot for manual recovery. |
-| `/readyz` 503, `last_login_error` mentions credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Run interactive `--mode=reconfigure` to re-enter them. |
-| `/readyz` 503, `last_refresh_error` set, login OK | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
+| `/readyz` 503 and startup logs mention credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Run interactive `--mode=reconfigure` to re-enter them. |
+| `/readyz` 503, login succeeds, refresh errors in the logs | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
-| Page loads but shows the stale warning | `/readyz` → `cache_fresh` | Upstream refresh failing; check `last_refresh_error`. |
+| Page loads but shows the stale warning | `journalctl -u bupt-ec` for refresh errors | Upstream refresh failing; check the logged `last_refresh_error`-equivalent diagnostics. |
 | Browser still shows the old UI after an upgrade | `curl -sI https://<domain>/` → `Cache-Control` must be `no-cache`; `curl -s http://127.0.0.1:8080/readyz` → `version` | Service not restarted or old artifact installed (check `version` first). If the header is not `no-cache`, an Nginx/CDN layer is caching HTML — stop caching `index.html`; hashed `/assets/*` are safe to cache. A hard reload confirms which side is stale. |
 | Service not listening | `sudo journalctl -u bupt-ec -n 50` | Startup validation failed (missing credentials) or port conflict on `APP_ADDR`. |
 | 429 responses on `/api/` | Nginx rate limit | Installer default is 30 req/min per IP, burst 20; adjust the Nginx site if needed. |

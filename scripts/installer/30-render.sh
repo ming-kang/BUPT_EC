@@ -19,40 +19,6 @@ render_env_file() {
   chown root:root "${destination}" || return 1
 }
 
-# Public metadata intentionally contains only values needed by rootless CLI
-# probes. It is rendered from validated CFG_* values, never copied from env.
-render_deployment_metadata() {
-  local destination="$1"
-
-  (
-    umask 077 || exit 1
-    {
-      printf 'RELEASE_VERSION=%s\n' "${CFG_RELEASE_VERSION}" || exit 1
-      printf 'APP_ADDR=%s\n' "${CFG_APP_ADDR}" || exit 1
-    } > "${destination}" || exit 1
-  ) || return 1
-  chmod 0644 "${destination}" || return 1
-  chown root:root "${destination}" || return 1
-}
-
-# The marker makes commit behavior explicit; it must not infer a legacy remove
-# action from a missing staging candidate.
-render_cli_action() {
-  local destination="$1"
-  local action="$2"
-
-  case "${action}" in
-    install | remove) ;;
-    *) return 1 ;;
-  esac
-  (
-    umask 077 || exit 1
-    printf '%s\n' "${action}" > "${destination}" || exit 1
-  ) || return 1
-  chmod 0600 "${destination}" || return 1
-  chown root:root "${destination}" || return 1
-}
-
 render_systemd_service() {
   local destination="$1"
 
@@ -124,11 +90,6 @@ server {
     add_header X-Frame-Options "DENY" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'" always;
 
-    # Runtime metrics are loopback-only; do not proxy them to the public site.
-    location = /metrics {
-        return 404;
-    }
-
     location /api/ {
         limit_req zone=bupt_ec_api burst=20 nodelay;
         proxy_pass http://${CFG_APP_ADDR};
@@ -170,10 +131,4 @@ prepare_staging() {
   render_env_file "${staging_dir}/bupt-ec.env" || return
   render_systemd_service "${staging_dir}/${SERVICE_NAME}.service" || return
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" || return
-  if is_cli_bearing_release "${CFG_RELEASE_VERSION}"; then
-    render_deployment_metadata "${staging_dir}/deployment.meta" || return
-    render_cli_action "${staging_dir}/cli.action" install || return
-  else
-    render_cli_action "${staging_dir}/cli.action" remove || return
-  fi
 }

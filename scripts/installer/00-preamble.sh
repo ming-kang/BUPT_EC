@@ -7,11 +7,10 @@ GITHUB_HOST="github.com"
 INSTALL_DIR="/opt/bupt-ec"
 CONFIG_DIR="/etc/bupt-ec"
 ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
-# The independently packaged operations CLI and its non-secret metadata are
-# transaction targets, not runtime dependencies of this self-contained script.
+# Legacy v0.3 operations CLI and its non-secret metadata file. Both were
+# dropped; commit removes stale copies best-effort with no rollback role.
 CLI_FILE="/usr/local/bin/bupt-ec"
 DEPLOYMENT_METADATA_FILE="${CONFIG_DIR}/deployment.meta"
-CLI_MIN_RELEASE="v0.3.0"
 # Installed configuration is trusted only when root owns this exact file.
 # configure_installer_test_root changes this test seam for portable fixtures.
 ENV_FILE_EXPECTED_UID=0
@@ -28,8 +27,7 @@ TTY="/dev/tty"
 # (for example SKIP_CHECKSUM) deliberately do not appear here.
 DEPLOYMENT_CONFIG_KEYS=(
   RELEASE_REPO RELEASE_VERSION DOMAIN SSL_CERT SSL_KEY
-  JW_USERNAME JW_PASSWORD JW_TOKEN APP_ADDR DOWNLOAD_BASE_URL
-  LOG_CALLER READYZ_DIAGNOSTICS
+  JW_USERNAME JW_PASSWORD APP_ADDR DOWNLOAD_BASE_URL LOG_CALLER
 )
 readonly DEPLOYMENT_CONFIG_KEYS
 

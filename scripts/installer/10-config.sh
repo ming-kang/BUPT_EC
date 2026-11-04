@@ -430,8 +430,8 @@ prompt_optional_secret() {
 
 collect_config_interactive() {
   local mode="$1"
-  local token_input password_input
-  local has_password has_token
+  local password_input
+  local has_password
 
   case "${mode}" in
     install)
@@ -472,24 +472,8 @@ collect_config_interactive() {
     return 1
   fi
 
-  set_cfg_from_precedence JW_TOKEN ""
-  has_token=false
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    has_token=true
-  fi
-  if ! token_input="$(prompt_optional_secret "JW token override, usually leave empty" "${has_token}")"; then
-    return 1
-  fi
-  if [[ -n "${token_input}" ]]; then
-    CFG_JW_TOKEN="${token_input}"
-  fi
-
   set_cfg_from_precedence JW_USERNAME ""
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    if ! CFG_JW_USERNAME="$(prompt "BUPT JW username, optional when JW token is set" "${CFG_JW_USERNAME}")"; then
-      return 1
-    fi
-  elif ! CFG_JW_USERNAME="$(prompt_required "BUPT JW username" "${CFG_JW_USERNAME}")"; then
+  if ! CFG_JW_USERNAME="$(prompt_required "BUPT JW username" "${CFG_JW_USERNAME}")"; then
     return 1
   fi
 
@@ -498,11 +482,7 @@ collect_config_interactive() {
   if [[ -n "${CFG_JW_PASSWORD}" ]]; then
     has_password=true
   fi
-  if [[ -n "${CFG_JW_TOKEN}" ]]; then
-    if ! password_input="$(prompt_optional_secret "BUPT JW password" "${has_password}")"; then
-      return 1
-    fi
-  elif ! password_input="$(prompt_secret "BUPT JW password" "${has_password}")"; then
+  if ! password_input="$(prompt_secret "BUPT JW password" "${has_password}")"; then
     return 1
   fi
   if [[ -n "${password_input}" ]]; then
@@ -514,10 +494,9 @@ collect_config_interactive() {
     return 1
   fi
   set_cfg_from_precedence DOWNLOAD_BASE_URL ""
-  # These runtime settings are supported by the service but deliberately have
-  # no interactive prompts.
+  # This runtime setting is supported by the service but deliberately has no
+  # interactive prompt.
   set_cfg_from_precedence LOG_CALLER ""
-  set_cfg_from_precedence READYZ_DIAGNOSTICS ""
 }
 
 shell_quote() {
@@ -806,8 +785,8 @@ validate_config() {
     config_recovery_guidance
     return 1
   fi
-  if [[ -z "${CFG_JW_TOKEN}" && ( -z "${CFG_JW_USERNAME}" || -z "${CFG_JW_PASSWORD}" ) ]]; then
-    echo "JW_TOKEN or both JW_USERNAME and JW_PASSWORD are required." >&2
+  if [[ -z "${CFG_JW_USERNAME}" || -z "${CFG_JW_PASSWORD}" ]]; then
+    echo "JW_USERNAME and JW_PASSWORD are required." >&2
     config_recovery_guidance
     return 1
   fi
