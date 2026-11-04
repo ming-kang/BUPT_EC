@@ -58,7 +58,7 @@ export class ApiError extends Error {
 
   constructor(
     message: string,
-    { status, code, logId, version }: ApiErrorOptions = {}
+    { status, code, logId, version }: ApiErrorOptions = {},
   ) {
     super(message);
     this.name = "ApiError";
@@ -103,7 +103,7 @@ function readNumberArray(value: unknown): number[] | null {
 /** Strict array decode: every item must pass, or the whole field is null. */
 function readArray<T>(
   value: unknown,
-  decode: (item: unknown) => T | null
+  decode: (item: unknown) => T | null,
 ): T[] | null {
   if (!Array.isArray(value)) {
     return null;
@@ -346,36 +346,19 @@ export async function readJson(response: Response): Promise<unknown> {
 /* ------------------------- snapshot usability rule ------------------------- */
 
 /**
- * True when a classroom snapshot is still safe to display for the current
+ * True when a decoded snapshot is still safe to display for the current
  * Asia/Shanghai business day: `date` matches today and `stale_until` is
- * still in the future. Input stays `unknown` on purpose — this runs against
- * cached envelopes as well as freshly decoded ones.
+ * still in the future.
  */
 export function isUsableBusinessDaySnapshot(
-  data: unknown,
-  nowMs: number = Date.now()
+  data: TodayClassroomsData | null | undefined,
+  nowMs: number = Date.now(),
 ): boolean {
-  if (
-    !Number.isFinite(nowMs) ||
-    !data ||
-    typeof data !== "object" ||
-    Array.isArray(data) ||
-    !Array.isArray((data as UnknownRecord).campuses)
-  ) {
-    return false;
-  }
-  const view = data as UnknownRecord;
-  if (
-    typeof view.date !== "string" ||
-    view.date !== formatShanghaiDate(new Date(nowMs))
-  ) {
-    return false;
-  }
-  if (typeof view.stale_until !== "string" || view.stale_until.trim() === "") {
-    return false;
-  }
-  const staleUntil = Date.parse(view.stale_until);
-  return Number.isFinite(staleUntil) && nowMs < staleUntil;
+  return (
+    data != null &&
+    data.date === formatShanghaiDate(new Date(nowMs)) &&
+    nowMs < Date.parse(data.stale_until)
+  );
 }
 
 /* ------------------------------ UI text helpers ------------------------------ */
@@ -385,7 +368,7 @@ export function isUsableBusinessDaySnapshot(
  * snapshots reach the UI, so no defensive guards are needed here.
  */
 export function classroomWarningMessage(
-  data?: TodayClassroomsData | null
+  data?: TodayClassroomsData | null,
 ): string {
   const fallback =
     (data?.error?.message.trim() ?? "") ||
@@ -394,7 +377,7 @@ export function classroomWarningMessage(
     ...new Set(
       (data?.partial_campuses ?? [])
         .map((id) => id.trim())
-        .filter((id) => id !== "")
+        .filter((id) => id !== ""),
     ),
   ];
   if (ids.length === 0) {

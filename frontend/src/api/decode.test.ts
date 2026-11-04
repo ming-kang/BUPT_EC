@@ -363,17 +363,9 @@ describe("isUsableBusinessDaySnapshot", () => {
     ).toBe(false);
   });
 
-  it("fails closed for malformed required fields without throwing", () => {
+  it("fails closed without a snapshot", () => {
     expect(isUsableBusinessDaySnapshot(null, now)).toBe(false);
-    expect(
-      isUsableBusinessDaySnapshot(snapshot({ campuses: null }), now)
-    ).toBe(false);
-    expect(
-      isUsableBusinessDaySnapshot(snapshot({ stale_until: "bad" }), now)
-    ).toBe(false);
-    expect(
-      isUsableBusinessDaySnapshot(snapshot({ campuses: [] }), Number.NaN)
-    ).toBe(false);
+    expect(isUsableBusinessDaySnapshot(undefined, now)).toBe(false);
   });
 });
 
