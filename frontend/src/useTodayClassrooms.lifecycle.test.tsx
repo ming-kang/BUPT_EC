@@ -1,33 +1,19 @@
 /**
  * @vitest-environment jsdom
  *
- * Real mount/unmount harness for the SWR-backed useTodayClassrooms. Pure
- * helper cases stay in useTodayClassrooms.test.ts.
- *
- * Harness notes (spike-verified):
- * - Every case wraps the probe in SWRConfig with `provider: () => new Map()`
- *   so SWR's module-global cache never leaks data/error/dedupe state across
- *   cases.
- * - dedupingInterval stays at the production default (2s) on purpose: the
- *   always-alive polling chain fires a bootstrap tick ~1s after mount (the
- *   pre-first-data interval) and production deduping absorbs it. Setting it
- *   to 0 would turn that tick into a spurious request and make fetch counts
- *   flaky. Manual retry still works because bound mutate() bypasses deduping.
- * - AbortSignal.timeout is re-implemented on top of the vitest-patched global
- *   setTimeout where the test needs to drive the 40s budget (fake timers
- *   cannot advance jsdom's internal timeout).
- * - Node prints a harmless `TimeoutNaNWarning` on visibilitychange dispatch:
- *   SWR registers `setTimeout.bind(undefined, revalidateAllKeys)` as the
- *   focus listener, so the DOM event object lands in the delay slot (NaN →
- *   clamped to 1ms). Upstream artifact of swr@2.4.2, not a test bug.
+ * Real mount/unmount harness for useTodayClassrooms: scheduling (fresh /
+ * stale / failure ladder / stale_until clamp), visibility and focus
+ * revalidation, snapshot retention, timeout + transport mapping, and the
+ * abort-on-unmount contract. Pure schedule cases stay in
+ * reloadSchedule.test.ts; decode cases stay in api/decode.test.ts.
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import { SWRConfig, type SWRConfiguration } from "swr";
-import useTodayClassrooms, {
-  CLIENT_FETCH_TIMEOUT_MESSAGE,
-  CLIENT_FETCH_TIMEOUT_MS,
-} from "./useTodayClassrooms";
+import useTodayClassrooms from "./useTodayClassrooms";
+
+const TIMEOUT_MESSAGE = "请求超时，请稍后重试";
+const TRANSPORT_MESSAGE = "网络连接异常，请检查网络后重试";
+const EXPIRED_MESSAGE = "当前缓存已失效，正在重新获取";
 
 function shanghaiToday() {
   return new Intl.DateTimeFormat("en-CA", {
@@ -38,6 +24,7 @@ function shanghaiToday() {
   }).format(new Date());
 }
 
+/** Deep-valid fixture (api/decode rejects anything less). */
 function usablePayload(
   overrides: { data?: Record<string, unknown>; [key: string]: unknown } = {}
 ) {
@@ -67,6 +54,15 @@ function usablePayload(
   };
 }
 
+function jsonResponse(payload: unknown, init: { ok?: boolean; status?: number; logId?: string } = {}) {
+  return {
+    ok: init.ok ?? true,
+    status: init.status ?? 200,
+    headers: { get: (name: string) => (name === "X-Log-Id" ? init.logId ?? null : null) },
+    json: async () => payload,
+  };
+}
+
 function HookProbe() {
   const { resp, spinning, reloading, isError, retry } = useTodayClassrooms();
   return (
@@ -76,24 +72,15 @@ function HookProbe() {
       <div data-testid="spinning">{String(spinning)}</div>
       <div data-testid="reloading">{String(reloading)}</div>
       <div data-testid="is-error">{String(isError)}</div>
-      <div data-testid="campus-count">
-        {Array.isArray(resp.data?.campuses) ? resp.data.campuses.length : 0}
-      </div>
+      <div data-testid="campus-count">{resp.data?.campuses.length ?? 0}</div>
       <div data-testid="stale">{String(Boolean(resp.data?.stale))}</div>
+      <div data-testid="error-message">{resp.data?.error?.message ?? ""}</div>
       <div data-testid="log-id">{resp.logId || ""}</div>
       <div data-testid="version">{resp.version || ""}</div>
       <button type="button" onClick={retry}>
         retry
       </button>
     </div>
-  );
-}
-
-function renderProbe(config: Partial<SWRConfiguration> = {}) {
-  return render(
-    <SWRConfig value={{ provider: () => new Map(), ...config }}>
-      <HookProbe />
-    </SWRConfig>
   );
 }
 
@@ -107,31 +94,14 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-/** Rebuild AbortSignal.timeout on the patched setTimeout so fake timers drive it. */
-function stubAbortSignalTimeout() {
-  return vi.spyOn(AbortSignal, "timeout").mockImplementation((ms) => {
-    const controller = new AbortController();
-    setTimeout(() => {
-      controller.abort(
-        new DOMException("The operation timed out.", "TimeoutError")
-      );
-    }, ms);
-    return controller.signal;
-  });
-}
-
 describe("useTodayClassrooms lifecycle", () => {
   let fetchMock: Mock;
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    fetchMock = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => usablePayload(),
-      })
-    );
+    // Deterministic schedules: positive jitter samples of 0 keep base delays.
+    vi.spyOn(Math, "random").mockReturnValue(0);
+    fetchMock = vi.fn(() => Promise.resolve(jsonResponse(usablePayload())));
     vi.stubGlobal("fetch", fetchMock);
   });
 
@@ -145,69 +115,339 @@ describe("useTodayClassrooms lifecycle", () => {
     Reflect.deleteProperty(document, "visibilityState");
   });
 
-  it("loads initial data on mount", async () => {
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("code").textContent).toBe("0");
-    });
+  it("loads initial data on mount after a full-page spin", async () => {
+    const pending = deferred();
+    fetchMock.mockImplementation(() => pending.promise);
+
+    render(<HookProbe />);
+    // Initial load with no usable data: full-page spinner + loading envelope.
+    expect(screen.getByTestId("spinning").textContent).toBe("true");
+    expect(screen.getByTestId("code").textContent).toBe("1");
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/get_data",
       expect.objectContaining({
         headers: { Accept: "application/json" },
       })
     );
+
+    await act(async () => {
+      pending.resolve(jsonResponse(usablePayload()));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
     expect(screen.getByTestId("spinning").textContent).toBe("false");
   });
 
-  it("ignores late responses after unmount without aborting the fetch", async () => {
+  it("auto-reloads near expires_at with a 1s floor", async () => {
+    const soon = Date.now() + 1_500;
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        usablePayload({
+          data: { expires_at: new Date(soon).toISOString() },
+        })
+      )
+    );
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetchMock.mock.calls.length;
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_600);
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
+    });
+  });
+
+  it("polls stale snapshots at the 15s cadence", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(usablePayload({ data: { stale: true } }))
+    );
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetchMock.mock.calls.length;
+
+    // 14s: quiet. 15s: the stale poll fires.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(14_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
+  });
+
+  it("backs off client failures 10s/20s/30s/60s and resets the ladder after a success", async () => {
+    const shortLived = () =>
+      jsonResponse(
+        usablePayload({
+          data: { expires_at: new Date(Date.now() + 3_000).toISOString() },
+        })
+      );
+    fetchMock
+      .mockImplementationOnce(async () => shortLived())
+      .mockImplementationOnce(async () => {
+        throw new TypeError("Failed to fetch");
+      })
+      .mockImplementationOnce(async () => {
+        throw new TypeError("Failed to fetch");
+      })
+      .mockImplementationOnce(async () => shortLived())
+      .mockImplementationOnce(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+
+    // ~3s: poll hits failure #1 → ladder rung 1 (10s). Snapshot stays visible.
+    // (3.5s crosses the 3s poll delay; failure #1 lands ≈0.5s into it.)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("error-message").textContent).toBe(
+      TRANSPORT_MESSAGE
+    );
+    expect(screen.getByTestId("campus-count").textContent).toBe("1");
+    let calls = fetchMock.mock.calls.length;
+    expect(calls).toBe(2);
+
+    // 8.5s into the 10s backoff: quiet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(8_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(calls);
+
+    // Rung 1 fires and fails again → rung 2 (20s).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_500);
+    });
+    expect(fetchMock.mock.calls.length).toBe(calls + 1);
+
+    // 18.5s into the 20s backoff: quiet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(18_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(calls + 1);
+
+    // Rung 2 fires and succeeds → the ladder resets.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1_500);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("false");
+    });
+    expect(fetchMock.mock.calls.length).toBe(calls + 2);
+
+    // ~3s later the next poll fails again: a brand-new ladder starts at rung
+    // 1 (10s), never at the old rung 3 (30s).
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_500);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("stale").textContent).toBe("true");
+    });
+    calls = fetchMock.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(11_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(calls + 1);
+  });
+
+  it("never overlaps requests and skips polls while one is in flight", async () => {
     const pending = deferred();
     let seenSignal: AbortSignal | undefined;
-    fetchMock.mockImplementation((_url, init) => {
-      seenSignal = init.signal;
+    fetchMock.mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      seenSignal = init?.signal;
       return pending.promise;
     });
 
-    const view = renderProbe();
+    render(<HookProbe />);
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
-    // The fetcher always attaches its 40s timeout budget signal.
+
+    // No timer is armed while a request is in flight: long advances stay quiet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // A manual retry during the in-flight request is absorbed (never overlap).
+    await act(async () => {
+      screen.getByRole("button", { name: "retry" }).click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      pending.resolve(jsonResponse(usablePayload()));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
     expect(seenSignal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("aborts the in-flight request on unmount and ignores the late result", async () => {
+    const pending = deferred();
+    let seenSignal: AbortSignal | undefined;
+    fetchMock.mockImplementation((_url: string, init?: { signal?: AbortSignal }) => {
+      seenSignal = init?.signal;
+      return pending.promise;
+    });
+
+    const view = render(<HookProbe />);
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
     expect(seenSignal!.aborted).toBe(false);
 
     view.unmount();
-    // SWR does not abort in-flight requests on unmount (the timeout signal
-    // still bounds them); it only ignores the late result.
-    expect(seenSignal!.aborted).toBe(false);
+    // New contract: the in-flight request dies with the component.
+    expect(seenSignal!.aborted).toBe(true);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     await act(async () => {
-      pending.resolve({
-        ok: true,
-        status: 200,
-        json: async () => usablePayload(),
-      });
+      pending.resolve(jsonResponse(usablePayload()));
       await Promise.resolve();
     });
-    // No act warning, no unmounted-state update noise.
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
-  it("manual retry issues a second request and clears full-page error", async () => {
-    fetchMock
-      .mockImplementationOnce(async () => ({
-        ok: false,
-        status: 503,
-        json: async () => ({ code: 503, msg: "upstream down", data: null }),
-      }))
-      .mockImplementationOnce(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => usablePayload(),
-      }));
+  it("clears the reload timer on unmount", async () => {
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetchMock.mock.calls.length;
+    cleanup();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(120_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
+  });
 
-    renderProbe();
+  it("times out hanging fetches with a safe message (AbortController + setTimeout)", async () => {
+    // Hangs until the signal aborts, like a real fetch.
+    fetchMock.mockImplementation(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            return;
+          }
+          if (signal.aborted) {
+            reject(new DOMException("Aborted", "AbortError"));
+            return;
+          }
+          signal.addEventListener("abort", () => {
+            reject(new DOMException("Aborted", "AbortError"));
+          });
+        })
+    );
+
+    render(<HookProbe />);
+    // Just short of the 40s budget: still waiting, no error yet.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(39_000);
+    });
+    expect(screen.getByTestId("is-error").textContent).toBe("false");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("msg").textContent).toBe(TIMEOUT_MESSAGE);
+  });
+
+  it("maps generic transport errors to a typed ApiError with a safe message", async () => {
+    fetchMock.mockImplementation(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    // Raw exception text ("Failed to fetch") never reaches the UI.
+    expect(screen.getByTestId("msg").textContent).toBe(TRANSPORT_MESSAGE);
+  });
+
+  it("keeps the real HTTP status and body log_id on the hard error envelope", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        { code: 404, msg: "接口不存在", log_id: "body-log-id", data: null },
+        { ok: false, status: 404 }
+      )
+    );
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("code").textContent).toBe("404");
+    expect(screen.getByTestId("msg").textContent).toBe("接口不存在");
+    expect(screen.getByTestId("log-id").textContent).toBe("body-log-id");
+  });
+
+  it("falls back to the X-Log-Id header when the error body carries none", async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(null, { ok: false, status: 502, logId: "header-log-id" })
+    );
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("code").textContent).toBe("502");
+    expect(screen.getByTestId("msg").textContent).toBe("请求失败 (502)");
+    expect(screen.getByTestId("log-id").textContent).toBe("header-log-id");
+  });
+
+  it("surfaces the build version on the hard error envelope", async () => {
+    // The settings dialog is reachable from the empty state, so a failure
+    // must still name the running build.
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(
+        { code: 503, msg: "暂无数据", version: "v0.3.0", data: null },
+        { ok: false, status: 503 }
+      )
+    );
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
+  });
+
+  it("manual retry reloads and clears the full-page error", async () => {
+    fetchMock
+      .mockImplementationOnce(async () =>
+        jsonResponse(
+          { code: 503, msg: "upstream down", data: null },
+          { ok: false, status: 503 }
+        )
+      )
+      .mockImplementationOnce(async () => jsonResponse(usablePayload()));
+
+    render(<HookProbe />);
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
@@ -223,179 +463,27 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("is-error").textContent).toBe("false");
   });
 
-  it("keeps last good data when a later background reload fails", async () => {
-    const soon = new Date(Date.now() + 1_500).toISOString();
-    fetchMock
-      .mockImplementationOnce(async () => ({
-        ok: true,
-        status: 200,
-        json: async () =>
-          usablePayload({
-            data: {
-              expires_at: soon,
-            },
-          }),
-      }))
-      .mockImplementationOnce(async () => {
-        throw new Error("network down");
-      });
-
-    // dedupingInterval 0 here: the next background revalidation must issue a
-    // real second request instead of being absorbed by the dedupe window.
-    renderProbe({ dedupingInterval: 0 });
-    await waitFor(() => {
-      expect(screen.getByTestId("code").textContent).toBe("0");
-    });
-
-    // Advance past the short fresh-cache delay from expires_at.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
-    });
-
-    await waitFor(() => {
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("stale").textContent).toBe("true");
-    });
-    expect(screen.getByTestId("code").textContent).toBe("0");
-    expect(screen.getByTestId("campus-count").textContent).toBe("1");
-    expect(screen.getByTestId("msg").textContent).not.toBe("");
-  });
-
-  it("clears the reload timer on unmount", async () => {
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("code").textContent).toBe("0");
-    });
-    const callsAfterLoad = fetchMock.mock.calls.length;
-    cleanup();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(60_000);
-    });
-    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
-  });
-
-  it("times out hanging fetches with a safe message", async () => {
-    const timeoutSpy = stubAbortSignalTimeout();
-    fetchMock.mockImplementation(
-      (_url, init) =>
-        new Promise((_resolve, reject) => {
-          const signal = init?.signal;
-          if (!signal) {
-            return;
-          }
-          if (signal.aborted) {
-            reject(signal.reason);
-            return;
-          }
-          signal.addEventListener("abort", () => {
-            reject(signal.reason);
-          });
-        })
-    );
-
-    renderProbe();
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(CLIENT_FETCH_TIMEOUT_MS + 10);
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("is-error").textContent).toBe("true");
-    });
-    expect(screen.getByTestId("msg").textContent).toBe(
-      CLIENT_FETCH_TIMEOUT_MESSAGE
-    );
-    expect(timeoutSpy).toHaveBeenCalledWith(CLIENT_FETCH_TIMEOUT_MS);
-  });
-
-  it("keeps the real HTTP status and body log_id in the error envelope", async () => {
-    fetchMock.mockImplementation(async () => ({
-      ok: false,
-      status: 404,
-      headers: { get: (name: string) => (name === "X-Log-Id" ? "header-log-id" : null) },
-      json: async () => ({
-        code: 404,
-        msg: "接口不存在",
-        log_id: "body-log-id",
-        data: null,
-      }),
-    }));
-
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("is-error").textContent).toBe("true");
-    });
-    // The derived envelope carries the real status, not a guessed 500.
-    expect(screen.getByTestId("code").textContent).toBe("404");
-    expect(screen.getByTestId("msg").textContent).toBe("接口不存在");
-    expect(screen.getByTestId("log-id").textContent).toBe("body-log-id");
-  });
-
-  it("falls back to the X-Log-Id header when the error body has no log_id", async () => {
-    fetchMock.mockImplementation(async () => ({
-      ok: false,
-      status: 502,
-      headers: { get: (name: string) => (name === "X-Log-Id" ? "header-log-id" : null) },
-      json: async () => null,
-    }));
-
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("is-error").textContent).toBe("true");
-    });
-    expect(screen.getByTestId("code").textContent).toBe("502");
-    expect(screen.getByTestId("msg").textContent).toBe("请求失败 (502)");
-    expect(screen.getByTestId("log-id").textContent).toBe("header-log-id");
-  });
-
-  it("surfaces the build version on the hard error envelope", async () => {
-    // The settings dialog is reachable from the empty state (CampusButtonGroup
-    // renders its trigger with no campuses), so a failure must still name the
-    // running build.
-    fetchMock.mockImplementation(async () => ({
-      ok: false,
-      status: 503,
-      headers: { get: () => null },
-      json: async () => ({
-        code: 503,
-        msg: "暂无数据",
-        version: "v0.3.0",
-        data: null,
-      }),
-    }));
-
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("is-error").textContent).toBe("true");
-    });
-    expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
-  });
-
   it("keeps the build version across a stale-snapshot merge", async () => {
-    // mergeFetchResult rebuilds the envelope from scratch; without the
-    // re-attach the version would vanish exactly when the user is most likely
-    // to open the settings dialog to report a problem.
-    const soon = new Date(Date.now() + 1_500).toISOString();
     fetchMock
-      .mockImplementationOnce(async () => ({
-        ok: true,
-        status: 200,
-        json: async () =>
-          usablePayload({ version: "v0.3.0", data: { expires_at: soon } }),
-      }))
+      .mockImplementationOnce(async () =>
+        jsonResponse(
+          usablePayload({
+            version: "v0.3.0",
+            data: { expires_at: new Date(Date.now() + 1_500).toISOString() },
+          })
+        )
+      )
       .mockImplementationOnce(async () => {
-        throw new Error("network down");
+        throw new TypeError("Failed to fetch");
       });
 
-    // dedupingInterval 0 for the same reason as the last-good-data case: the
-    // background revalidation must issue a real second request.
-    renderProbe({ dedupingInterval: 0 });
+    render(<HookProbe />);
     await waitFor(() => {
       expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
     });
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
+      await vi.advanceTimersByTimeAsync(2_000);
     });
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("true");
@@ -406,190 +494,95 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
   });
 
-  it("keeps background polling alive after the first load (no falsy chain death)", async () => {
-    // Guards the SWR chain-death trap: a falsy refreshInterval return would
-    // silently end all future polling; nextReloadDelay(undefined) is null.
-    vi.spyOn(Math, "random").mockReturnValue(0);
-    fetchMock.mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => usablePayload({ data: { stale: true } }),
-    }));
+  it("background reloads never show the full-page spinner", async () => {
+    const pending = deferred();
+    fetchMock
+      .mockImplementationOnce(async () =>
+        jsonResponse(
+          usablePayload({
+            data: { expires_at: new Date(Date.now() + 1_000).toISOString() },
+          })
+        )
+      )
+      .mockImplementationOnce(() => pending.promise);
 
-    renderProbe();
+    render(<HookProbe />);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    const callsAfterLoad = fetchMock.mock.calls.length;
 
-    // Stale payload → 15s base poll. The ~1s bootstrap tick is deduped; the
-    // chain then re-arms from the real snapshot.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(17_000);
+      await vi.advanceTimersByTimeAsync(1_500);
     });
     await waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+    // The poll revalidation is background: indicator yes, full-page spin no,
+    // and the campuses stay on screen.
+    expect(screen.getByTestId("reloading").textContent).toBe("true");
+    expect(screen.getByTestId("spinning").textContent).toBe("false");
+    expect(screen.getByTestId("campus-count").textContent).toBe("1");
+
+    await act(async () => {
+      pending.resolve(jsonResponse(usablePayload()));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("reloading").textContent).toBe("false");
     });
   });
 
-  it("does not schedule background reloads while the page is hidden", async () => {
+  it("does not poll while hidden and fires a single reload on becoming visible", async () => {
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "hidden",
     });
-    fetchMock.mockImplementation(async () => ({
-      ok: true,
-      status: 200,
-      json: async () =>
+    // First payload is near expiry; the reload after becoming visible gets a
+    // long-lived day (no further rapid polls inside this window).
+    let fetchCount = 0;
+    fetchMock.mockImplementation(async () => {
+      fetchCount += 1;
+      return jsonResponse(
         usablePayload({
-          data: { expires_at: new Date(Date.now() + 1_000).toISOString() },
-        }),
-    }));
+          data:
+            fetchCount === 1
+              ? { expires_at: new Date(Date.now() + 1_000).toISOString() }
+              : {},
+        })
+      );
+    });
 
-    renderProbe();
+    render(<HookProbe />);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
+    // The initial mount load still happened (background-opened tab).
     const callsAfterLoad = fetchMock.mock.calls.length;
+    expect(callsAfterLoad).toBe(1);
+
+    // Hidden: timers re-arm but never fetch.
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
-  });
 
-  it("abandons an armed failure retry while hidden and recovers on focus", async () => {
-    // SWR fires already-armed error-retry timers even after the tab hides;
-    // retryOnError's callback must give up when hidden and let
-    // revalidateOnFocus reissue the request on return.
-    vi.spyOn(Math, "random").mockReturnValue(0);
-    let visibility = "visible";
+    // Visible again: exactly one reload.
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
-      get: () => visibility,
-    });
-    fetchMock
-      .mockImplementationOnce(async () => {
-        throw new Error("network down");
-      })
-      .mockImplementation(async () => ({
-        ok: true,
-        status: 200,
-        json: async () => usablePayload(),
-      }));
-
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("is-error").textContent).toBe("true");
-    });
-    const callsAfterError = fetchMock.mock.calls.length;
-
-    // The 10s ladder timer was armed while visible; hide before it fires.
-    await act(async () => {
-      visibility = "hidden";
-      document.dispatchEvent(new Event("visibilitychange"));
+      get: () => "visible",
     });
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000);
-    });
-    // Timer fired but gave up: hidden tabs never fetch.
-    expect(fetchMock.mock.calls.length).toBe(callsAfterError);
-
-    // Becoming visible again revalidates promptly and clears the error.
-    await act(async () => {
-      visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
     });
     await waitFor(() => {
-      expect(screen.getByTestId("code").textContent).toBe("0");
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     });
-    expect(fetchMock.mock.calls.length).toBe(callsAfterError + 1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
   });
 
-  it("restarts the failure ladder at 10s after an intervening successful payload", async () => {
-    // Contract §4 row "valid payload → reset client-failure count": SWR only
-    // increments retryCount along one error-retry chain, so the rung after a
-    // recovery must be 10s again, never the 20s second rung. Both failures are
-    // driven by the polling chain (a fresh error chain each time), never by
-    // manual mutate — bound mutate would reset the count on its own and make
-    // the assertion vacuous.
-    vi.spyOn(Math, "random").mockReturnValue(0);
-    const shortLived = () => ({
-      ok: true,
-      status: 200,
-      json: async () =>
-        usablePayload({
-          data: { expires_at: new Date(Date.now() + 3_000).toISOString() },
-        }),
-    });
-    fetchMock
-      .mockImplementationOnce(async () => shortLived())
-      .mockImplementationOnce(async () => {
-        throw new Error("network down");
-      })
-      .mockImplementationOnce(async () => shortLived())
-      .mockImplementation(async () => {
-        throw new Error("network down");
-      });
-
-    renderProbe();
-    await waitFor(() => {
-      expect(screen.getByTestId("code").textContent).toBe("0");
-    });
-
-    // ~3s: the poll driven by expires_at hits failure #1 and arms rung 1.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(4_000);
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("stale").textContent).toBe("true");
-    });
-    const afterFirstFailure = fetchMock.mock.calls.length;
-    expect(afterFirstFailure).toBe(2);
-
-    // Backoff window stays quiet: SWR's polling loop skips fetching while the
-    // cache holds an error, so only the ladder timer can issue a request.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(8_000);
-    });
-    expect(fetchMock.mock.calls.length).toBe(afterFirstFailure);
-
-    // Rung 1 (10s) fires and succeeds → the failure count must reset.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_500);
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("stale").textContent).toBe("false");
-    });
-    expect(fetchMock.mock.calls.length).toBe(afterFirstFailure + 1);
-
-    // The next poll fails again, starting a brand new error chain.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3_000);
-    });
-    await waitFor(() => {
-      expect(screen.getByTestId("stale").textContent).toBe("true");
-    });
-    const afterSecondFailure = fetchMock.mock.calls.length;
-    expect(afterSecondFailure).toBe(afterFirstFailure + 2);
-
-    // Still silent 9s after failure #2 …
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(7_500);
-    });
-    expect(fetchMock.mock.calls.length).toBe(afterSecondFailure);
-
-    // … and retried by ~11s: rung 1 again. Had the count carried over, rung 2
-    // (20s) would keep this window silent too.
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(2_000);
-    });
-    await waitFor(() => {
-      expect(fetchMock.mock.calls.length).toBe(afterSecondFailure + 1);
-    });
-  });
-
-  it("clears expired snapshot and reloads once when becoming visible after stale_until", async () => {
-    vi.spyOn(Math, "random").mockReturnValue(0);
+  it("drops the expired snapshot before the visible-again reload and restores data after", async () => {
     let visibility = "visible";
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -597,41 +590,39 @@ describe("useTodayClassrooms lifecycle", () => {
     });
 
     const date = shanghaiToday();
-    // Short remaining lifetime so we can cross the hard deadline while hidden.
     const staleUntil = new Date(Date.now() + 2_000).toISOString();
     let fetchCount = 0;
-    fetchMock.mockImplementation(async () => {
-      fetchCount += 1;
-      // First response is near expiry; later reloads return a long-lived day.
-      if (fetchCount === 1) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () =>
-            usablePayload({
-              data: {
-                date,
-                expires_at: new Date(Date.now() + 1_000).toISOString(),
-                stale_until: staleUntil,
-              },
-            }),
-        };
-      }
-      return {
-        ok: true,
-        status: 200,
-        json: async () => usablePayload(),
-      };
-    });
+    let secondResponse: (value: unknown) => void = () => {};
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          fetchCount += 1;
+          if (fetchCount === 1) {
+            // Near expiry: expires_at in 1s, hard deadline in 2s.
+            resolve(
+              jsonResponse(
+                usablePayload({
+                  data: {
+                    expires_at: new Date(Date.now() + 1_000).toISOString(),
+                    stale_until: staleUntil,
+                  },
+                })
+              )
+            );
+            return;
+          }
+          secondResponse = resolve;
+        })
+    );
 
-    renderProbe();
+    render(<HookProbe />);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
     const callsAfterLoad = fetchMock.mock.calls.length;
 
-    // Hide: the polling chain keeps re-arming but never fetches while hidden.
+    // Hide and let the hard deadline pass while hidden.
     await act(async () => {
       visibility = "hidden";
       document.dispatchEvent(new Event("visibilitychange"));
@@ -640,33 +631,108 @@ describe("useTodayClassrooms lifecycle", () => {
       await vi.advanceTimersByTimeAsync(5_000);
     });
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
-    // Stale snapshot may still be in state while hidden.
-    expect(screen.getByTestId("campus-count").textContent).toBe("1");
 
-    // Become visible after the hard deadline. The prompt reload comes from the
-    // polling chain resuming (its interval is the 1s floor once the cached
-    // snapshot stopped being displayable); SWR arms focus revalidation only
-    // focusThrottleInterval after mount, so these two events are still inside
-    // the throttle window and cannot double-fire.
+    // Become visible after stale_until: a single background reload fires and
+    // the expired campuses are already gone from the render.
     await act(async () => {
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await act(async () => {
-      document.dispatchEvent(new Event("visibilitychange"));
-    });
-
     await waitFor(() => {
       expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     });
+    expect(screen.getByTestId("campus-count").textContent).toBe("0");
+    expect(screen.getByTestId("msg").textContent).toBe(EXPIRED_MESSAGE);
+    // Background reload: no full-page spin over the expired-state card.
+    expect(screen.getByTestId("spinning").textContent).toBe("false");
+
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1_000);
+      secondResponse(jsonResponse(usablePayload({ data: { date } })));
     });
-    // Exactly one reload after resume (no ordinary 15s stale poll thrash).
-    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
       expect(screen.getByTestId("campus-count").textContent).toBe("1");
     });
+  });
+
+  it("drops an expired snapshot when the visible-again reload fails", async () => {
+    let visibility = "visible";
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      get: () => visibility,
+    });
+
+    fetchMock
+      .mockImplementationOnce(async () =>
+        jsonResponse(
+          usablePayload({
+            data: { stale_until: new Date(Date.now() + 1_500).toISOString() },
+          })
+        )
+      )
+      .mockImplementationOnce(async () => {
+        throw new TypeError("Failed to fetch");
+      });
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("campus-count").textContent).toBe("1");
+    });
+
+    await act(async () => {
+      visibility = "hidden";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    await act(async () => {
+      visibility = "visible";
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    // No usable snapshot left to keep: hard error, campuses cleared.
+    expect(screen.getByTestId("campus-count").textContent).toBe("0");
+    expect(screen.getByTestId("code").textContent).toBe("500");
+    expect(screen.getByTestId("msg").textContent).toBe(TRANSPORT_MESSAGE);
+  });
+
+  it("throttles focus revalidation to one request per 15s", async () => {
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("code").textContent).toBe("0");
+    });
+    const callsAfterLoad = fetchMock.mock.calls.length;
+
+    // First focus revalidates immediately (nothing foreground since mount).
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
+    });
+
+    // Rapid refocuses inside the throttle window are absorbed.
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
+
+    // Past the 15s window a new focus revalidates — and a paired
+    // visibilitychange still cannot double-fire it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15_500);
+    });
+    await act(async () => {
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 2);
+    });
+    expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 2);
   });
 });

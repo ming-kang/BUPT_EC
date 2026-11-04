@@ -2,10 +2,10 @@ import { Button, Empty } from "antd";
 import Panel from "./Panel";
 import "./GlobalEmpty.css";
 
-import type { HookEnvelope } from "../useTodayClassrooms";
+import type { Envelope } from "../api/decode";
 
 interface GlobalEmptyProps {
-  todayData: HookEnvelope;
+  todayData: Envelope;
   isError: boolean;
   onRetry?: () => void;
 }

@@ -7,7 +7,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import GlobalEmpty from "./GlobalEmpty";
-import type { HookEnvelope } from "../useTodayClassrooms";
 
 describe("GlobalEmpty", () => {
   afterEach(() => {
@@ -20,8 +19,16 @@ describe("GlobalEmpty", () => {
         todayData={{
           code: 0,
           msg: "",
-          data: { campuses: [] },
-        } as unknown as HookEnvelope}
+          data: {
+            date: "2026-08-16",
+            updated_at: "2026-08-16T08:00:00+08:00",
+            expires_at: "2026-08-16T12:00:00+08:00",
+            stale_until: "2026-08-16T23:59:59+08:00",
+            stale: false,
+            campuses: [],
+            error: null,
+          },
+        }}
         isError={false}
       />
     );
