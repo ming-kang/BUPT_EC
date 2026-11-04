@@ -167,7 +167,7 @@ test_upgrade_inactive_service_stays_inactive_on_rollback() {
 }
 
 test_first_install_failure_removes_new_targets() {
-  local case_dir session_dir staging_dir backup_dir output role target
+  local case_dir session_dir staging_dir backup_dir output target
   case_dir="${TEST_TMP}/first-install-rollback"
   session_dir="${case_dir}/session"
   staging_dir="${session_dir}/staging"
@@ -182,9 +182,9 @@ test_first_install_failure_removes_new_targets() {
   if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
     fail "first install nginx failure unexpectedly committed"
   fi
-  while IFS=$'\t' read -r role target; do
-    assert_path_absent "${target}" "first install rollback ${role}"
-  done < <(transaction_targets)
+  while IFS= read -r target; do
+    assert_path_absent "${target}" "first install rollback target"
+  done < <(target_path_list)
   assert_service_active false "early first install leaves service inactive"
   assert_command_count 0 "systemctl restart ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "first install early rollback restart count"
   assert_command_count 0 "systemctl start ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "first install early rollback start count"
@@ -194,7 +194,7 @@ test_first_install_failure_removes_new_targets() {
 }
 
 test_first_install_late_failures_stop_service_and_reload_nginx() {
-  local failure case_dir session_dir staging_dir backup_dir output role target
+  local failure case_dir session_dir staging_dir backup_dir output target
   for failure in restart is-active reload health; do
     case_dir="${TEST_TMP}/first-install-late-${failure}"
     session_dir="${case_dir}/session"
@@ -228,9 +228,9 @@ test_first_install_late_failures_stop_service_and_reload_nginx() {
     if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
       fail "first install late ${failure} failure unexpectedly committed"
     fi
-    while IFS=$'\t' read -r role target; do
-      assert_path_absent "${target}" "first install late ${failure} ${role}"
-    done < <(transaction_targets)
+    while IFS= read -r target; do
+      assert_path_absent "${target}" "first install late ${failure} target"
+    done < <(target_path_list)
     assert_service_active false "first install late ${failure} leaves no active service"
     assert_service_enabled false "first install late ${failure} leaves service disabled"
     assert_not_contains "${output}" "BUPT_EC is installed." "first install late ${failure} success output"

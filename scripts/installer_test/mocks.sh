@@ -343,20 +343,28 @@ assert_service_enabled() {
 }
 
 capture_target_state() {
-  local role target checksum mode
-  while IFS=$'\t' read -r role target; do
+  local target checksum mode
+  local -a targets=(
+    "${INSTALL_DIR}/bupt-ec"
+    "${ENV_FILE}"
+    "${SERVICE_FILE}"
+    "${NGINX_SITE}"
+    "${SYSTEMD_ENABLED_LINK}"
+    "${NGINX_ENABLED}"
+  )
+  for target in "${targets[@]}"; do
     if [[ -L "${target}" ]]; then
-      printf '%s\tlink\t%s\n' "${role}" "$(readlink "${target}")"
+      printf '%s\tlink\t%s\n' "${target}" "$(readlink "${target}")"
     elif [[ -f "${target}" ]]; then
       checksum="$(sha256sum "${target}" | awk '{print $1}')"
       mode="$(stat -c '%a' "${target}")"
-      printf '%s\tfile\t%s\t%s\n' "${role}" "${checksum}" "${mode}"
+      printf '%s\tfile\t%s\t%s\n' "${target}" "${checksum}" "${mode}"
     elif [[ -e "${target}" ]]; then
-      printf '%s\tother\n' "${role}"
+      printf '%s\tother\n' "${target}"
     else
-      printf '%s\tabsent\n' "${role}"
+      printf '%s\tabsent\n' "${target}"
     fi
-  done < <(transaction_targets)
+  done
 }
 
 make_staging() {
@@ -386,6 +394,16 @@ run_transaction_with_cleanup() {
     status=$?
     exit "${status}"
   )
+}
+
+target_path_list() {
+  printf '%s\n' \
+    "${INSTALL_DIR}/bupt-ec" \
+    "${ENV_FILE}" \
+    "${SERVICE_FILE}" \
+    "${NGINX_SITE}" \
+    "${SYSTEMD_ENABLED_LINK}" \
+    "${NGINX_ENABLED}"
 }
 
 assert_enabled_target() {
