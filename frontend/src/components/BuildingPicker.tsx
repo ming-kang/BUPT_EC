@@ -9,13 +9,12 @@ interface BuildingPickerProps {
 }
 
 function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
-  const { state, dispatch } = useSelection();
+  const { selectedBuildings, setBuildings } = useSelection();
 
   if (!selectedCampusData) {
     return null;
   }
 
-  const selectedBuildings = state.selectedBuildings || [];
   const buildings = Array.isArray(selectedCampusData.buildings)
     ? selectedCampusData.buildings
     : [];
@@ -25,16 +24,16 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
       <ToggleButtonGroup
         options={buildings.map((building) => ({
           value: building.name,
-          // Fall back to the raw name while a pre-deploy same-day cache is
-          // still serving payloads without the new field.
-          label: building.display_name || building.name,
+          // decode() guarantees display_name (falling back to name), so the
+          // pre-0.3.x missing-field case never reaches this point.
+          label: building.display_name,
         }))}
         selectedValues={selectedBuildings}
         onToggle={(name) => {
           const next = selectedBuildings.includes(name)
             ? selectedBuildings.filter((x) => x !== name)
             : [...selectedBuildings, name];
-          dispatch({ type: "SET_BUILDINGS", buildings: next });
+          setBuildings(next);
         }}
       />
     </Panel>

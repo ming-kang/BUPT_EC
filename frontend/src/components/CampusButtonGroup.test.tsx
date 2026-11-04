@@ -6,8 +6,10 @@
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Dispatch } from "react";
-import { SelectionContext, type SelectionAction } from "../selectionContext";
+import {
+  SelectionContext,
+  type SelectionValue,
+} from "../selectionContext";
 import type { CampusInfo } from "../api/types";
 import type { Envelope } from "../api/decode";
 import CampusButtonGroup from "./CampusButtonGroup";
@@ -23,26 +25,33 @@ const XITUCHENG = "西土城";
 
 const TODAY_DATA: Envelope = { code: 0, msg: "", data: null };
 
+function makeValue(
+  overrides: Partial<SelectionValue> = {}
+): SelectionValue {
+  return {
+    selectedCampus: "",
+    selectedBuildings: [],
+    selectedClassTimes: [],
+    showClassTime: true,
+    canSelectAllDay: false,
+    setCampus: vi.fn(),
+    setBuildings: vi.fn(),
+    setClassTimes: vi.fn(),
+    setShowClassTime: vi.fn(),
+    setCanSelectAllDay: vi.fn(),
+    ...overrides,
+  };
+}
+
 function renderGroup({
   activeCampusId = "04",
-  dispatch = vi.fn(),
+  value = makeValue(),
 }: {
   activeCampusId?: string;
-  dispatch?: Dispatch<SelectionAction>;
+  value?: SelectionValue;
 } = {}) {
   const view = render(
-    <SelectionContext.Provider
-      value={{
-        state: {
-          selectedCampus: "",
-          selectedBuildings: [],
-          selectedClassTimes: [],
-          showClassTime: true,
-          canSelectAllDay: false,
-        },
-        dispatch,
-      }}
-    >
+    <SelectionContext.Provider value={value}>
       <CampusButtonGroup
         campuses={CAMPUSES}
         todayData={TODAY_DATA}
@@ -50,7 +59,7 @@ function renderGroup({
       />
     </SelectionContext.Provider>
   );
-  return { ...view, dispatch };
+  return { ...view, value };
 }
 
 function pressedOf(name: string | RegExp) {
@@ -75,18 +84,7 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
     const { rerender } = renderGroup({ activeCampusId: "04" });
 
     rerender(
-      <SelectionContext.Provider
-        value={{
-          state: {
-            selectedCampus: "",
-            selectedBuildings: [],
-            selectedClassTimes: [],
-            showClassTime: true,
-            canSelectAllDay: false,
-          },
-          dispatch: vi.fn(),
-        }}
-      >
+      <SelectionContext.Provider value={makeValue()}>
         <CampusButtonGroup
           campuses={CAMPUSES}
           todayData={TODAY_DATA}
@@ -98,9 +96,9 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
     expect(pressedOf(XITUCHENG)).toBe("true");
   });
 
-  it("dispatches the campus selection on click", () => {
-    const { dispatch } = renderGroup({ activeCampusId: "04" });
+  it("selects the campus on click", () => {
+    const { value } = renderGroup({ activeCampusId: "04" });
     fireEvent.click(screen.getByRole("button", { name: XITUCHENG }));
-    expect(dispatch).toHaveBeenLastCalledWith({ type: "SET_CAMPUS", id: "02" });
+    expect(value.setCampus).toHaveBeenLastCalledWith("02");
   });
 });

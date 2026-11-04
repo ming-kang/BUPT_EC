@@ -11,7 +11,8 @@ interface CampusSettingsModalProps {
 }
 
 function CampusSettingsModal(props: CampusSettingsModalProps) {
-  const { state, dispatch } = useSelection();
+  const { showClassTime, canSelectAllDay, setShowClassTime, setCanSelectAllDay } =
+    useSelection();
 
   return (
     <Modal
@@ -31,8 +32,8 @@ function CampusSettingsModal(props: CampusSettingsModalProps) {
           }}
         >
           <Switch
-            checked={state.showClassTime}
-            onChange={(v) => dispatch({ type: "SET_SHOW_CLASS_TIME", value: v })}
+            checked={showClassTime}
+            onChange={(checked) => setShowClassTime(checked)}
             size="small"
           />
           <span>显示课程时间</span>
@@ -46,10 +47,8 @@ function CampusSettingsModal(props: CampusSettingsModalProps) {
           }}
         >
           <Switch
-            checked={state.canSelectAllDay}
-            onChange={(v) =>
-              dispatch({ type: "SET_CAN_SELECT_ALL_DAY", value: v })
-            }
+            checked={canSelectAllDay}
+            onChange={(checked) => setCanSelectAllDay(checked)}
             size="small"
           />
           <span>允许选择已结束节次</span>

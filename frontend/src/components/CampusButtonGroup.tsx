@@ -18,7 +18,7 @@ interface CampusButtonGroupProps {
 }
 
 function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButtonGroupProps) {
-  const { dispatch } = useSelection();
+  const { setCampus } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
   const list = Array.isArray(campuses) ? campuses : [];
   const settingsSplitIndex = Math.floor(list.length / 2);
@@ -48,7 +48,7 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButton
                 // R12: single-select group, but kept on aria-pressed like the
                 // other pickers (design D10) instead of a radiogroup rewrite.
                 pressed={activeCampusId === campus.id}
-                onClick={() => dispatch({ type: "SET_CAMPUS", id: campus.id })}
+                onClick={() => setCampus(campus.id)}
               >
                 {campus.name}
               </ToggleButton>

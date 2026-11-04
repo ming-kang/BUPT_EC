@@ -1,21 +1,31 @@
 /**
  * CampusSettingsModal: the data-updated timestamp renders in Asia/Shanghai
- * regardless of the visitor's local timezone (F-06).
+ * regardless of the visitor's local timezone (F-06), the running-version row
+ * follows the envelope, and the preference switches report through the
+ * useSelection() setters.
  * @vitest-environment jsdom
  */
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import CampusSettingsModal from "./CampusSettingsModal";
 import type { Envelope } from "../api/decode";
-import { SelectionContext, type SelectionState } from "../selectionContext";
+import { SelectionContext, type SelectionValue } from "../selectionContext";
 
-function makeState(): SelectionState {
+function makeValue(
+  overrides: Partial<SelectionValue> = {}
+): SelectionValue {
   return {
     selectedCampus: "01",
     selectedBuildings: [],
     selectedClassTimes: [],
     showClassTime: false,
     canSelectAllDay: false,
+    setCampus: vi.fn(),
+    setBuildings: vi.fn(),
+    setClassTimes: vi.fn(),
+    setShowClassTime: vi.fn(),
+    setCanSelectAllDay: vi.fn(),
+    ...overrides,
   };
 }
 
@@ -38,12 +48,15 @@ function snapshotWith(
   };
 }
 
-function renderModal(todayData: Envelope) {
-  return render(
-    <SelectionContext.Provider value={{ state: makeState(), dispatch: () => {} }}>
-      <CampusSettingsModal open todayData={todayData} onClose={() => {}} />
-    </SelectionContext.Provider>
-  );
+function renderModal(todayData: Envelope, value = makeValue()) {
+  return {
+    value,
+    ...render(
+      <SelectionContext.Provider value={value}>
+        <CampusSettingsModal open todayData={todayData} onClose={() => {}} />
+      </SelectionContext.Provider>
+    ),
+  };
 }
 
 afterEach(() => {
@@ -81,5 +94,24 @@ describe("CampusSettingsModal running version", () => {
     // row appears on its own once the server is upgraded.
     renderModal(envelope());
     expect(screen.queryByText(/当前运行版本/)).toBeNull();
+  });
+});
+
+describe("CampusSettingsModal preference switches", () => {
+  it("reflects the current preferences and reports toggles", () => {
+    const { value } = renderModal(
+      envelope(),
+      makeValue({ showClassTime: true, canSelectAllDay: true })
+    );
+
+    const switches = screen.getAllByRole("switch");
+    expect(switches.every((item) => item.getAttribute("aria-checked") === "true")).toBe(
+      true
+    );
+
+    fireEvent.click(switches[0]);
+    fireEvent.click(switches[1]);
+    expect(value.setShowClassTime).toHaveBeenLastCalledWith(false);
+    expect(value.setCanSelectAllDay).toHaveBeenLastCalledWith(false);
   });
 });

@@ -30,8 +30,8 @@ function formatDateWithWeekday(dateStr: string): string {
 
 function AppContent() {
   const { resp, spinning, isError, retry } = useTodayClassrooms();
-  const { state, dispatch } = useSelection();
-  const { selectedCampus, selectedBuildings, selectedClassTimes } = state;
+  const { selectedCampus, selectedBuildings, selectedClassTimes, setCampus } =
+    useSelection();
   const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
 
   const campuses = useMemo(
@@ -73,9 +73,9 @@ function AppContent() {
 
   useEffect(() => {
     if (activeCampusId !== selectedCampus) {
-      dispatch({ type: "SET_CAMPUS", id: activeCampusId });
+      setCampus(activeCampusId);
     }
-  }, [activeCampusId, selectedCampus, dispatch]);
+  }, [activeCampusId, selectedCampus, setCampus]);
 
   return (
     <ConfigProvider

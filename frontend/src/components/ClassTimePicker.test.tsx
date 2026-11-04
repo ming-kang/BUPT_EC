@@ -3,8 +3,8 @@
  *
  * ClassTimePicker render-time pruning (R10) and clock resync on
  * visibilitychange (R11). The selection store is mocked through
- * SelectionContext so state is fully controlled and the convergence
- * dispatch can be asserted without reducer feedback.
+ * SelectionContext so state is fully controlled and the convergence call can
+ * be asserted without provider feedback.
  */
 import {
   act,
@@ -14,8 +14,10 @@ import {
   screen,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import React from "react";
-import { SelectionContext, type SelectionState, type SelectionAction } from "../selectionContext";
+import {
+  SelectionContext,
+  type SelectionValue,
+} from "../selectionContext";
 import type { CampusInfo } from "../api/types";
 import ClassTimePicker from "./ClassTimePicker";
 
@@ -35,30 +37,31 @@ const CAMPUS = {
   ],
 };
 
-function makeState(overrides: Partial<SelectionState> = {}): SelectionState {
+function makeValue(
+  overrides: Partial<SelectionValue> = {}
+): SelectionValue {
   return {
     selectedCampus: "04",
     selectedBuildings: [],
     selectedClassTimes: [],
     showClassTime: false,
     canSelectAllDay: false,
+    setCampus: vi.fn(),
+    setBuildings: vi.fn(),
+    setClassTimes: vi.fn(),
+    setShowClassTime: vi.fn(),
+    setCanSelectAllDay: vi.fn(),
     ...overrides,
   };
 }
 
-function renderPicker({
-  state = makeState(),
-  dispatch = vi.fn(),
-}: {
-  state?: SelectionState;
-  dispatch?: React.Dispatch<SelectionAction>;
-} = {}) {
+function renderPicker({ value = makeValue() }: { value?: SelectionValue } = {}) {
   const view = render(
-    <SelectionContext.Provider value={{ state, dispatch }}>
+    <SelectionContext.Provider value={value}>
       <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
     </SelectionContext.Provider>
   );
-  return { ...view, dispatch };
+  return { ...view, value };
 }
 
 afterEach(() => {
@@ -70,8 +73,8 @@ describe("ClassTimePicker derived pruning (R10)", () => {
   it("renders ended selections as unselected on the first frame", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
-    const { dispatch } = renderPicker({
-      state: makeState({ selectedClassTimes: [1, 2] }),
+    const { value } = renderPicker({
+      value: makeValue({ selectedClassTimes: [1, 2] }),
     });
 
     const ended = screen.getByRole("button", { name: "01" });
@@ -82,25 +85,19 @@ describe("ClassTimePicker derived pruning (R10)", () => {
     expect(ended.className).not.toContain("ant-btn-primary");
     expect(active.className).toContain("ant-btn-primary");
     // The thin convergence effect still reconciles the store.
-    expect(dispatch).toHaveBeenCalledWith({
-      type: "SET_CLASS_TIMES",
-      times: [2],
-    });
+    expect(value.setClassTimes).toHaveBeenCalledWith([2]);
   });
 
   it("toggles from the pruned list, not the raw store list", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
-    const { dispatch } = renderPicker({
-      state: makeState({ selectedClassTimes: [1, 2] }),
+    const { value } = renderPicker({
+      value: makeValue({ selectedClassTimes: [1, 2] }),
     });
 
     fireEvent.click(screen.getByRole("button", { name: "02" }));
     // Deselecting node 2 must not resurrect the ended node 1.
-    expect(dispatch).toHaveBeenLastCalledWith({
-      type: "SET_CLASS_TIMES",
-      times: [],
-    });
+    expect(value.setClassTimes).toHaveBeenLastCalledWith([]);
   });
 });
 
@@ -112,7 +109,7 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
   it("exposes the pruned selection through aria-pressed", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
-    renderPicker({ state: makeState({ selectedClassTimes: [1, 2] }) });
+    renderPicker({ value: makeValue({ selectedClassTimes: [1, 2] }) });
 
     // Node 1 has ended: pruned out during render, so not pressed.
     expect(pressedOf("01")).toBe("false");
@@ -123,15 +120,12 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
   it("flips aria-pressed when the selection changes", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
-    const { rerender } = renderPicker({ state: makeState() });
+    const { rerender } = renderPicker();
     expect(pressedOf("03")).toBe("false");
 
     rerender(
       <SelectionContext.Provider
-        value={{
-          state: makeState({ selectedClassTimes: [3] }),
-          dispatch: vi.fn(),
-        }}
+        value={makeValue({ selectedClassTimes: [3] })}
       >
         <ClassTimePicker selectedCampusData={CAMPUS as CampusInfo} todayDate={TODAY} />
       </SelectionContext.Provider>

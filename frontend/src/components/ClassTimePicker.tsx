@@ -1,5 +1,5 @@
 import type { CampusInfo } from "../api/types";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   formatShanghaiDate,
   formatShanghaiTime,
@@ -12,7 +12,6 @@ import Panel from "./Panel";
 import "./ClassTimePicker.css";
 
 const FIVE_MINUTES_MS = 5 * 60 * 1000;
-const EMPTY_CLASS_TIMES: number[] = [];
 
 interface ClassTimePickerProps {
   selectedCampusData?: CampusInfo | null;
@@ -20,7 +19,12 @@ interface ClassTimePickerProps {
 }
 
 function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps) {
-  const { state, dispatch } = useSelection();
+  const {
+    selectedClassTimes,
+    canSelectAllDay,
+    showClassTime,
+    setClassTimes,
+  } = useSelection();
   const [now, setNow] = useState(() => new Date());
 
   useEffect(() => {
@@ -52,13 +56,6 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
     };
   }, []);
 
-  const selectedClassTimes = useMemo(
-    () =>
-      Array.isArray(state.selectedClassTimes)
-        ? state.selectedClassTimes
-        : EMPTY_CLASS_TIMES,
-    [state.selectedClassTimes]
-  );
   const options = Array.isArray(selectedCampusData?.nodes)
     ? selectedCampusData.nodes
     : [];
@@ -71,7 +68,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
   const prunedSelected = pruneEndedClassTimes(selectedClassTimes, options, {
     nowTime,
     isToday,
-    canSelectAllDay: state.canSelectAllDay,
+    canSelectAllDay,
   });
 
   useEffect(() => {
@@ -84,21 +81,21 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
     const next = pruneEndedClassTimes(selectedClassTimes, nodes, {
       nowTime,
       isToday,
-      canSelectAllDay: state.canSelectAllDay,
+      canSelectAllDay,
     });
     if (
       next.length !== selectedClassTimes.length ||
       next.some((node, index) => node !== selectedClassTimes[index])
     ) {
-      dispatch({ type: "SET_CLASS_TIMES", times: next });
+      setClassTimes(next);
     }
   }, [
     selectedCampusData,
     selectedClassTimes,
     nowTime,
     isToday,
-    state.canSelectAllDay,
-    dispatch,
+    canSelectAllDay,
+    setClassTimes,
   ]);
 
   if (!selectedCampusData) {
@@ -107,8 +104,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
 
   const normalizedOptions = options.map((item) => ({
     ...item,
-    disabled:
-      isNodeEnded(item.time, nowTime) && !state.canSelectAllDay && isToday,
+    disabled: isNodeEnded(item.time, nowTime) && !canSelectAllDay && isToday,
   }));
 
   function isAllChecked() {
@@ -121,15 +117,14 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
 
   function onCheckAllChange() {
     if (isAllChecked()) {
-      dispatch({ type: "SET_CLASS_TIMES", times: [] });
+      setClassTimes([]);
       return;
     }
-    dispatch({
-      type: "SET_CLASS_TIMES",
-      times: normalizedOptions
+    setClassTimes(
+      normalizedOptions
         .filter((item) => !item.disabled)
-        .map((item) => item.node),
-    });
+        .map((item) => item.node)
+    );
   }
 
   function renderTime(time: unknown, index: number) {
@@ -144,10 +139,10 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
         options={normalizedOptions.map((item) => ({
           value: item.node,
           disabled: item.disabled,
-          className: state.showClassTime ? "time-slot-show-time" : "",
+          className: showClassTime ? "time-slot-show-time" : "",
           content: (
             <div>
-              {state.showClassTime ? (
+              {showClassTime ? (
                 <div
                   style={{
                     fontSize: "0.7em",
@@ -158,7 +153,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
                 </div>
               ) : null}
               {String(item.node).padStart(2, "0")}
-              {state.showClassTime ? (
+              {showClassTime ? (
                 <div
                   style={{
                     fontSize: "0.7em",
@@ -176,11 +171,11 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
           const times = prunedSelected.includes(node)
             ? prunedSelected.filter((x) => x !== node)
             : [...prunedSelected, node];
-          dispatch({ type: "SET_CLASS_TIMES", times });
+          setClassTimes(times);
         }}
       />
       <ToggleButton
-        className={`select-all-btn ${state.showClassTime ? "time-slot-show-time" : ""}`}
+        className={`select-all-btn ${showClassTime ? "time-slot-show-time" : ""}`}
         onClick={onCheckAllChange}
       >
         {isAllChecked() ? "取消" : "全选"}

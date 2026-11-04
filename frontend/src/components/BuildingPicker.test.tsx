@@ -2,51 +2,55 @@
  * @vitest-environment jsdom
  *
  * BuildingPicker: aria-pressed reflects the selected buildings (R12) and the
- * toggle still dispatches add/remove correctly.
+ * toggle reports add/remove through the setBuildings setter.
  */
-import type { Dispatch } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SelectionContext, type SelectionState, type SelectionAction } from "../selectionContext";
+import {
+  SelectionContext,
+  type SelectionValue,
+} from "../selectionContext";
 import type { CampusInfo } from "../api/types";
 import BuildingPicker from "./BuildingPicker";
 
-const CAMPUS = {
+const CAMPUS: CampusInfo = {
   id: "04",
   name: "沙河",
   buildings: [
-    { name: "1", display_name: "教1" },
-    { name: "未来学习大楼", display_name: "主楼" },
+    { name: "1", display_name: "教1", rooms: [] },
+    { name: "未来学习大楼", display_name: "主楼", rooms: [] },
   ],
+  nodes: [],
 };
 
 // antd inserts a space between two-CJK-character button labels.
 const MAIN_BUILDING = /主\s*楼/;
 
-function makeState(overrides: Partial<SelectionState> = {}): SelectionState {
+function makeValue(
+  overrides: Partial<SelectionValue> = {}
+): SelectionValue {
   return {
     selectedCampus: "04",
     selectedBuildings: [],
     selectedClassTimes: [],
     showClassTime: false,
     canSelectAllDay: false,
+    setCampus: vi.fn(),
+    setBuildings: vi.fn(),
+    setClassTimes: vi.fn(),
+    setShowClassTime: vi.fn(),
+    setCanSelectAllDay: vi.fn(),
     ...overrides,
   };
 }
 
-function renderPicker({
-  state = makeState(),
-  dispatch = vi.fn(),
-}: {
-  state?: SelectionState;
-  dispatch?: Dispatch<SelectionAction>;
-} = {}) {
+function renderPicker({ value = makeValue() }: { value?: SelectionValue } = {}) {
   const view = render(
-    <SelectionContext.Provider value={{ state, dispatch }}>
-      <BuildingPicker selectedCampusData={CAMPUS as CampusInfo} />
+    <SelectionContext.Provider value={value}>
+      <BuildingPicker selectedCampusData={CAMPUS} />
     </SelectionContext.Provider>
   );
-  return { ...view, dispatch };
+  return { ...view, value };
 }
 
 function pressedOf(name: string | RegExp) {
@@ -59,30 +63,11 @@ afterEach(() => {
 
 describe("BuildingPicker aria-pressed (R12)", () => {
   it("marks only the selected buildings as pressed", () => {
-    renderPicker({ state: makeState({ selectedBuildings: ["1"] }) });
+    renderPicker({ value: makeValue({ selectedBuildings: ["1"] }) });
 
     // "1" renders through the numeric alias as 教1, 未来学习大楼 as 主楼.
     expect(pressedOf("教1")).toBe("true");
     expect(pressedOf(MAIN_BUILDING)).toBe("false");
-  });
-
-  it("falls back to the raw name when display_name is absent (stale cache)", () => {
-    // Payloads cached before the display_name deploy lack the field; the
-    // picker must degrade to the raw name instead of rendering nothing.
-    const staleCampus = {
-      ...CAMPUS,
-      buildings: [{ name: "未来学习大楼" }],
-    } as CampusInfo;
-    renderPicker({ state: makeState() });
-    cleanup();
-    render(
-      <SelectionContext.Provider
-        value={{ state: makeState(), dispatch: vi.fn() }}
-      >
-        <BuildingPicker selectedCampusData={staleCampus} />
-      </SelectionContext.Provider>
-    );
-    expect(screen.getByRole("button", { name: /未来学习大楼/ })).toBeTruthy();
   });
 
   it("flips aria-pressed when the store selection changes", () => {
@@ -91,32 +76,26 @@ describe("BuildingPicker aria-pressed (R12)", () => {
 
     rerender(
       <SelectionContext.Provider
-        value={{
-          state: makeState({ selectedBuildings: ["未来学习大楼"] }),
-          dispatch: vi.fn(),
-        }}
+        value={makeValue({ selectedBuildings: ["未来学习大楼"] })}
       >
-        <BuildingPicker selectedCampusData={CAMPUS as CampusInfo} />
+        <BuildingPicker selectedCampusData={CAMPUS} />
       </SelectionContext.Provider>
     );
     expect(pressedOf(MAIN_BUILDING)).toBe("true");
   });
 
   it("toggles selection on click", () => {
-    const { dispatch } = renderPicker({
-      state: makeState({ selectedBuildings: ["1"] }),
+    const { value } = renderPicker({
+      value: makeValue({ selectedBuildings: ["1"] }),
     });
 
     fireEvent.click(screen.getByRole("button", { name: MAIN_BUILDING }));
-    expect(dispatch).toHaveBeenLastCalledWith({
-      type: "SET_BUILDINGS",
-      buildings: ["1", "未来学习大楼"],
-    });
+    expect(value.setBuildings).toHaveBeenLastCalledWith([
+      "1",
+      "未来学习大楼",
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "教1" }));
-    expect(dispatch).toHaveBeenLastCalledWith({
-      type: "SET_BUILDINGS",
-      buildings: [],
-    });
+    expect(value.setBuildings).toHaveBeenLastCalledWith([]);
   });
 });

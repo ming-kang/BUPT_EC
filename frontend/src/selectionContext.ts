@@ -1,28 +1,26 @@
-import { createContext, useContext, type Dispatch } from "react";
+import { createContext, useContext } from "react";
 
-export interface SelectionState {
+/**
+ * Selection state + setters shared by the pickers. The provider owns the
+ * state; components read it (and mutate it) only through useSelection().
+ */
+export interface SelectionValue {
   selectedCampus: string;
   selectedBuildings: string[];
   selectedClassTimes: number[];
   showClassTime: boolean;
   canSelectAllDay: boolean;
+  /** Changing the campus clears the selected buildings and class times. */
+  setCampus(id: string): void;
+  setBuildings(buildings: string[]): void;
+  setClassTimes(times: number[]): void;
+  /** Display preferences persist to localStorage. */
+  setShowClassTime(value: boolean): void;
+  /** Display preferences persist to localStorage. */
+  setCanSelectAllDay(value: boolean): void;
 }
 
-export type SelectionAction =
-  | { type: "SET_CAMPUS"; id: string }
-  | { type: "SET_BUILDINGS"; buildings: string[] }
-  | { type: "SET_CLASS_TIMES"; times: number[] }
-  | { type: "SET_SHOW_CLASS_TIME"; value: boolean }
-  | { type: "SET_CAN_SELECT_ALL_DAY"; value: boolean };
-
-export interface SelectionContextValue {
-  state: SelectionState;
-  dispatch: Dispatch<SelectionAction>;
-}
-
-export const SelectionContext = createContext<SelectionContextValue | null>(
-  null
-);
+export const SelectionContext = createContext<SelectionValue | null>(null);
 
 export const SHOW_CLASS_TIME_KEY = "showClassTime";
 export const CAN_SELECT_ALL_DAY_KEY = "canSelectAllDay";
@@ -43,43 +41,21 @@ export function writeLocalStorage(key: string, value: string): void {
   }
 }
 
-export function initSelectionState(): SelectionState {
+/**
+ * Initial display preferences from localStorage. Defaults: class times are
+ * shown unless explicitly disabled; all-day selection is opt-in.
+ */
+export function initPreferences(): Pick<
+  SelectionValue,
+  "showClassTime" | "canSelectAllDay"
+> {
   return {
-    selectedCampus: "",
-    selectedBuildings: [],
-    selectedClassTimes: [],
     showClassTime: readLocalStorage(SHOW_CLASS_TIME_KEY) !== "false",
     canSelectAllDay: readLocalStorage(CAN_SELECT_ALL_DAY_KEY) === "true",
   };
 }
 
-/** Pure reducer — no I/O. Persistence lives in SelectionProvider. */
-export function selectionReducer(
-  state: SelectionState,
-  action: SelectionAction
-): SelectionState {
-  switch (action.type) {
-    case "SET_CAMPUS":
-      return {
-        ...state,
-        selectedCampus: action.id,
-        selectedBuildings: [],
-        selectedClassTimes: [],
-      };
-    case "SET_BUILDINGS":
-      return { ...state, selectedBuildings: action.buildings };
-    case "SET_CLASS_TIMES":
-      return { ...state, selectedClassTimes: action.times };
-    case "SET_SHOW_CLASS_TIME":
-      return { ...state, showClassTime: action.value };
-    case "SET_CAN_SELECT_ALL_DAY":
-      return { ...state, canSelectAllDay: action.value };
-    default:
-      return state;
-  }
-}
-
-export function useSelection(): SelectionContextValue {
+export function useSelection(): SelectionValue {
   const ctx = useContext(SelectionContext);
   if (!ctx) {
     throw new Error("useSelection must be used within SelectionProvider");
