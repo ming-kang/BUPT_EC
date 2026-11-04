@@ -64,73 +64,10 @@ test_parse_mode_matrix() (
   for_invalid_mode extra
 )
 
-test_interactive_modes_require_tty() (
-  local case_dir mode output_file status
 
-  case_dir="${TEST_TMP}/interactive-tty"
-  mkdir -p "${case_dir}"
-  setup_case "${case_dir}"
-  TTY="${case_dir}/missing-tty"
-  require_root_environment() { return 0; }
 
-  for mode in install reconfigure; do
-    reset_config_state
-    output_file="${case_dir}/${mode}.log"
-    set +e
-    main "--mode=${mode}" > "${output_file}" 2>&1
-    status=$?
-    set -e
-    if (( status == 0 )); then
-      fail "${mode} unexpectedly bypassed the TTY gate"
-    fi
-    assert_contains "${output_file}" "Interactive input requires a TTY." "${mode} TTY gate"
-  done
-)
 
-test_prompt_return_values_do_not_capture_feedback() (
-  local case_dir secret_input optional_input required_state result stderr_file
 
-  case_dir="${TEST_TMP}/prompt-return-values"
-  mkdir -p "${case_dir}"
-  setup_case "${case_dir}"
-
-  secret_input="${case_dir}/secret.input"
-  stderr_file="${case_dir}/secret.stderr"
-  printf 'secret-value\n' > "${secret_input}"
-  TTY="${secret_input}"
-  result="$(prompt_secret "Secret value" false 2> "${stderr_file}")"
-  assert_eq secret-value "${result}" "prompt_secret return value"
-  [[ -s "${stderr_file}" ]] || fail "prompt_secret feedback was not sent to stderr"
-
-  optional_input="${case_dir}/optional.input"
-  stderr_file="${case_dir}/optional.stderr"
-  printf 'optional-secret\n' > "${optional_input}"
-  TTY="${optional_input}"
-  result="$(prompt_optional_secret "Optional secret" false 2> "${stderr_file}")"
-  assert_eq optional-secret "${result}" "prompt_optional_secret return value"
-  [[ -s "${stderr_file}" ]] || fail "prompt_optional_secret feedback was not sent to stderr"
-
-  required_state="${case_dir}/required-state"
-  stderr_file="${case_dir}/required.stderr"
-  prompt() {
-    if [[ ! -e "${required_state}" ]]; then
-      : > "${required_state}"
-      printf ''
-    else
-      printf 'required-value'
-    fi
-  }
-  result="$(prompt_required "Required value" "" 2> "${stderr_file}")"
-  assert_eq required-value "${result}" "retrying prompt_required return value"
-  assert_contains "${stderr_file}" "This value is required." "prompt_required retry feedback"
-
-  unset -f prompt
-  TTY="${case_dir}/closed.input"
-  : > "${TTY}"
-  if prompt_required "Closed input" "" >/dev/null 2>&1; then
-    fail "prompt_required accepted EOF instead of propagating the read failure"
-  fi
-)
 
 test_no_arg_main_default_completion_output() (
   local case_dir cert_path key_path output_file expected_file deployment_log
@@ -148,149 +85,55 @@ test_no_arg_main_default_completion_output() (
   deployment_log="${case_dir}/deployment.log"
   : > "${deployment_log}"
 
+  DOMAIN="classroom.example.com"
+  SSL_CERT="${cert_path}"
+  SSL_KEY="${key_path}"
+  JW_USERNAME="default-user"
+  JW_PASSWORD="default-password"
   require_root_environment() { return 0; }
-  require_interactive_tty() { return 0; }
-  prompt_required() {
-    case "$1" in
-      "GitHub repository" | "Backend listen address") printf '%s' "$2" ;;
-      "BUPT JW username") printf '%s' "default-user" ;;
-      "Domain name") printf '%s' "classroom.example.com" ;;
-      "SSL certificate path") printf '%s' "${cert_path}" ;;
-      "SSL private key path") printf '%s' "${key_path}" ;;
-      *) fail "unexpected required prompt in no-arg main: $1" ;;
-    esac
-  }
-  prompt_secret() {
-    case "$1" in
-      "BUPT JW password") printf '%s' "default-password" ;;
-      *) fail "unexpected required secret prompt in no-arg main: $1" ;;
-    esac
-  }
-  prompt_optional_secret() { fail "unexpected optional secret prompt in no-arg main: $1"; }
-  execute_deployment() { printf 'execute\n' >> "${deployment_log}"; }
+  execute_deployment() { printf 'execute
+' >> "${deployment_log}"; }
 
   main > "${output_file}" 2>&1
-  cat > "${expected_file}" <<'EOF'
-BUPT_EC installer
-
+  cat > "${expected_file}" <<'OUTER'
 
 BUPT_EC is installed.
 URL: https://classroom.example.com/
 Service: systemctl status bupt-ec
 Upgrade later: rerun this installer.
-EOF
+OUTER
   cmp -s "${expected_file}" "${output_file}" || fail "no-arg main completion output changed"
   assert_eq install "${INSTALLER_MODE}" "no-arg main mode"
+  assert_eq latest "${CFG_RELEASE_VERSION}" "no-arg main default version"
+  assert_eq "ming-kang/BUPT_EC" "${CFG_RELEASE_REPO}" "no-arg main default repo"
+  assert_eq "127.0.0.1:8080" "${CFG_APP_ADDR}" "no-arg main default address"
   assert_command_count 1 execute "${deployment_log}" "no-arg main deployment count"
+  unset DOMAIN SSL_CERT SSL_KEY JW_USERNAME JW_PASSWORD
 )
 
-test_no_mode_install_prompt_order_baseline() (
-  local case_dir prompt_log expected_log output_file
+test_first_install_requires_credentials() (
+  local case_dir output_file status
 
-  case_dir="${TEST_TMP}/no-mode-install-prompts"
+  case_dir="${TEST_TMP}/first-install-missing-credentials"
   mkdir -p "${case_dir}"
   setup_case "${case_dir}"
   unset_deployment_invocation_environment
-  capture_invocation_overrides
-  load_current_config
-  parse_mode
-  assert_eq install "${INSTALLER_MODE}" "no-mode install selection"
-
-  prompt_log="${case_dir}/prompts.log"
+  DOMAIN="classroom.example.com"
   output_file="${case_dir}/output.log"
-  expected_log="${case_dir}/expected-prompts.log"
-  prompt_required() {
-    printf 'required|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    case "$1" in
-      "GitHub repository") printf '%s' "${2}" ;;
-      "Domain name") printf '%s' "classroom.example.com" ;;
-      "SSL certificate path" | "SSL private key path" | "Backend listen address") printf '%s' "${2}" ;;
-      "BUPT JW username") printf '%s' "baseline-user" ;;
-      *) fail "unexpected required prompt: $1" ;;
-    esac
-  }
-  prompt_optional_secret() {
-    printf 'optional-secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf '%s' "baseline-password"
-  }
-  prompt_secret() {
-    printf 'secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf '%s' "baseline-password"
-  }
+  require_root_environment() { return 0; }
 
-  collect_config_interactive "${INSTALLER_MODE}" > "${output_file}"
-  cat > "${expected_log}" <<'EOF'
-required|GitHub repository|ming-kang/BUPT_EC
-required|Domain name|
-required|SSL certificate path|/etc/letsencrypt/live/classroom.example.com/fullchain.pem
-required|SSL private key path|/etc/letsencrypt/live/classroom.example.com/privkey.pem
-required|BUPT JW username|
-secret|BUPT JW password|false
-required|Backend listen address|127.0.0.1:8080
-EOF
-  cmp -s "${expected_log}" "${prompt_log}" || fail "no-mode install prompt order/defaults changed"
-  assert_contains "${output_file}" "BUPT_EC installer" "no-mode install banner"
-  assert_eq latest "${CFG_RELEASE_VERSION}" "no-mode install version default"
-  assert_eq baseline-user "${CFG_JW_USERNAME}" "no-mode install username prompt result"
-  assert_eq baseline-password "${CFG_JW_PASSWORD}" "no-mode install password prompt result"
+  set +e
+  main < /dev/null > "${output_file}" 2>&1
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    fail "first install without credentials unexpectedly succeeded"
+  fi
+  assert_contains "${output_file}" "JW_USERNAME and JW_PASSWORD are required."     "missing credential message lists the variables"
+  assert_contains "${output_file}" "non-interactive"     "missing credential guidance names the env-var form"
+  assert_contains "${output_file}" "sudo DOMAIN=ec.example.com JW_USERNAME="     "missing credential guidance shows a working example"
+  unset DOMAIN
 )
-
-test_no_mode_install_existing_prompt_defaults() (
-  local case_dir prompt_log expected_log
-
-  case_dir="${TEST_TMP}/no-mode-install-existing-prompts"
-  mkdir -p "${case_dir}"
-  setup_case "${case_dir}"
-  set_valid_test_config
-  CFG_RELEASE_REPO="saved/repository"
-  CFG_RELEASE_VERSION="v1.2.3"
-  CFG_DOMAIN="saved.example.com"
-  CFG_SSL_CERT="/saved/fullchain.pem"
-  CFG_SSL_KEY="/saved/privkey.pem"
-  CFG_JW_USERNAME="saved-user"
-  CFG_JW_PASSWORD="saved-password"
-  CFG_APP_ADDR="127.0.0.1:9090"
-  CFG_DOWNLOAD_BASE_URL="https://mirror.example/releases"
-  mkdir -p "${CONFIG_DIR}"
-  render_env_file "${ENV_FILE}"
-
-  reset_config_state
-  unset_deployment_invocation_environment
-  capture_invocation_overrides
-  load_current_config
-  parse_mode
-
-  prompt_log="${case_dir}/prompts.log"
-  expected_log="${case_dir}/expected-prompts.log"
-  prompt_required() {
-    printf 'required|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf '%s' "$2"
-  }
-  prompt_optional_secret() {
-    printf 'optional-secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf ''
-  }
-  prompt_secret() {
-    printf 'secret|%s|%s\n' "$1" "$2" >> "${prompt_log}"
-    printf ''
-  }
-
-  collect_config_interactive "${INSTALLER_MODE}" > /dev/null
-  cat > "${expected_log}" <<'EOF'
-required|GitHub repository|saved/repository
-required|Domain name|saved.example.com
-required|SSL certificate path|/saved/fullchain.pem
-required|SSL private key path|/saved/privkey.pem
-required|BUPT JW username|saved-user
-secret|BUPT JW password|true
-required|Backend listen address|127.0.0.1:9090
-EOF
-  cmp -s "${expected_log}" "${prompt_log}" || fail "existing no-mode prompt defaults changed"
-  assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "existing no-mode version default"
-  assert_eq saved-user "${CFG_JW_USERNAME}" "existing no-mode username retention"
-  assert_eq saved-password "${CFG_JW_PASSWORD}" "existing no-mode password retention"
-)
-
 test_mode_version_semantics() (
   local case_dir cert_path key_path deployment_log expected_log output_file key cfg_name current_name
 
@@ -410,11 +253,7 @@ test_mode_version_semantics() (
   VERSION=v2.3.4
   capture_invocation_overrides
   load_current_config
-  prompt_required() { printf '%s' "$2"; }
-  prompt() { printf '%s' "$2"; }
-  prompt_optional_secret() { printf ''; }
-  prompt_secret() { printf ''; }
-  collect_config_interactive reconfigure > /dev/null
+  collect_config reconfigure
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "reconfigure ignores VERSION"
 
   deployment_log="${case_dir}/reconfigure-deployment.log"
@@ -437,6 +276,7 @@ EOF
   cmp -s "${expected_log}" "${deployment_log}" || fail "reconfigure deployment call order changed"
 )
 
+
 test_reconfigure_main_uses_saved_version() (
   local case_dir cert_path key_path output_file deployment_log
 
@@ -450,33 +290,29 @@ test_reconfigure_main_uses_saved_version() (
   write_valid_current_config "${cert_path}" "${key_path}" v1.2.3
   unset_deployment_invocation_environment
   VERSION=v9.9.9
+  LOG_CALLER=1
   output_file="${case_dir}/output.log"
   deployment_log="${case_dir}/deployment.log"
   : > "${deployment_log}"
 
   require_root_environment() { return 0; }
-  require_interactive_tty() { return 0; }
-  prompt_required() { printf '%s' "$2"; }
-  prompt() { printf '%s' "$2"; }
-  prompt_optional_secret() { printf ''; }
-  prompt_secret() { printf ''; }
   execute_deployment() {
-    printf '%s|%s\n' "${INSTALLER_MODE}" "${CFG_RELEASE_VERSION}" >> "${deployment_log}"
+    printf '%s|%s
+' "${INSTALLER_MODE}" "${CFG_RELEASE_VERSION}" >> "${deployment_log}"
   }
 
   main --mode=reconfigure > "${output_file}" 2>&1
   assert_eq reconfigure "${INSTALLER_MODE}" "reconfigure main mode"
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "reconfigure main saved version"
-  assert_eq 'reconfigure|v1.2.3' "$(< "${deployment_log}")" \
-    "reconfigure main deployment selection"
-  assert_contains "${output_file}" "BUPT_EC reconfiguration completed." \
-    "reconfigure main completion"
-  assert_contains "${output_file}" "Version: v1.2.3" \
-    "reconfigure main completion version"
+  assert_eq 1 "${CFG_LOG_CALLER}" "reconfigure honors the LOG_CALLER override"
+  assert_eq 'reconfigure|v1.2.3' "$(< "${deployment_log}")"     "reconfigure main deployment selection"
+  assert_contains "${output_file}" "BUPT_EC reconfiguration completed."     "reconfigure main completion"
+  assert_contains "${output_file}" "Version: v1.2.3"     "reconfigure main completion version"
+  unset LOG_CALLER
 )
 
 test_runtime_flags_across_modes() (
-  local case_dir cert_path key_path env_file prompt_log
+  local case_dir cert_path key_path env_file
 
   case_dir="${TEST_TMP}/runtime-flags-modes"
   mkdir -p "${case_dir}"
@@ -494,32 +330,12 @@ test_runtime_flags_across_modes() (
   CFG_LOG_CALLER="current-log-caller"
   render_env_file "${ENV_FILE}"
 
-  prompt_log="${case_dir}/prompts.log"
-  prompt_required() {
-    printf '%s\n' "$1" >> "${prompt_log}"
-    printf '%s' "$2"
-  }
-  prompt() {
-    printf '%s\n' "$1" >> "${prompt_log}"
-    printf '%s' "$2"
-  }
-  prompt_optional_secret() {
-    printf '%s\n' "$1" >> "${prompt_log}"
-    printf ''
-  }
-  prompt_secret() {
-    printf '%s\n' "$1" >> "${prompt_log}"
-    printf ''
-  }
-
   unset_deployment_invocation_environment
   LOG_CALLER="install-log-caller"
   capture_invocation_overrides
   load_current_config
-  : > "${prompt_log}"
-  collect_config_interactive install > /dev/null
+  collect_config install
   assert_eq install-log-caller "${CFG_LOG_CALLER}" "install LOG_CALLER override"
-  assert_not_contains "${prompt_log}" "LOG_CALLER" "install has no LOG_CALLER prompt"
   env_file="${case_dir}/install.env"
   render_env_file "${env_file}"
   assert_contains "${env_file}" "LOG_CALLER='install-log-caller'" "install persists LOG_CALLER"
@@ -529,10 +345,8 @@ test_runtime_flags_across_modes() (
   LOG_CALLER="reconfigure-log-caller"
   capture_invocation_overrides
   load_current_config
-  : > "${prompt_log}"
-  collect_config_interactive reconfigure > /dev/null
+  collect_config reconfigure
   assert_eq reconfigure-log-caller "${CFG_LOG_CALLER}" "reconfigure LOG_CALLER override"
-  assert_not_contains "${prompt_log}" "LOG_CALLER" "reconfigure has no LOG_CALLER prompt"
   env_file="${case_dir}/reconfigure.env"
   render_env_file "${env_file}"
   assert_contains "${env_file}" "LOG_CALLER='reconfigure-log-caller'" "reconfigure persists LOG_CALLER"
@@ -550,7 +364,7 @@ test_runtime_flags_across_modes() (
 )
 
 test_update_noninteractive_skips_packages() (
-  local case_dir cert_path key_path output_file prompt_log tty_log status
+  local case_dir cert_path key_path output_file status
 
   case_dir="${TEST_TMP}/update-noninteractive"
   mkdir -p "${case_dir}"
@@ -563,21 +377,11 @@ test_update_noninteractive_skips_packages() (
   unset_deployment_invocation_environment
 
   output_file="${case_dir}/output.log"
-  prompt_log="${case_dir}/prompts.log"
-  tty_log="${case_dir}/tty.log"
-  : > "${prompt_log}"
-  : > "${tty_log}"
   require_root_environment() { return 0; }
-  require_interactive_tty() {
-    printf 'tty\n' >> "${tty_log}"
-    return 1
-  }
-  install_packages() { printf 'install_packages\n' >> "${MOCK_COMMAND_LOG}"; }
-  create_user() { printf 'create_user\n' >> "${MOCK_COMMAND_LOG}"; }
-  prompt() { printf 'prompt\n' >> "${prompt_log}"; return 1; }
-  prompt_required() { printf 'prompt_required\n' >> "${prompt_log}"; return 1; }
-  prompt_secret() { printf 'prompt_secret\n' >> "${prompt_log}"; return 1; }
-  prompt_optional_secret() { printf 'prompt_optional_secret\n' >> "${prompt_log}"; return 1; }
+  install_packages() { printf 'install_packages
+' >> "${MOCK_COMMAND_LOG}"; }
+  create_user() { printf 'create_user
+' >> "${MOCK_COMMAND_LOG}"; }
 
   set +e
   main --mode=update < /dev/null > "${output_file}" 2>&1
@@ -587,15 +391,12 @@ test_update_noninteractive_skips_packages() (
     cat "${output_file}" >&2
     fail "noninteractive update failed"
   fi
-  [[ ! -s "${prompt_log}" ]] || fail "update unexpectedly prompted"
-  [[ ! -s "${tty_log}" ]] || fail "update unexpectedly checked the TTY"
   assert_command_count 0 install_packages "${MOCK_COMMAND_LOG}" "update install_packages count"
   assert_command_count 0 "apt-get " "${MOCK_COMMAND_LOG}" "update apt command count"
   assert_command_count 1 create_user "${MOCK_COMMAND_LOG}" "update create_user count"
   assert_contains "${ENV_FILE}" "RELEASE_VERSION='v1.2.3'" "update retains saved version"
   assert_contains "${output_file}" "BUPT_EC update completed." "update completion summary"
 )
-
 test_update_explicit_version_reaches_download() (
   local case_dir cert_path key_path output_file deployment_log
 

@@ -39,15 +39,14 @@ update uses the saved `RELEASE_VERSION`. Reconfigure never turns into an
 implicit release change: it keeps the saved version and redownloads it through
 the normal transaction.
 
-No-mode install remains compatible for operators who want the historical
-interactive prompts; on an existing installation it offers saved values as
-defaults. Use `--mode=reconfigure` when the goal is to change settings rather
-than select a release. The password prompt keeps the existing secret when left
-empty.
+The no-mode install is the same non-interactive flow; on an existing
+installation it uses saved values as defaults. Use `--mode=reconfigure` when
+the goal is to change settings rather than select a release; supply only the
+variables that change.
 
 If update reports a missing domain, certificate path, listen address, or valid
-JW credential combination, run `--mode=reconfigure` from a terminal to repair
-the saved configuration. If it reports missing `RELEASE_REPO` or
+JW credential combination, rerun with `--mode=reconfigure`, supplying the
+corrected values as environment variables. If it reports missing `RELEASE_REPO` or
 `RELEASE_VERSION`, run the default install mode to establish that metadata. A
 safe-loader failure is different: inspect the env as root, repair its
 root-controlled ownership/mode/syntax, or move it aside and use default install
@@ -81,7 +80,7 @@ root, by hand followed by an explicit service restart.
 ## Upgrading without GitHub access
 
 If the server cannot reach GitHub, save an explicit HTTPS `DOWNLOAD_BASE_URL`
-for a mirror you control (and already trust) through interactive install or
+for a mirror you control (and already trust) through install mode or
 `--mode=reconfigure`. Update intentionally ignores a one-off
 `DOWNLOAD_BASE_URL` environment override and reuses the saved value, so it
 cannot silently change its trust source. The URL must not include credentials,
@@ -91,7 +90,7 @@ base under the same curl protocol policy. This is operator-chosen trust, not an
 automatic proxy fallback; same-origin checksums verify integrity, not
 independent publisher identity. A saved custom base cannot prove that it serves
 a newly selected version, so update rejects `VERSION` changes while that mirror
-is active. Use interactive install with the target VERSION and a matching
+is active. Use install mode with the target VERSION and a matching
 trusted `DOWNLOAD_BASE_URL` to change both deliberately; install will not
 silently inherit the old mirror during that version change. See
 [deployment.md](deployment.md#offline-or-restricted-networks-explicit-mirrors).

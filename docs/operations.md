@@ -88,7 +88,7 @@ Set `LOG_CALLER=1` in the environment file to add source file/line to each recor
 
 ### Persisted logging settings
 
-`LOG_CALLER` is a persisted installer deployment setting. A normal `--mode=update` copies its saved value unchanged; the interactive `install` and `reconfigure` paths use an explicitly supplied value before a saved value, without adding a prompt for it. To change it through the installer, use a terminal and reconfigure, for example:
+`LOG_CALLER` is a persisted installer deployment setting. A normal `--mode=update` copies its saved value unchanged; the `install` and `reconfigure` paths use an explicitly supplied value before a saved value, without adding a flag for it. To change it, rerun the installer in reconfigure mode with the variable supplied:
 
 ```bash
 sudo LOG_CALLER=1 bash /tmp/bupt-ec-install.sh --mode=reconfigure
@@ -233,7 +233,7 @@ If the message instead says the automatic rollback was incomplete, note the prin
 |---|---|---|
 | Installer exits during upgrade | Look for `Rollback completed.` and run `sudo systemctl status bupt-ec` | New Nginx/service/health validation failed; the previous installation was restored. Fix the reported cause before retrying. |
 | Installer reports incomplete rollback | Preserve the printed root-only recovery directory; run `sudo nginx -t` and inspect `journalctl` | Automatic restoration or old-service restart also failed; use the preserved snapshot for manual recovery. |
-| `/readyz` 503 and startup logs mention credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Run interactive `--mode=reconfigure` to re-enter them. |
+| `/readyz` 503 and startup logs mention credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Rerun with `--mode=reconfigure`, supplying corrected values. |
 | `/readyz` 503, login succeeds, refresh errors in the logs | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
 | Page loads but shows the stale warning | `journalctl -u bupt-ec` for refresh errors | Upstream refresh failing; check the logged `last_refresh_error`-equivalent diagnostics. |

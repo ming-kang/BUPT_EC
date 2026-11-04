@@ -33,16 +33,18 @@ One command on a Debian/Ubuntu server with a domain and TLS certificate already 
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=latest bash
 ```
 
-No `--mode` keeps the original interactive install flow compatible, including
-its prompts and defaults. Stable `vX.Y.Z` tags are the only release channel;
+The installer never prompts: a first install takes its settings from
+environment variables (for example `DOMAIN`, `JW_USERNAME`, `JW_PASSWORD`;
+certificate paths and `APP_ADDR` have defaults), and an existing installation
+reuses its saved values. Stable `vX.Y.Z` tags are the only release channel;
 `VERSION=vX.Y.Z` selects an immutable release, while a first install with no
 saved or explicit version selects `latest`.
 
-| Mode | Use | Version and terminal behavior |
+| Mode | Use | Version selection and behavior |
 | --- | --- | --- |
-| omitted / `--mode=install` | Compatible full interactive install | `VERSION` → saved version → `latest`; requires a TTY |
-| `--mode=update` | Existing deployment update with no prompts | `VERSION` → saved version; no TTY and no apt package install |
-| `--mode=reconfigure` | Interactively change saved deployment settings | Keeps the saved version and ignores `VERSION`; requires a TTY |
+| omitted / `--mode=install` | First install or reinstall with explicit/saved settings | `VERSION` → saved version → `latest`; installs apt packages |
+| `--mode=update` | Existing deployment update | `VERSION` → saved version; no apt package install |
+| `--mode=reconfigure` | Change saved deployment settings | Keeps the saved version and ignores `VERSION` |
 
 Manage and inspect the installation with the standard tools:
 
@@ -66,8 +68,8 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install
 
 See [docs/upgrading.md](docs/upgrading.md) for mirror and rollback rules.
 
-If update reports repairable saved settings, use interactive
-`--mode=reconfigure`; if saved release metadata is missing, use the default
+If update reports repairable saved settings, rerun with `--mode=reconfigure`
+and the corrected variables; if saved release metadata is missing, use the default
 install mode to rebuild it. If the installer says it cannot load the env safely,
 repair its ownership/mode/syntax as root or move it aside and run default
 install; see the upgrade guide for details.

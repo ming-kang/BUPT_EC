@@ -33,7 +33,7 @@ run_suite() {
   done
 }
 
-expected_test_function_count=38
+expected_test_function_count=35
 actual_test_function_count="$(declare -F | awk '$3 ~ /^test_/ { count++ } END { print count + 0 }')"
 assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
   "installer test function inventory"
@@ -41,11 +41,8 @@ assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
 run_suite modes \
   test_entrypoint_stdin_pipe_reaches_root_check \
   test_parse_mode_matrix \
-  test_interactive_modes_require_tty \
-  test_prompt_return_values_do_not_capture_feedback \
   test_no_arg_main_default_completion_output \
-  test_no_mode_install_prompt_order_baseline \
-  test_no_mode_install_existing_prompt_defaults \
+  test_first_install_requires_credentials \
   test_mode_version_semantics \
   test_reconfigure_main_uses_saved_version \
   test_runtime_flags_across_modes \
@@ -84,5 +81,5 @@ run_suite transaction \
   test_successful_upgrade_commits_and_cleans_backup
 
 printf 'installer behavior tests passed (%s entry scenarios; %s test functions)\n' \
-  36 \
+  33 \
   "${actual_test_function_count}"

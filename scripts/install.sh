@@ -34,7 +34,6 @@ NGINX_ENABLED="/etc/nginx/sites-enabled/${SERVICE_NAME}.conf"
 APP_USER="bupt-ec"
 APP_GROUP="bupt-ec"
 DEFAULT_APP_ADDR="127.0.0.1:8080"
-TTY="/dev/tty"
 
 # This is the complete persisted deployment contract. Runtime-only controls
 # (for example SKIP_CHECKSUM) deliberately do not appear here.
@@ -164,14 +163,6 @@ require_root_environment() {
   fi
 }
 
-require_interactive_tty() {
-  # A readable /dev/tty device node can still be unopenable when the process
-  # has no controlling terminal; probe the actual open before any prompt.
-  if [[ ! -r "${TTY}" ]] || ! : < "${TTY}" 2>/dev/null; then
-    echo "Interactive input requires a TTY." >&2
-    return 1
-  fi
-}
 
 reset_config_state() {
   local key
@@ -361,7 +352,7 @@ load_current_config() {
 
   if ! (
     # Do not let a missing field inherit an invocation value in this child.
-    unset REPO VERSION ALLOW_INSECURE_DOWNLOAD_BASE_URL SKIP_CHECKSUM INSTALLER_MODE TTY
+    unset REPO VERSION ALLOW_INSECURE_DOWNLOAD_BASE_URL SKIP_CHECKSUM INSTALLER_MODE
     unset "${DEPLOYMENT_CONFIG_KEYS[@]}"
     # shellcheck disable=SC1090
     if ! . "${ENV_FILE}"; then
@@ -452,77 +443,12 @@ adopt_current_config() {
   fi
 }
 
-prompt() {
-  local label="$1"
-  local default_value="${2:-}"
-  local value
-
-  if [[ -n "${default_value}" ]]; then
-    read -r -p "${label} [${default_value}]: " value < "${TTY}" || return 1
-    printf "%s" "${value:-${default_value}}"
-  else
-    read -r -p "${label}: " value < "${TTY}" || return 1
-    printf "%s" "${value}"
-  fi
-}
-
-prompt_required() {
-  local label="$1"
-  local default_value="${2:-}"
-  local value
-
-  while true; do
-    if ! value="$(prompt "${label}" "${default_value}")"; then
-      return 1
-    fi
-    if [[ -n "${value}" ]]; then
-      printf "%s" "${value}"
-      return
-    fi
-    echo "This value is required." >&2
-  done
-}
-
-prompt_secret() {
-  local label="$1"
-  local has_existing="$2"
-  local value
-
-  if [[ "${has_existing}" == "true" ]]; then
-    read -r -s -p "${label} [keep existing]: " value < "${TTY}" || return 1
-    echo >&2
-    printf "%s" "${value}"
-  else
-    while true; do
-      read -r -s -p "${label}: " value < "${TTY}" || return 1
-      echo >&2
-      if [[ -n "${value}" ]]; then
-        printf "%s" "${value}"
-        return
-      fi
-      echo "This value is required." >&2
-    done
-  fi
-}
-
-prompt_optional_secret() {
-  local label="$1"
-  local has_existing="$2"
-  local value
-
-  if [[ "${has_existing}" == "true" ]]; then
-    read -r -s -p "${label} [keep existing]: " value < "${TTY}" || return 1
-  else
-    read -r -s -p "${label} (optional): " value < "${TTY}" || return 1
-  fi
-  echo >&2
-  printf "%s" "${value}"
-}
-
-collect_config_interactive() {
+# Configuration comes only from environment variables / flags plus the saved
+# private env; there are no interactive prompts. Install and reconfigure apply
+# the same precedence everywhere: an explicit invocation value beats the saved
+# value, which beats the built-in default.
+collect_config() {
   local mode="$1"
-  local password_input
-  local has_password
 
   case "${mode}" in
     install)
@@ -537,57 +463,37 @@ collect_config_interactive() {
       CFG_RELEASE_VERSION="${CURRENT_RELEASE_VERSION}"
       ;;
     *)
-      echo "Invalid interactive installer mode." >&2
+      echo "Invalid installer mode." >&2
       return 1
       ;;
   esac
 
   set_cfg_from_precedence RELEASE_REPO "${DEFAULT_REPO}"
   set_cfg_from_precedence DOMAIN ""
-
-  echo "BUPT_EC installer"
-  echo
-  if ! CFG_RELEASE_REPO="$(prompt_required "GitHub repository" "${CFG_RELEASE_REPO}")"; then
-    return 1
+  if [[ -n "${CFG_DOMAIN}" ]]; then
+    set_cfg_from_precedence SSL_CERT "/etc/letsencrypt/live/${CFG_DOMAIN}/fullchain.pem"
+    set_cfg_from_precedence SSL_KEY "/etc/letsencrypt/live/${CFG_DOMAIN}/privkey.pem"
+  else
+    set_cfg_from_precedence SSL_CERT ""
+    set_cfg_from_precedence SSL_KEY ""
   fi
-  if ! CFG_DOMAIN="$(prompt_required "Domain name" "${CFG_DOMAIN}")"; then
-    return 1
-  fi
-
-  set_cfg_from_precedence SSL_CERT "/etc/letsencrypt/live/${CFG_DOMAIN}/fullchain.pem"
-  if ! CFG_SSL_CERT="$(prompt_required "SSL certificate path" "${CFG_SSL_CERT}")"; then
-    return 1
-  fi
-  set_cfg_from_precedence SSL_KEY "/etc/letsencrypt/live/${CFG_DOMAIN}/privkey.pem"
-  if ! CFG_SSL_KEY="$(prompt_required "SSL private key path" "${CFG_SSL_KEY}")"; then
-    return 1
-  fi
-
   set_cfg_from_precedence JW_USERNAME ""
-  if ! CFG_JW_USERNAME="$(prompt_required "BUPT JW username" "${CFG_JW_USERNAME}")"; then
-    return 1
-  fi
-
   set_cfg_from_precedence JW_PASSWORD ""
-  has_password=false
-  if [[ -n "${CFG_JW_PASSWORD}" ]]; then
-    has_password=true
-  fi
-  if ! password_input="$(prompt_secret "BUPT JW password" "${has_password}")"; then
-    return 1
-  fi
-  if [[ -n "${password_input}" ]]; then
-    CFG_JW_PASSWORD="${password_input}"
-  fi
-
   set_cfg_from_precedence APP_ADDR "${DEFAULT_APP_ADDR}"
-  if ! CFG_APP_ADDR="$(prompt_required "Backend listen address" "${CFG_APP_ADDR}")"; then
+  set_cfg_from_precedence DOWNLOAD_BASE_URL ""
+  # This runtime setting is supported by the service but has no dedicated
+  # installer flag; it follows the same precedence when supplied.
+  set_cfg_from_precedence LOG_CALLER ""
+
+  if [[ -z "${CFG_JW_USERNAME}" || -z "${CFG_JW_PASSWORD}" ]]; then
+    {
+      echo "JW_USERNAME and JW_PASSWORD are required."
+      echo "This installer is non-interactive; supply configuration as environment variables, for example:"
+      echo "  curl -fsSL <install.sh-url> | sudo DOMAIN=ec.example.com JW_USERNAME=<user> JW_PASSWORD=<password> bash"
+      echo "SSL_CERT and SSL_KEY default to the Let's Encrypt layout for DOMAIN when omitted."
+    } >&2
     return 1
   fi
-  set_cfg_from_precedence DOWNLOAD_BASE_URL ""
-  # This runtime setting is supported by the service but deliberately has no
-  # interactive prompt.
-  set_cfg_from_precedence LOG_CALLER ""
 }
 
 shell_quote() {
@@ -1866,17 +1772,15 @@ main() {
 
   case "${INSTALLER_MODE}" in
     install)
-      require_interactive_tty || return
-      collect_config_interactive install || return
+      collect_config install || return
       ;;
     update)
       require_existing_installation update || return
       adopt_current_config || return
       ;;
     reconfigure)
-      require_interactive_tty || return
       require_existing_installation reconfigure || return
-      collect_config_interactive reconfigure || return
+      collect_config reconfigure || return
       ;;
   esac
 

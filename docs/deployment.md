@@ -61,18 +61,32 @@ curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=v0.1.6 bash
 ```
 
-No `--mode` is deliberately the compatible, fully interactive `install` path:
-its question order, defaults, and existing-installation defaults remain the
-same. It stores the selected value as `RELEASE_VERSION` in
-`/etc/bupt-ec/bupt-ec.env` along with the deployment settings.
+The installer never prompts: configuration comes from environment variables
+(flags) plus, on an existing installation, the saved private env. A first
+install needs at least the credentials and the domain; everything else falls
+back to a default or the saved value. The selected release is stored as
+`RELEASE_VERSION` in `/etc/bupt-ec/bupt-ec.env` along with the deployment
+settings:
+
+```bash
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | \
+  sudo VERSION=latest \
+  DOMAIN=ec.example.com \
+  JW_USERNAME=your_username \
+  JW_PASSWORD=your_password \
+  bash
+```
+
+`sudo VAR=value bash` passes the values through sudo to the installer
+process.
 
 ### Installer modes
 
-| Mode | Intended use | Version selection | TTY and package behavior |
-| --- | --- | --- | --- |
-| omitted / `--mode=install` | First install or the legacy-compatible interactive entrypoint | explicit `VERSION` → saved `RELEASE_VERSION` → `latest` | TTY required; installs supported packages through apt |
-| `--mode=update` | Prompt-free update of an existing deployment | explicit `VERSION` → saved `RELEASE_VERSION` | No TTY or prompts; skips apt and preflights required tools |
-| `--mode=reconfigure` | Interactively change deployment configuration | saved `RELEASE_VERSION` only; ignores `VERSION` | TTY required; installs supported packages and reruns the transaction |
+| Mode | Intended use | Version selection and behavior |
+| --- | --- | --- |
+| omitted / `--mode=install` | First install, or reinstall with explicit/saved settings | explicit `VERSION` → saved `RELEASE_VERSION` → `latest`; installs supported packages through apt |
+| `--mode=update` | Prompt-free update of an existing deployment | explicit `VERSION` → saved `RELEASE_VERSION`; skips apt and preflights required tools |
+| `--mode=reconfigure` | Change deployment configuration without changing the release | saved `RELEASE_VERSION` only; ignores `VERSION`; installs supported packages and reruns the transaction |
 
 The Installer accepts both `--mode=value` and `--mode value`; the
 remote-script form below uses the first spelling and must use `bash -s --` so
@@ -83,8 +97,9 @@ the argument is forwarded to the downloaded script:
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=update
 # Pin a stable update or roll back to it explicitly.
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo VERSION=v0.1.6 bash -s -- --mode=update
-# Change settings interactively while retaining the installed version.
-curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo bash -s -- --mode=reconfigure
+# Change settings while retaining the installed version; supply the changed
+# variables just like a first install.
+curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo DOMAIN=new.example.com bash -s -- --mode=reconfigure
 ```
 
 `update` does not read `/dev/tty`, so a downloaded script is suitable for a
@@ -100,30 +115,36 @@ the supported rollback selector. Without it, update uses the saved version. By
 contrast, reconfigure always keeps the saved version even if `VERSION` is set.
 
 If update reports a missing domain, certificate, address, or credential, repair
-those settings with interactive `--mode=reconfigure`. If it reports missing
+those settings by rerunning with `--mode=reconfigure` and the corrected
+variables. If it reports missing
 `RELEASE_REPO`/`RELEASE_VERSION`, use the default install mode to establish
 release metadata. If it cannot load the env safely, inspect and repair the
 root-controlled env ownership, mode, or syntax; if it cannot be repaired, move
 it aside and use default install to rebuild it. These failures happen before a
 download or snapshot.
 
-The interactive install and reconfigure flows ask for:
+Install and reconfigure resolve every setting with the same precedence: an
+explicitly set environment variable beats the saved value in
+`/etc/bupt-ec/bupt-ec.env`, which beats the built-in default:
 
-- GitHub repository (default `ming-kang/BUPT_EC`)
-- domain name
-- SSL certificate and private key paths (defaults follow the Let's Encrypt layout)
-- BUPT teaching affairs username and password
-- backend listen address (default `127.0.0.1:8080`)
+- `DOMAIN` (required on a first install)
+- `JW_USERNAME` / `JW_PASSWORD` (required on a first install)
+- `SSL_CERT` / `SSL_KEY` (default `/etc/letsencrypt/live/<DOMAIN>/fullchain.pem` and `.../privkey.pem`)
+- `APP_ADDR` (default `127.0.0.1:8080`)
+- `RELEASE_REPO` (default `ming-kang/BUPT_EC`; legacy alias `REPO`)
+- `DOWNLOAD_BASE_URL` (empty means the official GitHub release source)
+- `LOG_CALLER` (empty by default)
 
-Environment variables can pre-seed or override interactive choices, for example:
+Environment variables can pre-seed or override any of them, for example:
 
 ```bash
 curl -fsSL https://github.com/ming-kang/BUPT_EC/releases/latest/download/install.sh | sudo REPO=ming-kang/BUPT_EC VERSION=v0.1.6 bash
 ```
 
-`LOG_CALLER` is a persisted deployment setting but is not an extra prompt; use
-an interactive install/reconfigure invocation to change it. `update` preserves
-its saved value and only honors `VERSION` as an override.
+`LOG_CALLER` is a persisted deployment setting with no dedicated flag; supply
+it as an environment variable on an install/reconfigure invocation to change
+it. `update` preserves its saved value and only honors `VERSION` as an
+override.
 
 ## What the installer does
 
@@ -149,11 +170,11 @@ only when you control and trust it.
 
 When you control a trusted mirror (for example on an IPv6-only network that
 cannot reach GitHub), copy the matching release assets there and set the base
-URL through an interactive install/reconfigure path:
+URL through an install or reconfigure invocation:
 
 ```bash
 # Obtain install.sh from a machine that can reach GitHub (or your mirror),
-# inspect it, then run on the target host. This is the compatible install path:
+# inspect it, then run on the target host:
 sudo VERSION=v0.1.6 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.6 bash install.sh
 # On an existing host, save a mirror without changing its saved release version.
 # The URL below is valid only when the saved RELEASE_VERSION is v0.1.6 and the
@@ -161,11 +182,11 @@ sudo VERSION=v0.1.6 DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.
 sudo DOWNLOAD_BASE_URL=https://your-mirror.example/releases/v0.1.6 bash install.sh --mode=reconfigure
 ```
 
-A later prompt-free `--mode=update` reuses the saved mirror and intentionally
+A later `--mode=update` reuses the saved mirror and intentionally
 ignores one-off configuration overrides, so it cannot silently change its
 trusted source. Because a custom base URL does not encode a verifiable package
 version, update refuses an explicit `VERSION` that differs from the saved
-version while a mirror is configured; run the interactive install path with
+version while a mirror is configured; run install mode with
 that VERSION and an explicitly supplied matching trusted `DOWNLOAD_BASE_URL`
 instead. The default install path likewise refuses to change VERSION while
 silently inheriting an old mirror.
