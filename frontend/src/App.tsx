@@ -11,11 +11,7 @@ import useTodayClassrooms from "./useTodayClassrooms";
 import { classroomWarningMessage } from "./todayClassroomsResponse";
 import SelectionProvider from "./SelectionProvider";
 import { useSelection } from "./selectionContext";
-import {
-  applyDarkClass,
-  getSystemPrefersDark,
-  resolveDarkMode,
-} from "./darkMode";
+import { applyDarkClass, getSystemPrefersDark } from "./darkMode";
 import { chooseCampusId } from "./campusSelection";
 
 const TodayClassroomTable = lazy(
@@ -36,9 +32,7 @@ function AppContent() {
   const { resp, spinning, isError, retry } = useTodayClassrooms();
   const { state, dispatch } = useSelection();
   const { selectedCampus, selectedBuildings, selectedClassTimes } = state;
-  const [isDark, setIsDark] = useState(() =>
-    resolveDarkMode(getSystemPrefersDark())
-  );
+  const [isDark, setIsDark] = useState(() => getSystemPrefersDark());
 
   const campuses = useMemo(
     () =>
@@ -65,9 +59,8 @@ function AppContent() {
     const mql = window.matchMedia("(prefers-color-scheme: dark)");
 
     function matchMode(e: { matches: boolean }) {
-      const dark = resolveDarkMode(e.matches);
-      applyDarkClass(dark);
-      setIsDark(dark);
+      applyDarkClass(e.matches);
+      setIsDark(e.matches);
     }
 
     mql.addEventListener("change", matchMode);

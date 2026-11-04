@@ -3,11 +3,6 @@
  * There is no in-app toggle; user preference is not persisted.
  */
 
-/** True only for the literal boolean true (mirrors the JS `=== true` guard). */
-export function resolveDarkMode(systemPrefersDark: unknown): boolean {
-  return systemPrefersDark === true;
-}
-
 interface ClassListLike {
   add(name: string): void;
   remove(name: string): void;

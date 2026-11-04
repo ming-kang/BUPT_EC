@@ -2,22 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyDarkClass,
   getSystemPrefersDark,
-  resolveDarkMode,
 } from "./darkMode";
-
-describe("resolveDarkMode", () => {
-  it("is true only when system prefers dark", () => {
-    expect(resolveDarkMode(true)).toBe(true);
-    expect(resolveDarkMode(false)).toBe(false);
-  });
-
-  it("treats non-true values as light", () => {
-    expect(resolveDarkMode(undefined)).toBe(false);
-    expect(resolveDarkMode(null)).toBe(false);
-    expect(resolveDarkMode(0)).toBe(false);
-    expect(resolveDarkMode("true")).toBe(false);
-  });
-});
 
 describe("applyDarkClass", () => {
   it("adds and removes the dark class", () => {

@@ -33,7 +33,7 @@ export function formatShanghaiDateTime(date: Date = new Date()): string {
   }).format(date);
 }
 
-export function parseNodeEndTime(timeRange: unknown): string {
+function parseNodeEndTime(timeRange: unknown): string {
   const [, endTime = ""] = String(timeRange || "").split("-");
   return endTime.trim();
 }
