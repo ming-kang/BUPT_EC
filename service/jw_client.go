@@ -12,7 +12,7 @@ import (
 )
 
 // JWClient is the stateless protocol-level client for the JW system.
-// Token and API URL caching live in TokenManager, not here.
+// Token and API URL caching live on ClassroomService, not here.
 type JWClient interface {
 	QueryCampus(ctx context.Context, apiURL string, campusID string, token string) ([]model.JWClassInfo, error)
 	Login(ctx context.Context, apiURL string) (string, error)

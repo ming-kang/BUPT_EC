@@ -10,7 +10,30 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Changed
 
+- The backend now runs a single refresh loop that owns all JW traffic, login
+  state, and the in-memory snapshot. Requests never start JW calls; stale
+  responses no longer wait briefly for a refresh, and retry timing no longer
+  uses jitter. `/readyz` always returns only `status` and `version`.
+- First installs and `--mode=reconfigure` take configuration from environment
+  variables only (no interactive prompts); `JW_USERNAME` and `JW_PASSWORD`
+  are required.
+- Installer rollback now snapshots only the files it overwrites (binary, env
+  file, systemd unit, managed Nginx site) plus the prior service state.
+- The frontend fetches with a built-in polling scheduler instead of SWR,
+  validates the full response shape before rendering, aborts in-flight
+  requests on unmount, shows a fixed safe message for network errors, and
+  uses a Safari 14-compatible request timeout.
 - The Release workflow runs on `v*` tags and manual dispatch. Pushes to `main` no longer start a packaging dry-run.
+
+### Removed
+
+- The `bupt-ec` operations CLI and its `deployment.meta` file. Use
+  `systemctl`, `journalctl`, `curl /readyz`, and the documented
+  `install.sh --mode=update` command; upgrades delete the stale CLI files.
+- The `JW_TOKEN` override, `READYZ_DIAGNOSTICS`, and the Prometheus
+  `/metrics` endpoint.
+- The installer fragment generator: `scripts/install.sh` is now the single
+  source.
 
 ### Security
 

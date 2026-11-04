@@ -13,10 +13,11 @@ sudo journalctl -u bupt-ec -f
 sudo journalctl -u bupt-ec -n 200
 ```
 
-A readiness 503 during warmup is normal right after a restart; `/readyz`
-returns 200 once the first classroom refresh succeeds.
+A readiness 503 is normal right after a restart; `/readyz` returns 200 once
+the first classroom refresh succeeds.
 
-On shutdown the server drains gracefully: it stops accepting connections, finishes in-flight requests, and waits (within a 10-second budget) for any background classroom refresh to complete.
+On shutdown the server cancels the refresh loop (stopping any in-flight JW
+request), stops accepting connections, and drains in-flight requests.
 
 ## Timeout budget (API cold path)
 
@@ -25,8 +26,8 @@ are intentionally ordered:
 
 | Layer | Budget | Role |
 | --- | --- | --- |
-| Cold-miss wait (`DefaultColdWaitTimeout`) | 5s | handler fails fast with `503` + `Retry-After`; the refresh continues in the background |
-| JW / classroom refresh context | 30s | shared upstream work bound (background only) |
+| Cold-miss wait (`service.ColdWaitTimeout`) | 5s | handler fails fast with `503` + `Retry-After`; the refresh continues in the background |
+| JW classroom refresh context | 30s | refresh-loop upstream work bound (background only) |
 | Go HTTP `WriteTimeout` | 15s | headroom over the cold-wait bound for marshal + transfer |
 | Nginx `/api/` `proxy_read_timeout` | 60s | leaves transfer margin for the JSON response |
 
@@ -63,7 +64,7 @@ The body is deliberately minimal (no runtime internals on the public surface):
 `last_refresh_warning` describes a usable partial outcome, while
 `last_refresh_error` describes the latest total refresh failure. A partial cache
 can remain ready; use `cache_partial` and `partial_campuses` to identify its
-scope. A `503` right after a restart is normal until the warmup refresh finishes.
+scope. A `503` right after a restart is normal until the first refresh finishes.
 
 ## Logging
 
@@ -127,28 +128,14 @@ sudo journalctl -u bupt-ec | grep '20260703081504A1B2C3D4E5F6A7B8C9D2'
 
 The backend keeps a single same-day in-memory cache of classroom data (business day = **Asia/Shanghai**):
 
-- **Fresh TTL**: about 5 minutes. Fully successful fresh cache (`error` null) is served directly with no JW call.
-- **Stale window**: after the fresh TTL, the cached payload may still be served with `stale: true` until the next Shanghai midnight, while a refresh runs in the background (stale-while-revalidate).
-- **Partial campus success**: if one campus query fails but another succeeds, the payload is still cached; failed campuses keep prior same-day data when available, `partial_campuses` lists their IDs, and a top-level `error` describes the partial failure. While that partial payload is still inside the fresh TTL, the API **soft-stale revalidates**: it returns the data immediately and kicks a single-flight background refresh so the failed campus is retried without waiting the full 5 minutes.
-- **Failure backoff**: after a **partial** refresh outcome (cached payload with
-  top-level `error`), new refresh attempts are suppressed for a fixed **30
-  seconds**. After a **total** refresh failure, consecutive failures escalate a
-  base ladder of **30s → 1m → 2m → 5m (cap)** with a small bounded jitter of
-  about ±10% of the base step (absolute cap ±5s) so retries do not stampede JW.
-  Full success resets the ladder. Stale/partial responses still carry the last
-  user-facing error message where applicable. Backoff may span Shanghai
-  midnight; yesterday's cache is never reused, and the next allowed attempt can
-  refresh the new business day once `nextRefreshAllowed` is reached.
-- **Day stamping**: `date` / `expires_at` / `stale_until` on a cache entry are taken when the refresh **finishes** (not when it starts), so a JW round-trip that crosses Shanghai midnight is labeled for the completion day.
-- **Cross-day reuse**: never. Yesterday's cache is ignored.
+- **Fresh TTL**: about 5 minutes. A fully successful fresh snapshot is served directly with no JW call.
+- **Stale window**: after the fresh TTL the snapshot is served with `stale: true` until the next Shanghai midnight while the refresh loop is nudged in the background.
+- **Partial campus success**: if one campus fails but another succeeds, the snapshot is still published; failed campuses keep prior same-day data when available, `partial_campuses` lists their IDs, and a top-level `error` describes the partial failure. Requests that see a partial snapshot nudge the loop, which retries no sooner than **30 seconds** after the partial result.
+- **Failure backoff**: consecutive total failures retry after **30s → 1m → 2m → 5m (cap)**; request nudges inside that window are ignored and cold requests fail fast with the last error. Any usable result resets the ladder. Stale responses carry the last total-failure message when there is one.
+- **Day stamping**: `date` / `expires_at` / `stale_until` are taken when the refresh **finishes**, so a JW round-trip that crosses Shanghai midnight is labeled for the completion day.
+- **Cross-day reuse**: never. Yesterday's snapshot is ignored.
 
-Refreshes are triggered on demand by `GET /api/get_data` and by a process-local warmup scheduler. The scheduler attempts immediately at startup, then behaves according to cache state:
-
-- no usable cache: retry after 30 seconds, 1 minute, 2 minutes, then at most every 5 minutes (while still respecting the refresh coordinator's `nextRefreshAllowed` backoff);
-- partial cache: retry no faster than the 5-minute fresh TTL, unless the Shanghai day boundary arrives first;
-- complete cache: wait until the next Shanghai midnight plus a small 1–5 second jitter.
-
-This means a midnight refresh suppressed by a backoff is retried after the allowed time instead of being abandoned until the following day. Concurrent requests and warmup share the same single in-flight refresh. The cache is process-local: restarting clears it, and multiple instances do not share it.
+All JW traffic comes from one in-process refresh loop. It refreshes immediately at startup, then at the next Shanghai midnight after a full success, every 5 minutes while partial, along the failure ladder after total failures, and whenever a request nudges it outside the backoff window. Concurrent requests never start their own JW calls. The cache is process-local: restarting clears it, and multiple instances do not share it.
 
 ## Static asset caching (SPA)
 
@@ -181,23 +168,23 @@ Each process privately owns:
 
 - same-day classroom cache
 - JW token / API URL cache
-- refresh singleflight and adaptive backoff
+- refresh loop and failure backoff
 - runtime readiness
 
-Restart clears that memory until warmup succeeds again. Running two or more
+Restart clears that memory until the first refresh succeeds again. Running two or more
 `bupt-ec` instances behind round-robin is **not** recommended: each instance
 logs into JW and refreshes independently, multiplies upstream load, and can
-return briefly different readiness or stale flags. In-process singleflight is
+return briefly different readiness or stale flags. The in-process refresh loop is
 **not** cross-instance coordination.
 
 ### Capacity and failure boundary (current)
 
 | Concern | Behavior |
 | --- | --- |
-| Concurrent clients | Share one refresh attempt per process |
+| Concurrent clients | Read one snapshot; one refresh loop per process |
 | Scale-out | Vertical (larger host / better JW headroom), not multi-app replicas |
-| Restart | Cache miss until warmup; brief `/readyz` 503 is expected |
-| JW outage | Adaptive backoff + stale/partial cache while still same Shanghai day |
+| Restart | Cache miss until the first refresh; brief `/readyz` 503 is expected |
+| JW outage | Failure backoff + stale/partial cache while still same Shanghai day |
 | Signals | `/readyz`, structured logs (`log_id`) |
 
 No SLA or QPS figure is claimed without capacity testing.
@@ -215,11 +202,9 @@ exists in this repository today.
 
 Until one of those is designed and implemented, operate a single primary instance.
 
-During graceful shutdown, the application cancels the warmup scheduler before draining HTTP handlers, then waits for the scheduler and already-started refresh workers. Once background draining begins, no new refresh worker can be added.
-
 If the teaching affairs system is temporarily unavailable but today's cache exists, the API returns `stale: true` plus an `error` object, and the frontend shows a warning banner (also shown for partial-campus `error` without stale). When `partial_campuses` is present, the banner names the affected campus or shows its ID. If a partial cache is followed by a total refresh failure, the newer total-failure warning takes precedence over the older partial warning.
 
-The UI keeps the last successful snapshot after a browser/network refresh failure only while its `date` still matches the current Asia/Shanghai business day, `stale_until` is valid and in the future, and `campuses` remains an array. Once the snapshot crosses midnight or passes `stale_until`, the page clears the classroom filters/table and shows the hard error state instead of yesterday's data. Hard-empty and repeated client-refresh failures retry automatically after 10, 20, 30, then at most 60 seconds; a valid response resets the failure count. Partial-campus payloads poll no faster than the backend's 30-second refresh backoff (base), ordinary stale payloads no faster than 15 seconds, and fresh payloads wait until `expires_at` (1s floor). Auto-reload applies a small **positive-only** jitter (≤10% of the base delay, absolute cap 5s) so multi-tab clients desync without shortening those minimum intervals, then clamps the final delay to remaining `stale_until` time so a large random sample cannot schedule past the hard display deadline. Hidden tabs cancel the reload timer; becoming visible after the deadline revalidates promptly and does not keep showing yesterday's filters. These background retries do not trigger the full-page loading spinner.
+The UI keeps the last successful snapshot after a browser/network refresh failure only while its `date` still matches the current Asia/Shanghai business day, and `stale_until` is in the future. Once the snapshot crosses midnight or passes `stale_until`, the page clears the classroom filters/table and shows the hard error state instead of yesterday's data. Hard-empty and repeated client-refresh failures retry automatically after 10, 20, 30, then at most 60 seconds; a valid response resets the failure count. Partial-campus payloads poll no faster than the backend's 30-second refresh backoff (base), ordinary stale payloads no faster than 15 seconds, and fresh payloads wait until `expires_at` (1s floor). Auto-reload applies a small **positive-only** jitter (≤10% of the base delay, absolute cap 5s) so multi-tab clients desync without shortening those minimum intervals, then clamps the final delay to remaining `stale_until` time so a large random sample cannot schedule past the hard display deadline. Hidden tabs issue no requests; becoming visible after the deadline revalidates promptly and does not keep showing yesterday's filters. These background retries do not trigger the full-page loading spinner.
 
 ## Troubleshooting
 

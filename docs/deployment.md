@@ -6,7 +6,7 @@ The recommended path is the one-command installer on a Debian/Ubuntu server. A m
 
 **Supported topology:** one `bupt-ec` process behind one Nginx reverse proxy on a
 single host (`APP_ADDR` loopback). Do not run multiple active app instances for
-horizontal scale-out today — cache, token, refresh singleflight, and readiness
+horizontal scale-out today — cache, token, refresh loop, and readiness
 are process-local. See [operations.md](operations.md#deployment-topology-supported-today)
 for limits and future options.
 

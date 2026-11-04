@@ -110,7 +110,7 @@ curl -s http://127.0.0.1:8080/readyz | head -c 400; echo
 sudo journalctl -u bupt-ec -n 50 --no-pager
 ```
 
-`/healthz` should return `{"status":"ok"}` immediately. `/readyz` returns 200 once the first classroom refresh has succeeded (this may take a few seconds after a restart while the warmup login runs); its body is deliberately minimal (`status` + `version`). For deeper runtime checks read the structured logs (`journalctl -u bupt-ec`), which always carry the same diagnostics with a `log_id`.
+`/healthz` should return `{"status":"ok"}` immediately. `/readyz` returns 200 once the first classroom refresh has succeeded (this may take a few seconds after a restart while the first login runs); its body is deliberately minimal (`status` + `version`). For deeper runtime checks read the structured logs (`journalctl -u bupt-ec`), which always carry the same diagnostics with a `log_id`.
 
 Confirm the running build is the one you just installed: the `/readyz` body carries a `version` field that must equal the installed tag (for example `v0.1.6`). If it still shows the previous version, the service was not restarted or a different artifact was installed — recheck `systemctl status bupt-ec` and rerun the installer with an explicit `VERSION`.
 
