@@ -27,11 +27,9 @@ The remote form needs `bash -s -- --mode=update`; placing `--mode` directly on
 `bash` does not pass it to a script read from stdin. The fallback remains
 noninteractive with closed standard input.
 
-| Mode | When to use it | Release selection | Terminal behavior |
-| --- | --- | --- | --- |
-| omitted / `--mode=install` | Compatible full interactive install flow | `VERSION` → saved version → `latest` | TTY required |
-| `--mode=update` | Normal existing-deployment update | `VERSION` → saved version | No TTY and no prompts |
-| `--mode=reconfigure` | Change saved deployment settings interactively | Saved version only; ignores `VERSION` | TTY required |
+The installer modes and their version-selection rules are documented in
+[deployment.md](deployment.md#installer-modes); this page covers the update
+path specifically.
 
 An explicit `VERSION=vX.Y.Z` in update mode is the supported way to select any
 specific stable release, including rolling back to one. With no `VERSION`,

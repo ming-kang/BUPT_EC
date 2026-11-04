@@ -213,74 +213,18 @@ Do not pipe installers from unknown third-party hosts into `sudo bash`.
 ## Manual deployment
 
 For non-apt systems or custom setups, deploy the release tarball by hand.
+Download and unpack a release from
+[GitHub Releases](https://github.com/ming-kang/BUPT_EC/releases), install the
+binary at `/opt/bupt-ec/bupt-ec` (root-owned), and write
+`/etc/bupt-ec/bupt-ec.env` (mode `0600`, root-owned) with at least
+`JW_USERNAME`, `JW_PASSWORD`, and `APP_ADDR` — see `.env.example` for the full
+local variable set. Then enable and start the unit
+(`sudo systemctl daemon-reload && sudo systemctl enable --now bupt-ec`) and
+point Nginx at the loopback `APP_ADDR`.
 
-Download and unpack a release from [GitHub Releases](https://github.com/ming-kang/BUPT_EC/releases), then:
-
-```text
-/opt/bupt-ec/
-  bupt-ec          # binary from the tarball
-
-/etc/bupt-ec/
-  bupt-ec.env      # environment file, mode 0600
-```
-
-`bupt-ec.env` needs at least:
-
-```bash
-JW_USERNAME=your_username
-JW_PASSWORD=your_password
-APP_ADDR=127.0.0.1:8080
-```
-
-Example systemd unit (`/etc/systemd/system/bupt-ec.service`):
-
-```ini
-[Unit]
-Description=BUPT_EC
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-WorkingDirectory=/opt/bupt-ec
-ExecStart=/opt/bupt-ec/bupt-ec
-Restart=always
-RestartSec=5
-EnvironmentFile=/etc/bupt-ec/bupt-ec.env
-
-[Install]
-WantedBy=multi-user.target
-```
-
-For production, also add the hardening directives used by the installer (see
-`scripts/installer/30-render.sh::render_systemd_service`; the generated
-`scripts/install.sh` contains the released copy).
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now bupt-ec
-sudo systemctl status bupt-ec
-```
-
-Minimal Nginx reverse proxy:
-
-```nginx
-server {
-    listen 80;
-    server_name your.domain.example;
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-The full production site written by the installer (TLS, security headers, rate
-limiting) is in `scripts/installer/30-render.sh::render_nginx_site` and can be
-used as a template; `scripts/install.sh` is its generated release artifact.
+The installer's render functions in `scripts/install.sh` are the reference
+for the production files: `render_systemd_service` writes the hardened unit
+(dedicated service user, sandboxing directives, root-owned binary, writable
+`run_log` only) and `render_nginx_site` writes the TLS site (HTTP→HTTPS
+redirect, security headers, `/api/` rate limiting with the 60s read timeout).
+Use those functions as the template rather than maintaining a copy here.
