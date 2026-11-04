@@ -1332,63 +1332,29 @@ prepare_staging() {
 # -----------------------------------------------------------------------------
 # shellcheck disable=SC2153
 
-# The transaction snapshots only what this run can overwrite: the binary, the
-# private env file, the systemd unit, and the managed Nginx site, plus whether
-# the service was enabled/active. Enablement links are deterministic: the
-# systemd link is managed by `systemctl enable/disable` from the recorded
-# state, and the Nginx link exists exactly when the site does.
-write_runtime_snapshot() {
-  local destination="$1"
-  local service_enabled=0
-  local service_active=0
-
-  if systemctl is-enabled --quiet "${SERVICE_NAME}" 2>/dev/null; then
-    service_enabled=1
-  fi
-  if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
-    service_active=1
-  fi
-
-  (umask 077; cat > "${destination}" <<EOF
-service_enabled=${service_enabled}
-service_active=${service_active}
-EOF
-  ) || return
-  chmod 0600 "${destination}" || return
-}
-
-read_runtime_snapshot_value() {
-  local snapshot="$1"
-  local key="$2"
-  local line value
-
-  line="$(grep -E "^${key}=" "${snapshot}" 2>/dev/null || true)"
-  value="${line#*=}"
-  if [[ "${value}" == "1" ]]; then
-    printf '1'
-  else
-    printf '0'
-  fi
-}
-
+# The transaction snapshots exactly what this run can overwrite — the binary,
+# the private env file, the systemd unit, the managed Nginx site, and both
+# enablement links — plus whether the service was running. Links are copied
+# with `cp -a` like any other file, so rollback restores the prior on-disk
+# state literally instead of inferring it.
 snapshot_installation() {
   local backup_dir="$1"
   local manifest="${backup_dir}/manifest"
-  local runtime_state="${backup_dir}/runtime_state"
-  local role target
-  local -a backup_files=()
+  local role target service_active=0
+  local -a snapshot_targets=(
+    $'binary\t'"${INSTALL_DIR}/bupt-ec"
+    $'env\t'"${ENV_FILE}"
+    $'service\t'"${SERVICE_FILE}"
+    $'service_link\t'"${SYSTEMD_ENABLED_LINK}"
+    $'nginx_site\t'"${NGINX_SITE}"
+    $'nginx_link\t'"${NGINX_ENABLED}"
+  )
 
   rm -rf "${backup_dir}" || return
   mkdir -p "${backup_dir}" || return
   chmod 0700 "${backup_dir}" || return
   (umask 077; : > "${manifest}") || return
 
-  backup_files=(
-    $'binary\t'"${INSTALL_DIR}/bupt-ec"
-    $'env\t'"${ENV_FILE}"
-    $'service\t'"${SERVICE_FILE}"
-    $'nginx_site\t'"${NGINX_SITE}"
-  )
   while IFS=$'\t' read -r role target; do
     if [[ -e "${target}" || -L "${target}" ]]; then
       if ! cp -a -- "${target}" "${backup_dir}/${role}"; then
@@ -1399,20 +1365,15 @@ snapshot_installation() {
     else
       printf '%s\t0\t%s\n' "${role}" "${target}" >> "${manifest}" || return
     fi
-  done < <(printf '%s\n' "${backup_files[@]}")
-  # The Nginx enablement link has no backup copy: its content is derived from
-  # the site. Record only whether it existed so rollback can recreate or
-  # remove it deterministically.
-  if [[ -e "${NGINX_ENABLED}" || -L "${NGINX_ENABLED}" ]]; then
-    printf 'nginx_enabled\t1\t%s\n' "${NGINX_ENABLED}" >> "${manifest}" || return
-  else
-    printf 'nginx_enabled\t0\t%s\n' "${NGINX_ENABLED}" >> "${manifest}" || return
-  fi
-  chmod 0600 "${manifest}" || return
+  done < <(printf '%s\n' "${snapshot_targets[@]}")
   if [[ -f "${backup_dir}/env" ]]; then
     chmod 0600 "${backup_dir}/env" || return
   fi
-  write_runtime_snapshot "${runtime_state}" || return
+
+  if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
+    service_active=1
+  fi
+  (umask 077; printf 'service_active=%s\n' "${service_active}" > "${backup_dir}/runtime_state") || return
 }
 
 atomic_install_file() {
@@ -1461,24 +1422,16 @@ rollback_installation() {
   local backup_dir="$1"
   local role existed target
   local failed=0
-  local runtime_state="${backup_dir}/runtime_state"
-  local service_enabled=0
-  local service_active=0
 
   if [[ ! -r "${backup_dir}/manifest" ]]; then
     echo "Rollback manifest is missing or unreadable." >&2
     return 1
   fi
 
-  if [[ -r "${runtime_state}" ]]; then
-    service_enabled="$(read_runtime_snapshot_value "${runtime_state}" service_enabled)"
-    service_active="$(read_runtime_snapshot_value "${runtime_state}" service_active)"
-  fi
-
   echo "Installation failed; rolling back previous files..." >&2
 
-  # Stop any running unit before replacing/removing files so first-install
-  # late failures cannot leave a process without a unit file.
+  # Stop the (possibly new) unit before touching files so no process keeps
+  # running from a binary or unit that is about to be replaced or removed.
   if systemctl is-active --quiet "${SERVICE_NAME}" 2>/dev/null; then
     if ! systemctl stop "${SERVICE_NAME}" >/dev/null 2>&1; then
       echo "Rollback failed while stopping ${SERVICE_NAME}." >&2
@@ -1487,24 +1440,7 @@ rollback_installation() {
   fi
 
   while IFS=$'\t' read -r role existed target; do
-    if ! rm -f -- "${target}.new.$$" "${target}.rollback.$$"; then
-      echo "Rollback failed while cleaning temporary ${role} files." >&2
-      failed=1
-    fi
-    if [[ "${role}" == "nginx_enabled" ]]; then
-      # Derived link: recreate or remove it to match the recorded existence
-      # and the restored/removed site; there is no backup copy.
-      if [[ "${existed}" == "1" ]]; then
-        if ! atomic_install_symlink "${NGINX_SITE}" "${NGINX_ENABLED}"; then
-          echo "Rollback failed while restoring the Nginx enablement link." >&2
-          failed=1
-        fi
-      elif ! rm -f -- "${target}"; then
-        echo "Rollback failed while removing the new Nginx enablement link." >&2
-        failed=1
-      fi
-      continue
-    fi
+    rm -f -- "${target}.new.$$" "${target}.rollback.$$" 2>/dev/null || true
     if [[ "${existed}" == "1" ]]; then
       if ! restore_snapshot_target "${backup_dir}/${role}" "${target}"; then
         echo "Rollback failed while restoring ${role}." >&2
@@ -1520,39 +1456,17 @@ rollback_installation() {
     echo "Rollback failed during systemctl daemon-reload." >&2
     failed=1
   fi
-
-  if [[ -e "${SERVICE_FILE}" || -L "${SERVICE_FILE}" ]]; then
-    if [[ "${service_enabled}" == "1" ]]; then
-      if ! systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1; then
-        echo "Rollback failed while re-enabling ${SERVICE_NAME}." >&2
-        failed=1
-      fi
-    else
-      if ! systemctl disable "${SERVICE_NAME}" >/dev/null 2>&1; then
-        echo "Rollback failed while disabling ${SERVICE_NAME}." >&2
-        failed=1
-      fi
+  if grep -qx 'service_active=1' "${backup_dir}/runtime_state" 2>/dev/null; then
+    if ! systemctl start "${SERVICE_NAME}" >/dev/null 2>&1; then
+      echo "Rollback failed while starting previous ${SERVICE_NAME}." >&2
+      failed=1
     fi
-    if [[ "${service_active}" == "1" ]]; then
-      if ! systemctl start "${SERVICE_NAME}" >/dev/null 2>&1; then
-        echo "Rollback failed while starting previous ${SERVICE_NAME}." >&2
-        failed=1
-      fi
-    fi
-  else
-    # First install: ensure enablement is gone and the unit is not left
-    # active. The service was already stopped above.
-    rm -f -- "${SYSTEMD_ENABLED_LINK}" >/dev/null 2>&1 || failed=1
   fi
-
-  # Revalidate and reload Nginx so the running proxy matches the restored or
-  # removed site (including a first-install late failure after a commit
-  # reload).
+  # Reload Nginx so the running proxy matches the restored or removed site.
   if ! nginx -t >/dev/null 2>&1; then
     echo "Rollback failed during nginx configuration test." >&2
     failed=1
-  fi
-  if ! systemctl reload nginx >/dev/null 2>&1; then
+  elif ! systemctl reload nginx >/dev/null 2>&1; then
     echo "Rollback failed while reloading nginx." >&2
     failed=1
   fi

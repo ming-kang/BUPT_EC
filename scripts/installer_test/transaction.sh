@@ -161,9 +161,37 @@ test_upgrade_inactive_service_stays_inactive_on_rollback() {
   assert_command_count 1 "systemctl restart ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "inactive upgrade still attempts new restart"
   assert_command_count 1 "systemctl stop ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "inactive upgrade stops newly started service"
   assert_command_count 0 "systemctl start ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "inactive upgrade must not start previously inactive service"
-  assert_command_count 1 "systemctl disable ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "inactive upgrade re-disables previous service"
+  assert_command_count 0 "systemctl disable ${SERVICE_NAME}" "${MOCK_COMMAND_LOG}" "inactive upgrade restores the link literally"
   assert_contains "${output}" "Rollback completed." "inactive upgrade rollback output"
   assert_path_absent "${session_dir}" "completed inactive upgrade rollback session cleanup"
+}
+
+test_damaged_installation_rollback_preserves_enablement_link() {
+  local case_dir session_dir staging_dir backup_dir output before after
+  case_dir="${TEST_TMP}/damaged-installation-rollback"
+  session_dir="${case_dir}/session"
+  staging_dir="${session_dir}/staging"
+  backup_dir="${session_dir}/backup"
+  output="${case_dir}/output.log"
+  mkdir -p "${session_dir}"
+  chmod 0700 "${session_dir}"
+  setup_case "${case_dir}"
+  # Damaged installation: the unit file is gone but its enablement link stays.
+  seed_existing_installation false true
+  rm -f -- "${SERVICE_FILE}"
+  make_staging "${staging_dir}"
+  before="$(capture_target_state)"
+  export MOCK_NGINX_FAIL_ON_TEST_CALL=1
+
+  if run_transaction_with_cleanup "${session_dir}" "${staging_dir}" "${backup_dir}" > "${output}" 2>&1; then
+    fail "damaged installation nginx failure unexpectedly committed"
+  fi
+  after="$(capture_target_state)"
+  assert_eq "${before}" "${after}" "damaged installation rollback restores on-disk state"
+  assert_path_absent "${SERVICE_FILE}" "damaged installation stays without a unit file"
+  assert_service_enabled true "damaged installation keeps its enablement link"
+  assert_service_active false "damaged installation stays inactive"
+  assert_contains "${output}" "Rollback completed." "damaged installation rollback output"
 }
 
 test_first_install_failure_removes_new_targets() {

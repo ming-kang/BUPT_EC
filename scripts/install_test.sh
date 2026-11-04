@@ -33,7 +33,7 @@ run_suite() {
   done
 }
 
-expected_test_function_count=35
+expected_test_function_count=36
 actual_test_function_count="$(declare -F | awk '$3 ~ /^test_/ { count++ } END { print count + 0 }')"
 assert_eq "${expected_test_function_count}" "${actual_test_function_count}" \
   "installer test function inventory"
@@ -72,6 +72,7 @@ run_suite transaction \
   test_nginx_failure_rolls_back_upgrade \
   test_restart_and_health_failures_roll_back_upgrade \
   test_upgrade_inactive_service_stays_inactive_on_rollback \
+  test_damaged_installation_rollback_preserves_enablement_link \
   test_first_install_failure_removes_new_targets \
   test_first_install_late_failures_stop_service_and_reload_nginx \
   test_incomplete_rollback_preserves_recovery_backup
@@ -81,5 +82,5 @@ run_suite transaction \
   test_successful_upgrade_commits_and_cleans_backup
 
 printf 'installer behavior tests passed (%s entry scenarios; %s test functions)\n' \
-  33 \
+  34 \
   "${actual_test_function_count}"
