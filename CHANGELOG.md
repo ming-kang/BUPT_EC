@@ -48,9 +48,15 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Security
 
-- Go builds and releases now require Go 1.26.9, which includes the standard
-  library fixes for the net/http, net/textproto, and crypto/tls advisories
-  reported by govulncheck against Go 1.25.13.
+- Go builds and releases now require Go 1.26.10, which includes the standard
+  library fixes for the net/http, net/textproto, crypto/tls, and crypto/x509
+  advisories reported by govulncheck (GO-2026-6809 fixed in 1.26.10).
+- `github.com/klauspost/compress` is updated to 1.20.3 for the zstd decoder
+  panic advisory GO-2026-6865.
+- Frontend tooling is refreshed within existing major lines (Vite 7.3.7, and
+  through lockfile refresh undici 7.30.2 and zod 4.6.7), clearing all
+  high-severity development audit findings. The obsolete brace-expansion
+  audit ignore is removed.
 
 ## [0.3.1] - 2026-09-02
 
