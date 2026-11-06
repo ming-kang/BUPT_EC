@@ -40,8 +40,8 @@ function AppContent() {
   );
   // Derive the effective campus during render so the first data frame
   // already shows the selected campus and its cards (no post-effect blank
-  // frame). The effect below only reconciles the store, whose reducer also
-  // resets buildings/class times on campus change.
+  // frame). The effect below only reconciles the store; setCampus resets
+  // buildings/class times on campus change.
   const activeCampusId = chooseCampusId({
     campuses,
     partialCampusIds: resp.data?.partial_campuses,

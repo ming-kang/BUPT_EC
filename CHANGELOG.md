@@ -27,6 +27,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 
 ### Fixed
 
+- Frontend polling now isolates each effect's request lifecycle: a late
+  response from React StrictMode's discarded effect no longer ends or
+  overwrites the active request, and unmount still aborts that active request.
 - An installer killed or interrupted by power loss mid-commit is now recovered
   automatically on the next run from a persistent journal at
   `/var/lib/bupt-ec/transaction`.

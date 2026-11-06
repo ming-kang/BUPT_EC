@@ -15,9 +15,7 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
     return null;
   }
 
-  const buildings = Array.isArray(selectedCampusData.buildings)
-    ? selectedCampusData.buildings
-    : [];
+  const { buildings } = selectedCampusData;
 
   return (
     <Panel className="building-picker responsive-card">

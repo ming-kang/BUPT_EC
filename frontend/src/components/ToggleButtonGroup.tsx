@@ -18,22 +18,17 @@ interface ToggleButtonProps {
 }
 
 function ToggleButton({ pressed, className, disabled, onClick, children }: ToggleButtonProps) {
-  const buttonProps: {
-    className?: string;
-    disabled?: boolean;
-    onClick?: () => void;
-    type?: "primary" | "default";
-    "aria-pressed"?: boolean;
-  } = {
-    className,
-    disabled,
-    onClick,
-  };
-  if (typeof pressed === "boolean") {
-    buttonProps.type = pressed ? "primary" : "default";
-    buttonProps["aria-pressed"] = pressed;
-  }
-  return <Button {...buttonProps}>{children}</Button>;
+  return (
+    <Button
+      className={className}
+      disabled={disabled}
+      onClick={onClick}
+      type={pressed ? "primary" : "default"}
+      aria-pressed={pressed}
+    >
+      {children}
+    </Button>
+  );
 }
 
 /**
@@ -41,7 +36,7 @@ function ToggleButton({ pressed, className, disabled, onClick, children }: Toggl
  * option descriptors. Domain logic (store dispatch, pruning, select-all)
  * stays with the callers; this component only owns the shared presentation.
  */
-export interface ToggleOption<T extends string | number = string> {
+interface ToggleOption<T extends string | number> {
   value: T;
   label?: ReactNode;
   /** content overrides label when a richer node layout is needed. */
@@ -59,19 +54,17 @@ interface ToggleButtonGroupProps<T extends string | number> {
 
 function ToggleButtonGroup<T extends string | number>({
   options,
-  selectedValues,
+  selectedValues = [],
   onToggle,
   className,
 }: ToggleButtonGroupProps<T>) {
-  const selected = Array.isArray(selectedValues) ? selectedValues : [];
-  const list = Array.isArray(options) ? options : [];
 
   return (
     <div className={`toggle-button-group ${className || ""}`}>
-      {list.map((option) => (
+      {options.map((option) => (
         <ToggleButton
           key={option.value}
-          pressed={selected.includes(option.value)}
+          pressed={selectedValues.includes(option.value)}
           className={option.className}
           disabled={option.disabled}
           onClick={() => onToggle(option.value)}

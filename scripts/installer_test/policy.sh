@@ -17,7 +17,7 @@ test_version_policy() {
   # The nightly channel was removed; a machine still carrying
   # RELEASE_VERSION=nightly must fail with the migration command, not a bare
   # "invalid value" that leaves the operator guessing.
-  local status output_file
+  local status output_file normalized_base
   output_file="${TEST_TMP}/nightly-rejected.log"
   set +e
   validate_version nightly >"${output_file}" 2>&1
@@ -40,9 +40,12 @@ test_version_policy() {
     "https://github.com/ming-kang/BUPT_EC/releases/download/v0.1.4" \
     "$(resolve_download_base_url "ming-kang/BUPT_EC" "v0.1.4" "")" \
     "stable tag release URL"
+  assert_eq "" "$(validate_download_base_url "")" "empty base selects official downloads"
+  normalized_base="$(validate_download_base_url "https://mirror.example/releases/v0.1.4/")"
+  assert_eq "https://mirror.example/releases/v0.1.4" "${normalized_base}" "preflight returns normalized base"
   assert_eq \
     "https://mirror.example/releases/v0.1.4" \
-    "$(resolve_download_base_url "ignored/repo" "v0.1.4" "https://mirror.example/releases/v0.1.4/")" \
+    "$(resolve_download_base_url "ignored/repo" "v0.1.4" "${normalized_base}")" \
     "custom download URL"
 
   output_file="${TEST_TMP}/github-unreachable.log"
@@ -69,7 +72,7 @@ test_version_policy() {
   set +e
   (
     host_reachable() { return 0; }
-    resolve_download_base_url "ignored/repo" "v0.1.4" "https://mirror.example/releases/v0.1.4/"
+    resolve_download_base_url "ignored/repo" "v0.1.4" "${normalized_base}"
   ) >"${output_file}" 2>&1
   status=$?
   set -e
@@ -111,7 +114,7 @@ test_version_policy() {
 
   test_download_base_url_matrix
   test_download_base_url_secret_redaction
-  test_curl_proto_args
+  test_download_protocol_policy
 }
 
 test_download_base_url_matrix() {
@@ -205,43 +208,37 @@ test_download_base_url_secret_redaction() {
   fi
   assert_not_contains "${output_file}" "tok_LIVE_secret" "query token never printed"
   assert_contains "${output_file}" "query" "query rejection names the rule"
-
-  output_file="${TEST_TMP}/secret-resolve.log"
-  set +e
-  (
-    resolve_download_base_url "ignored/repo" "v0.1.4" \
-      "https://user:s3cret-pass@mirror.example/releases?token=tok_LIVE_secret"
-  ) >"${output_file}" 2>&1
-  status=$?
-  set -e
-  if (( status == 0 )); then
-    fail "resolve accepted secret URL"
-  fi
-  assert_not_contains "${output_file}" "s3cret-pass" "resolve log has no password"
-  assert_not_contains "${output_file}" "tok_LIVE_secret" "resolve log has no token"
 }
 
-test_curl_proto_args() {
-  local -a https_args=()
-  local -a http_args=()
-  local arg
+# Assert the actual curl calls for both the archive and checksums, rather than
+# testing an intermediate argument-encoding helper.
+test_download_protocol_policy() (
+  local case_dir work_dir scheme protocols base_url
+  case_dir="${TEST_TMP}/download-protocol-policy"
+  setup_case "${case_dir}"
+  work_dir="${case_dir}/work"
+  mkdir -p "${work_dir}"
+  unset SKIP_CHECKSUM
+  ALLOW_INSECURE_DOWNLOAD_BASE_URL=true
 
-  while IFS= read -r -d '' arg; do
-    https_args+=("${arg}")
-  done < <(curl_download_proto_args "https")
-  assert_eq 4 "${#https_args[@]}" "https proto arg count"
-  assert_eq "--proto" "${https_args[0]}" "https --proto flag"
-  assert_eq "=https" "${https_args[1]}" "https allows only https"
-  assert_eq "--proto-redir" "${https_args[2]}" "https --proto-redir flag"
-  assert_eq "=https" "${https_args[3]}" "https redirects only https"
+  curl() {
+    assert_eq "--proto" "$2" "download --proto flag"
+    assert_eq "${protocols}" "$3" "download allowed protocols"
+    assert_eq "--proto-redir" "$4" "download --proto-redir flag"
+    assert_eq "${protocols}" "$5" "download redirect protocols"
+    command curl "$@"
+  }
 
-  while IFS= read -r -d '' arg; do
-    http_args+=("${arg}")
-  done < <(curl_download_proto_args "http")
-  assert_eq 4 "${#http_args[@]}" "http proto arg count"
-  assert_eq "=http,https" "${http_args[1]}" "http break-glass allows http+https"
-  assert_eq "=http,https" "${http_args[3]}" "http redirects allow http+https"
-}
+  for scheme in https http; do
+    protocols='=https'
+    if [[ "${scheme}" == "http" ]]; then
+      protocols='=http,https'
+    fi
+    base_url="$(validate_download_base_url "${scheme}://mirror.example/releases")"
+    download_release "ming-kang/BUPT_EC" v1.2.3 amd64 "${work_dir}" "${base_url}" \
+      > "${case_dir}/output.log" 2>&1
+  done
+)
 
 test_app_addr_validation() {
   local app_addr

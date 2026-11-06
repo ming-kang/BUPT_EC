@@ -46,7 +46,7 @@ func NewJWHTTPClient() *http.Client {
 }
 
 func httpGet(client HTTPDoer, ctx context.Context, rawURL string) (int, http.Header, []byte, error) {
-	return httpRequest(client, ctx, http.MethodGet, rawURL, nil, nil, nil)
+	return httpRequest(client, ctx, http.MethodGet, rawURL, nil, nil)
 }
 
 func httpPostForm(client HTTPDoer, ctx context.Context, rawURL string, data map[string]string) (int, http.Header, []byte, error) {
@@ -55,34 +55,18 @@ func httpPostForm(client HTTPDoer, ctx context.Context, rawURL string, data map[
 		values.Set(key, value)
 	}
 	headers := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
-	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, nil, []byte(values.Encode()))
+	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, []byte(values.Encode()))
 }
 
 func httpPostWithHeader(client HTTPDoer, ctx context.Context, rawURL string, headers map[string]string) (int, http.Header, []byte, error) {
-	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, nil, nil)
+	return httpRequest(client, ctx, http.MethodPost, rawURL, headers, nil)
 }
 
-func httpRequest(client HTTPDoer, ctx context.Context, method string, rawURL string, headers map[string]string, query map[string]string, body []byte) (int, http.Header, []byte, error) {
+func httpRequest(client HTTPDoer, ctx context.Context, method string, rawURL string, headers map[string]string, body []byte) (int, http.Header, []byte, error) {
 	if client == nil {
 		return 0, nil, nil, errors.New("HTTP client is required")
 	}
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		return 0, nil, nil, err
-	}
-	if len(query) > 0 {
-		q := parsedURL.Query()
-		for key, value := range query {
-			q.Set(key, value)
-		}
-		parsedURL.RawQuery = q.Encode()
-	}
-
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewBuffer(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), reader)
+	req, err := http.NewRequestWithContext(ctx, method, rawURL, bytes.NewReader(body))
 	if err != nil {
 		return 0, nil, nil, err
 	}

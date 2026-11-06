@@ -1,28 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { chooseCampusId } from "./campusSelection";
+import type { CampusInfo } from "./api/types";
 
-const shaheEmpty = {
+const shaheEmpty: CampusInfo = {
   id: "04",
   name: "沙河",
   buildings: [],
   nodes: [],
 };
 
-const shaheWithData = {
+const shaheWithData: CampusInfo = {
   id: "04",
   name: "沙河",
-  buildings: [{ name: "S1", rooms: [] }],
+  buildings: [{ name: "S1", display_name: "S1", rooms: [] }],
   nodes: [],
 };
 
-const xituchengWithData = {
+const xituchengWithData: CampusInfo = {
   id: "01",
   name: "西土城",
-  buildings: [{ name: "主楼", rooms: [] }],
+  buildings: [{ name: "主楼", display_name: "主楼", rooms: [] }],
   nodes: [],
 };
 
-const xituchengEmpty = {
+const xituchengEmpty: CampusInfo = {
   id: "01",
   name: "西土城",
   buildings: [],
@@ -36,6 +37,28 @@ describe("chooseCampusId", () => {
         campuses: [xituchengWithData, shaheWithData],
         partialCampusIds: [],
         selectedCampusId: "",
+      })
+    ).toBe("04");
+  });
+
+  it("uses decoded campuses when the optional partial list is absent", () => {
+    expect(
+      chooseCampusId({
+        campuses: [xituchengWithData, shaheWithData],
+        selectedCampusId: "",
+      })
+    ).toBe("04");
+  });
+
+  it("keeps a selected campus with nodes but no buildings", () => {
+    expect(
+      chooseCampusId({
+        campuses: [xituchengWithData, {
+          ...shaheEmpty,
+          nodes: [{ node: 1, time: "08:00-08:45", room_count: 0 }],
+        }],
+        partialCampusIds: ["04"],
+        selectedCampusId: "04",
       })
     ).toBe("04");
   });

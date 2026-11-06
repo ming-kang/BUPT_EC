@@ -70,32 +70,13 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
   });
 
   useEffect(() => {
-    if (!selectedCampusData) {
-      return;
-    }
-    const next = pruneEndedClassTimes(
-      selectedClassTimes,
-      selectedCampusData.nodes,
-      {
-        nowTime,
-        isToday,
-        canSelectAllDay,
-      }
-    );
     if (
-      next.length !== selectedClassTimes.length ||
-      next.some((node, index) => node !== selectedClassTimes[index])
+      selectedCampusData &&
+      prunedSelected.length !== selectedClassTimes.length
     ) {
-      setClassTimes(next);
+      setClassTimes(prunedSelected);
     }
-  }, [
-    selectedCampusData,
-    selectedClassTimes,
-    nowTime,
-    isToday,
-    canSelectAllDay,
-    setClassTimes,
-  ]);
+  }, [selectedCampusData, prunedSelected, selectedClassTimes, setClassTimes]);
 
   if (!selectedCampusData) {
     return null;
@@ -126,8 +107,8 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
     );
   }
 
-  function renderTime(time: unknown, index: number) {
-    const [start = "", end = ""] = String(time || "").split("-");
+  function renderTime(time: string, index: number) {
+    const [start = "", end = ""] = time.split("-");
     return index === 0 ? start : end;
   }
 

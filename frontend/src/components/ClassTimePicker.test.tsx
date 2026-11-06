@@ -89,6 +89,15 @@ describe("ClassTimePicker derived pruning (R10)", () => {
     expect(value.setClassTimes).toHaveBeenCalledWith([2]);
   });
 
+  it("does not write back when pruning removes no selected nodes", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(BASE_NOW);
+    const { value } = renderPicker({
+      value: makeValue({ selectedClassTimes: [2, 3] }),
+    });
+    expect(value.setClassTimes).not.toHaveBeenCalled();
+  });
+
   it("toggles from the pruned list, not the raw store list", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);

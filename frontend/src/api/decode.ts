@@ -85,21 +85,6 @@ function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function readNumberArray(value: unknown): number[] | null {
-  if (!Array.isArray(value)) {
-    return null;
-  }
-  const out: number[] = [];
-  for (const item of value) {
-    const number = readNumber(item);
-    if (number === null) {
-      return null;
-    }
-    out.push(number);
-  }
-  return out;
-}
-
 /** Strict array decode: every item must pass, or the whole field is null. */
 function readArray<T>(
   value: unknown,
@@ -139,7 +124,7 @@ function decodeRoom(value: unknown): RoomInfo | null {
   }
   const name = readString(value.name);
   const capacity = readNumber(value.capacity);
-  const freeNodes = readNumberArray(value.free_nodes);
+  const freeNodes = readArray(value.free_nodes, readNumber);
   if (name === null || capacity === null || freeNodes === null) {
     return null;
   }

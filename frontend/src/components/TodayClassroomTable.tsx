@@ -1,6 +1,6 @@
 import { Empty, Modal } from "antd";
 import { useMemo, useState } from "react";
-import type { BuildingInfo, RoomInfo } from "../api/types";
+import type { CampusInfo, RoomInfo } from "../api/types";
 import Panel from "./Panel";
 import "./TodayClassroomTable.css";
 
@@ -10,9 +10,9 @@ type RoomRecord = RoomInfo & {
 
 interface TodayClassroomTableProps {
   /** decode() guarantees the full CampusInfo shape before it reaches here. */
-  selectedCampusData?: { buildings?: BuildingInfo[] } | null;
-  selectedBuildings?: string[];
-  selectedClassTimes?: number[];
+  selectedCampusData?: Pick<CampusInfo, "buildings"> | null;
+  selectedBuildings: string[];
+  selectedClassTimes: number[];
 }
 
 /** Same format as the table row key: display_name can repeat across buildings. */
@@ -20,79 +20,48 @@ function roomKey(room: RoomRecord) {
   return `${room.building}-${room.display_name}`;
 }
 
-function TodayClassroomTable(props: TodayClassroomTableProps) {
+function TodayClassroomTable({
+  selectedCampusData,
+  selectedBuildings,
+  selectedClassTimes,
+}: TodayClassroomTableProps) {
   // Holds the opened room's identity (stable key + display name), never its
   // data: capacity and free_times always come from the latest payload below.
   const [openedRoom, setOpenedRoom] = useState<{
     key: string;
     displayName: string;
   } | null>(null);
-  const selectedBuildings = useMemo(
-    () => (Array.isArray(props.selectedBuildings) ? props.selectedBuildings : []),
-    [props.selectedBuildings]
-  );
-  const selectedClassTimes = useMemo(
+  const buildings = selectedCampusData?.buildings;
+  // One full room list drives both filtering and the open modal.
+  const rooms = useMemo(
     () =>
-      Array.isArray(props.selectedClassTimes) ? props.selectedClassTimes : [],
-    [props.selectedClassTimes]
-  );
-
-  const buildings = useMemo(
-    () =>
-      Array.isArray(props.selectedCampusData?.buildings)
-        ? props.selectedCampusData.buildings
-        : [],
-    [props.selectedCampusData]
+      buildings?.flatMap((building) =>
+        building.rooms.map((room) => ({ ...room, building: building.name }))
+      ) ?? [],
+    [buildings]
   );
 
   const emptyClassrooms = useMemo(() => {
-    if (
-      !props.selectedCampusData ||
-      selectedBuildings.length === 0 ||
-      selectedClassTimes.length === 0
-    ) {
+    if (selectedClassTimes.length === 0) {
       return [];
     }
-
-    return buildings
-      .filter((building) => selectedBuildings.includes(building.name))
-      .flatMap((building) =>
-        building.rooms.map((room) => ({
-          ...room,
-          building: building.name,
-        }))
-      )
-      .filter((room) =>
-        selectedClassTimes.every((node) => room.free_nodes.includes(node))
+    return rooms
+      .filter(
+        (room) =>
+          selectedBuildings.includes(room.building) &&
+          selectedClassTimes.every((node) => room.free_nodes.includes(node))
       )
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
-  }, [
-    buildings,
-    props.selectedCampusData,
-    selectedBuildings,
-    selectedClassTimes,
-  ]);
+  }, [rooms, selectedBuildings, selectedClassTimes]);
 
-  // Derive the modal's room during render from the FULL buildings list (not
-  // the filtered emptyClassrooms) so background refreshes update an open
-  // modal and building/time filter changes cannot blank it out.
-  const activeRoom = useMemo(() => {
-    if (openedRoom == null) {
-      return null;
-    }
-    return (
-      buildings
-        .flatMap((building) =>
-          building.rooms.map((room) => ({
-            ...room,
-            building: building.name,
-          }))
-        )
-        .find((room) => roomKey(room) === openedRoom.key) || null
-    );
-  }, [buildings, openedRoom]);
+  // Use the full list so refreshes update an open modal even when its room
+  // no longer matches the current building/time filters.
+  const activeRoom = useMemo(
+    () => rooms.find((room) => roomKey(room) === openedRoom?.key),
+    [rooms, openedRoom]
+  );
 
-  if (!props.selectedCampusData) {
+  if (!selectedCampusData) {
     return null;
   }
 
@@ -152,12 +121,9 @@ function TodayClassroomTable(props: TodayClassroomTableProps) {
     </Modal>
   );
 
-  const showEmptyState =
-    selectedBuildings.length === 0 ||
-    selectedClassTimes.length === 0 ||
-    emptyClassrooms.length === 0;
+  const showEmptyState = emptyClassrooms.length === 0;
 
-  // Single root for both branches: the Card and Modal keep their positions
+  // Single root for both branches: the Panel and Modal keep their positions
   // in the element tree, so flipping between empty state and table never
   // remounts an open modal (a remount would detach its portal mid-view).
   return (

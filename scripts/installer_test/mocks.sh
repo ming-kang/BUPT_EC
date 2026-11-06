@@ -82,19 +82,10 @@ case "${command_name}" in
     fi
     exit 3
     ;;
-  is-enabled)
-    if [[ -L "${MOCK_SYSTEMD_ENABLED_LINK}" || -e "${MOCK_SYSTEMD_ENABLED_LINK}" ]]; then
-      exit 0
-    fi
-    exit 1
-    ;;
   enable)
     mkdir -p "$(dirname "${MOCK_SYSTEMD_ENABLED_LINK}")"
     rm -f -- "${MOCK_SYSTEMD_ENABLED_LINK}"
     ln -s "${MOCK_SERVICE_FILE}" "${MOCK_SYSTEMD_ENABLED_LINK}"
-    ;;
-  disable)
-    rm -f -- "${MOCK_SYSTEMD_ENABLED_LINK}"
     ;;
   start | restart)
     : > "${active_file}"

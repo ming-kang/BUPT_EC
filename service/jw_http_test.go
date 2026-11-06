@@ -87,10 +87,11 @@ func TestHTTPClientDoesNotFollow307WithTokenHeader(t *testing.T) {
 }
 
 func TestHTTPHelpersUseProvidedDoer(t *testing.T) {
+	const requestURL = "https://example.test/path%2Fsegment?campusId=04&raw=%2B"
 	called := false
 	doer := httpDoerFunc(func(req *http.Request) (*http.Response, error) {
 		called = true
-		if req.Method != http.MethodGet || req.URL.String() != "https://example.test/path" {
+		if req.Method != http.MethodGet || req.URL.String() != requestURL {
 			t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
 		}
 		if req.Header.Get("Accept") == "" {
@@ -103,7 +104,7 @@ func TestHTTPHelpersUseProvidedDoer(t *testing.T) {
 		}, nil
 	})
 
-	status, headers, body, err := httpGet(doer, context.Background(), "https://example.test/path")
+	status, headers, body, err := httpGet(doer, context.Background(), requestURL)
 	if err != nil {
 		t.Fatalf("httpGet() error = %v", err)
 	}

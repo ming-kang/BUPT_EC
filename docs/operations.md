@@ -56,15 +56,12 @@ The body is deliberately minimal (no runtime internals on the public surface):
 ```
 
 - `version`: build version string. Release binaries get the tag injected via `-ldflags "-X main.version=..."` (`main-<short-sha>` for unreleased `main` builds); locally built binaries report `dev`.
-- `cache_fresh`: within the ~5 minute fresh TTL.
-- `cache_stale`: cache is still usable for the business day but **past** the fresh TTL (not simply “same calendar day”). Fresh cache has `cache_stale: false`.
-- `cache_partial`: at least one configured campus used prior same-day data or an empty skeleton during the latest usable refresh. `partial_campuses` lists the affected campus IDs when present.
 - Business day boundaries use **Asia/Shanghai**.
 
-`last_refresh_warning` describes a usable partial outcome, while
-`last_refresh_error` describes the latest total refresh failure. A partial cache
-can remain ready; use `cache_partial` and `partial_campuses` to identify its
-scope. A `503` right after a restart is normal until the first refresh finishes.
+A partial snapshot can remain ready. Read `stale`, `partial_campuses`, and
+`error` on `/api/get_data` for its scope; refresh failures appear in the
+structured logs. `/readyz` exposes no cache or last-refresh diagnostic fields.
+A `503` right after a restart is normal until the first refresh finishes.
 
 ## Logging
 
@@ -75,7 +72,7 @@ File rotation (via lumberjack): 10 MB per file, 5 backups, 30 days retention, ro
 Example record:
 
 ```json
-{"time":"2026-07-03T08:15:05+08:00","level":"INFO","msg":"classroom refresh succeeded","elapsed":"1.2s","log_id":"20260703081504A1B2C3D4E5F6A7B8C9D2"}
+{"time":"2026-07-03T08:15:05+08:00","level":"INFO","msg":"classroom refresh succeeded","elapsed":"1.2s"}
 ```
 
 Partial refreshes use warning level and include `failed_campuses` plus the
@@ -114,7 +111,9 @@ Every `/api/*` request gets a `log_id` that appears:
 
 - in every log record produced while handling that request,
 - in the `X-Log-Id` response header,
-- in the JSON body of error responses from `/api/get_data`.
+- in the JSON body of both success and error responses from `/api/get_data`.
+
+Background refresh logs do not belong to a request and carry no request `log_id`.
 
 When a user reports an error, ask for the `log_id` from the error response and search the logs:
 
@@ -221,7 +220,7 @@ If the message instead says the automatic rollback was incomplete, the root-only
 | `/readyz` 503 and startup logs mention credentials or config | `sudo grep JW_ /etc/bupt-ec/bupt-ec.env` (as root) | Wrong `JW_USERNAME`/`JW_PASSWORD`. Rerun with `--mode=reconfigure`, supplying corrected values. |
 | `/readyz` 503, login succeeds, refresh errors in the logs | JW system reachability from the server | Teaching affairs system down or unreachable; service recovers automatically. |
 | API returns 503 with a `log_id` | `grep <log_id>` in logs | See the specific failure in the matching records. |
-| Page loads but shows the stale warning | `journalctl -u bupt-ec` for refresh errors | Upstream refresh failing; check the logged `last_refresh_error`-equivalent diagnostics. |
+| Page loads but shows the stale warning | `journalctl -u bupt-ec` for refresh errors | Upstream refresh failing; inspect the classroom refresh warning/error records. |
 | Browser still shows the old UI after an upgrade | `curl -sI https://<domain>/` → `Cache-Control` must be `no-cache`; `curl -s http://127.0.0.1:8080/readyz` → `version` | Service not restarted or old artifact installed (check `version` first). If the header is not `no-cache`, an Nginx/CDN layer is caching HTML — stop caching `index.html`; hashed `/assets/*` are safe to cache. A hard reload confirms which side is stale. |
 | Service not listening | `sudo journalctl -u bupt-ec -n 50` | Startup validation failed (missing credentials) or port conflict on `APP_ADDR`. |
 | 429 responses on `/api/` | Nginx rate limit | Installer default is 30 req/min per IP, burst 20; adjust the Nginx site if needed. |

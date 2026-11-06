@@ -9,6 +9,7 @@
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { StrictMode } from "react";
 import useTodayClassrooms from "./useTodayClassrooms";
 
 const TIMEOUT_MESSAGE = "请求超时，请稍后重试";
@@ -328,6 +329,44 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it.each(["success", "failure"] as const)(
+    "isolates a late %s from the discarded StrictMode effect",
+    async (outcome) => {
+      const discarded = deferred();
+      const current = deferred();
+      const signals: AbortSignal[] = [];
+      fetchMock.mockImplementation((_url: string, init: { signal: AbortSignal }) => {
+        signals.push(init.signal);
+        return signals.length === 1 ? discarded.promise : current.promise;
+      });
+
+      const view = render(<StrictMode><HookProbe /></StrictMode>);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(signals[0].aborted).toBe(true);
+      expect(signals[1].aborted).toBe(false);
+
+      await act(async () => {
+        if (outcome === "success") {
+          discarded.resolve(jsonResponse(usablePayload()));
+        } else {
+          discarded.reject(new TypeError("discarded request"));
+        }
+      });
+      expect(screen.getByTestId("code").textContent).toBe("1");
+      expect(screen.getByTestId("spinning").textContent).toBe("true");
+      await act(async () => {
+        screen.getByRole("button", { name: "retry" }).click();
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+
+      view.unmount();
+      expect(signals[1].aborted).toBe(true);
+      await act(async () => {
+        current.resolve(jsonResponse(usablePayload()));
+      });
+    }
+  );
+
   it("clears the reload timer on unmount", async () => {
     render(<HookProbe />);
     await waitFor(() => {
@@ -461,6 +500,35 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(screen.getByTestId("is-error").textContent).toBe("false");
+  });
+
+  it("spins during a manual retry without data, but never overlaps it", async () => {
+    const pending = deferred();
+    fetchMock
+      .mockImplementationOnce(async () => {
+        throw new TypeError("Failed to fetch");
+      })
+      .mockImplementationOnce(() => pending.promise);
+
+    render(<HookProbe />);
+    await waitFor(() => {
+      expect(screen.getByTestId("is-error").textContent).toBe("true");
+    });
+    await act(async () => {
+      screen.getByRole("button", { name: "retry" }).click();
+    });
+    expect(screen.getByTestId("spinning").textContent).toBe("true");
+    expect(screen.getByTestId("code").textContent).toBe("1");
+    await act(async () => {
+      screen.getByRole("button", { name: "retry" }).click();
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      pending.resolve(jsonResponse(usablePayload()));
+    });
+    expect(screen.getByTestId("spinning").textContent).toBe("false");
+    expect(screen.getByTestId("code").textContent).toBe("0");
   });
 
   it("keeps the build version across a stale-snapshot merge", async () => {

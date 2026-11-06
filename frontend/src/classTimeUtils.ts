@@ -33,17 +33,9 @@ export function formatShanghaiDateTime(date: Date = new Date()): string {
   }).format(date);
 }
 
-function parseNodeEndTime(timeRange: unknown): string {
-  const [, endTime = ""] = String(timeRange || "").split("-");
-  return endTime.trim();
-}
-
-export function isNodeEnded(timeRange: unknown, nowTime: string): boolean {
-  const endTime = parseNodeEndTime(timeRange);
-  if (!endTime) {
-    return false;
-  }
-  return endTime.localeCompare(nowTime) < 0;
+export function isNodeEnded(timeRange: string, nowTime: string): boolean {
+  const endTime = (timeRange.split("-")[1] ?? "").trim();
+  return endTime !== "" && endTime.localeCompare(nowTime) < 0;
 }
 
 interface ClassTimeOption {
@@ -61,22 +53,20 @@ interface PruneOptions {
  * Drop selected nodes that have ended (when all-day selection is off and date is today).
  */
 export function pruneEndedClassTimes(
-  selectedClassTimes: number[] | null | undefined,
-  nodes: ClassTimeOption[] | null | undefined,
+  selectedClassTimes: number[],
+  nodes: ClassTimeOption[],
   { nowTime, isToday, canSelectAllDay }: PruneOptions
 ): number[] {
-  const selected = Array.isArray(selectedClassTimes) ? selectedClassTimes : [];
-  if (canSelectAllDay || !isToday || selected.length === 0) {
-    return selected;
+  if (canSelectAllDay || !isToday || selectedClassTimes.length === 0) {
+    return selectedClassTimes;
   }
-  const options = Array.isArray(nodes) ? nodes : [];
   const ended = new Set(
-    options
+    nodes
       .filter((item) => isNodeEnded(item.time, nowTime))
       .map((item) => item.node)
   );
   if (ended.size === 0) {
-    return selected;
+    return selectedClassTimes;
   }
-  return selected.filter((node) => !ended.has(node));
+  return selectedClassTimes.filter((node) => !ended.has(node));
 }

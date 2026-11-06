@@ -179,7 +179,6 @@ reset_config_state() {
   done
   OVERRIDE_VERSION=""
   OVERRIDE_VERSION_SET=false
-  VALIDATED_DOWNLOAD_BASE_URL=""
   INSTALLER_MODE="install"
 }
 
@@ -412,16 +411,8 @@ require_existing_installation() {
     return 0
   fi
 
-  case "${mode}" in
-    update)
-      echo "--mode=update requires an existing deployment configuration at ${ENV_FILE}." >&2
-      echo "Run --mode=install for a first installation." >&2
-      ;;
-    reconfigure)
-      echo "--mode=reconfigure requires an existing deployment configuration at ${ENV_FILE}." >&2
-      echo "Run --mode=install for a first installation." >&2
-      ;;
-  esac
+  echo "--mode=${mode} requires an existing deployment configuration at ${ENV_FILE}." >&2
+  echo "Run --mode=install for a first installation." >&2
   return 1
 }
 
@@ -506,11 +497,8 @@ shell_quote() {
   printf "'" || return 1
   # Capture both pipeline statuses explicitly; callers often use this function
   # in an OR/! context where errexit alone would not preserve a failed writer.
-  if printf "%s" "$1" | sed "s/'/'\\\\''/g"; then
-    pipe_status=("${PIPESTATUS[@]}")
-  else
-    pipe_status=("${PIPESTATUS[@]}")
-  fi
+  printf "%s" "$1" | sed "s/'/'\\\\''/g"
+  pipe_status=("${PIPESTATUS[@]}")
   if (( pipe_status[0] != 0 || pipe_status[1] != 0 )); then
     return 1
   fi
@@ -792,13 +780,11 @@ validate_config() {
     return 1
   fi
 
-  VALIDATED_DOWNLOAD_BASE_URL=""
-  if ! validate_download_base_url "${CFG_DOWNLOAD_BASE_URL}"; then
+  # Persist and download only the normalized form (no userinfo/query/fragment).
+  if ! CFG_DOWNLOAD_BASE_URL="$(validate_download_base_url "${CFG_DOWNLOAD_BASE_URL}")"; then
     config_recovery_guidance
     return 1
   fi
-  # Persist and download only the normalized form (no userinfo/query/fragment).
-  CFG_DOWNLOAD_BASE_URL="${VALIDATED_DOWNLOAD_BASE_URL}"
 
   if [[ ! -f "${CFG_SSL_CERT}" ]]; then
     echo "SSL certificate not found: ${CFG_SSL_CERT}" >&2
@@ -996,33 +982,15 @@ download_base_safe_host() {
   printf '%s' "${authority%%:*}"
 }
 
+# Return the normalized base on stdout; operator warnings stay on stderr.
 validate_download_base_url() {
-  local url="$1"
   local normalized
 
-  VALIDATED_DOWNLOAD_BASE_URL=""
-  if ! normalized="$(normalize_download_base_url "${url}")"; then
-    return 1
-  fi
-  if [[ -z "${normalized}" ]]; then
-    return 0
-  fi
+  normalized="$(normalize_download_base_url "$1")" || return 1
   if [[ "$(download_base_scheme "${normalized}")" == "http" ]]; then
     echo "Warning: using non-HTTPS DOWNLOAD_BASE_URL because ALLOW_INSECURE_DOWNLOAD_BASE_URL=true." >&2
   fi
-  # Expose normalized base for main to persist and download without re-parsing.
-  VALIDATED_DOWNLOAD_BASE_URL="${normalized}"
-}
-
-# curl_download_proto_args prints --proto / --proto-redir tokens for the
-# validated scheme (or defaults to HTTPS-only for official GitHub downloads).
-curl_download_proto_args() {
-  local scheme="${1:-https}"
-  if [[ "${scheme}" == "http" ]]; then
-    printf '%s\0' --proto '=http,https' --proto-redir '=http,https'
-  else
-    printf '%s\0' --proto '=https' --proto-redir '=https'
-  fi
+  printf '%s' "${normalized}"
 }
 
 safe_download_base_label() {
@@ -1088,17 +1056,13 @@ resolve_download_base_url() {
   local repo="$1"
   local version="$2"
   local override_url="$3"
-  local normalized label
+  local label
 
   if [[ -n "${override_url}" ]]; then
-    # Always re-validate so callers cannot bypass shape checks; never log raw input.
-    if ! normalized="$(normalize_download_base_url "${override_url}")"; then
-      exit 1
-    fi
-    label="$(safe_download_base_label "${normalized}")"
+    label="$(safe_download_base_label "${override_url}")"
     echo "Using ${label}." >&2
     echo "Warning: package and checksums.txt come from this operator-trusted source. Same-origin checksums verify integrity, not independent GitHub publisher identity." >&2
-    printf "%s" "${normalized}"
+    printf "%s" "${override_url}"
     return
   fi
 
@@ -1126,17 +1090,14 @@ download_release() {
   local download_base_url="$5"
   local package_name="bupt-ec-linux-${arch}.tar.gz"
   local base_url
-  local -a proto_args=()
-  local scheme="https"
-  local arg
+  local -a proto_args=(--proto '=https' --proto-redir '=https')
 
   if ! base_url="$(resolve_download_base_url "${repo}" "${version}" "${download_base_url}")"; then
     return 1
   fi
-  scheme="$(download_base_scheme "${base_url}")"
-  while IFS= read -r -d '' arg; do
-    proto_args+=("${arg}")
-  done < <(curl_download_proto_args "${scheme}")
+  if [[ "${base_url}" == http://* ]]; then
+    proto_args=(--proto '=http,https' --proto-redir '=http,https')
+  fi
 
   if [[ -n "${download_base_url}" ]]; then
     echo "Downloading ${repo} ${version} (${arch}) from configured mirror..."
@@ -1203,7 +1164,7 @@ render_env_file() {
   local key value_name
 
   (
-    umask 077 || exit 1
+    umask 077
     {
       for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
         value_name="CFG_${key}"
@@ -1294,8 +1255,8 @@ server {
         proxy_http_version 1.1;
         proxy_connect_timeout 5s;
         proxy_send_timeout 15s;
-        # Exceeds ClassroomRefreshLimit (30s) and Go WriteTimeout (15s) so a cold
-        # refresh near the backend budget can still return JSON through the proxy.
+        # Leave headroom over Go WriteTimeout (15s); cold requests wait at most
+        # 5s for the background refresh before returning JSON through the proxy.
         proxy_read_timeout 60s;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -1600,9 +1561,6 @@ installer_cleanup() {
   trap - ERR EXIT
   set +e
   if [[ "${TRANSACTION_ACTIVE}" == "true" ]]; then
-    if (( status == 0 )); then
-      status=1
-    fi
     if rollback_installation "${TRANSACTION_DIR}"; then
       rm -rf -- "${TRANSACTION_DIR}"
     else
@@ -1666,13 +1624,11 @@ execute_deployment() {
   # commit_installation creates fixed installation/config directories. Force a
   # safe creation mode even when root invoked the installer with a permissive
   # umask, then restore the caller's value on every transaction result.
-  previous_umask="$(umask)" || return
-  umask 022 || return
+  previous_umask="$(umask)"
+  umask 022
   transaction_status=0
   perform_install_transaction "${staging_dir}" "${CFG_APP_ADDR}" || transaction_status=$?
-  if ! umask "${previous_umask}"; then
-    return 1
-  fi
+  umask "${previous_umask}"
   return "${transaction_status}"
 }
 

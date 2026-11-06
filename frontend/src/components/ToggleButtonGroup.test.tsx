@@ -55,6 +55,15 @@ describe("ToggleButton", () => {
 });
 
 describe("ToggleButtonGroup", () => {
+  it("starts unselected when the optional selection is omitted", () => {
+    render(
+      <ToggleButtonGroup
+        options={[{ value: "1", label: "教1" }]}
+        onToggle={vi.fn()}
+      />
+    );
+    expect(screen.getByRole("button", { name: "教1" }).getAttribute("aria-pressed")).toBe("false");
+  });
 
   it("marks selected values and toggles via onToggle", () => {
     const onToggle = vi.fn();

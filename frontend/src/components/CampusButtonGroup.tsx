@@ -20,13 +20,12 @@ interface CampusButtonGroupProps {
 function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButtonGroupProps) {
   const { setCampus } = useSelection();
   const [openSettingModal, setOpenSettingModal] = useState(false);
-  const list = Array.isArray(campuses) ? campuses : [];
-  const settingsSplitIndex = Math.floor(list.length / 2);
+  const settingsSplitIndex = Math.floor(campuses.length / 2);
 
   return (
     <div className="campus-button-group">
       <div className="toggle-button-group campus-buttons">
-        {list.length === 0 ? (
+        {campuses.length === 0 ? (
           <Button
             className="settings-trigger"
             icon={<SettingIcon />}
@@ -34,7 +33,7 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButton
             aria-label="设置"
           />
         ) : (
-          list.map((campus, index) => (
+          campuses.map((campus, index) => (
             <Fragment key={campus.id}>
               {index === settingsSplitIndex ? (
                 <Button

@@ -6,7 +6,7 @@
  * on either side, update this mirror and its consumers in the same change
  * (see docs/development.md#maintenance-contracts).
  *
- * These types describe WIRE shapes (what `normalizeResponse` validates), not
+ * These types describe WIRE shapes (what `decodeGetData` validates), not
  * the post-validation normalized shape — that typing lives with the data layer.
  * Runtime validation at the payload boundary is mandatory regardless of these
  * types; never trust a fetch response for shape.
