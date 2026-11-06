@@ -61,7 +61,6 @@ function AppContent() {
     }
 
     mql.addEventListener("change", matchMode);
-    matchMode(mql);
 
     return () => {
       mql.removeEventListener("change", matchMode);

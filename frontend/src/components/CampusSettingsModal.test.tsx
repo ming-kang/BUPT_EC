@@ -52,9 +52,9 @@ function renderModal(todayData: Envelope, value = makeValue()) {
   return {
     value,
     ...render(
-      <SelectionContext.Provider value={value}>
+      <SelectionContext value={value}>
         <CampusSettingsModal open todayData={todayData} onClose={() => {}} />
-      </SelectionContext.Provider>
+      </SelectionContext>
     ),
   };
 }

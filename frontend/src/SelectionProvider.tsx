@@ -21,10 +21,10 @@ export default function SelectionProvider({
   const [selectedBuildings, setSelectedBuildings] = useState<string[]>([]);
   const [selectedClassTimes, setSelectedClassTimes] = useState<number[]>([]);
   const [initialPrefs] = useState(initPreferences);
-  const [showClassTime, setShowClassTimeState] = useState(
+  const [showClassTime, setShowClassTime] = useState(
     initialPrefs.showClassTime
   );
-  const [canSelectAllDay, setCanSelectAllDayState] = useState(
+  const [canSelectAllDay, setCanSelectAllDay] = useState(
     initialPrefs.canSelectAllDay
   );
 
@@ -36,13 +36,13 @@ export default function SelectionProvider({
     setSelectedClassTimes([]);
   }, []);
 
-  const setShowClassTime = useCallback((value: boolean) => {
-    setShowClassTimeState(value);
+  const persistShowClassTime = useCallback((value: boolean) => {
+    setShowClassTime(value);
     writeLocalStorage(SHOW_CLASS_TIME_KEY, value ? "true" : "false");
   }, []);
 
-  const setCanSelectAllDay = useCallback((value: boolean) => {
-    setCanSelectAllDayState(value);
+  const persistCanSelectAllDay = useCallback((value: boolean) => {
+    setCanSelectAllDay(value);
     writeLocalStorage(CAN_SELECT_ALL_DAY_KEY, value ? "true" : "false");
   }, []);
 
@@ -56,8 +56,8 @@ export default function SelectionProvider({
       setCampus,
       setBuildings: setSelectedBuildings,
       setClassTimes: setSelectedClassTimes,
-      setShowClassTime,
-      setCanSelectAllDay,
+      setShowClassTime: persistShowClassTime,
+      setCanSelectAllDay: persistCanSelectAllDay,
     }),
     [
       selectedCampus,
@@ -66,14 +66,12 @@ export default function SelectionProvider({
       showClassTime,
       canSelectAllDay,
       setCampus,
-      setShowClassTime,
-      setCanSelectAllDay,
+      persistShowClassTime,
+      persistCanSelectAllDay,
     ]
   );
 
   return (
-    <SelectionContext.Provider value={value}>
-      {children}
-    </SelectionContext.Provider>
+    <SelectionContext value={value}>{children}</SelectionContext>
   );
 }

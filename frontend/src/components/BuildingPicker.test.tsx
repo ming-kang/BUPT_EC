@@ -46,9 +46,9 @@ function makeValue(
 
 function renderPicker({ value = makeValue() }: { value?: SelectionValue } = {}) {
   const view = render(
-    <SelectionContext.Provider value={value}>
+    <SelectionContext value={value}>
       <BuildingPicker selectedCampusData={CAMPUS} />
-    </SelectionContext.Provider>
+    </SelectionContext>
   );
   return { ...view, value };
 }
@@ -75,11 +75,11 @@ describe("BuildingPicker aria-pressed (R12)", () => {
     expect(pressedOf(MAIN_BUILDING)).toBe("false");
 
     rerender(
-      <SelectionContext.Provider
+      <SelectionContext
         value={makeValue({ selectedBuildings: ["未来学习大楼"] })}
       >
         <BuildingPicker selectedCampusData={CAMPUS} />
-      </SelectionContext.Provider>
+      </SelectionContext>
     );
     expect(pressedOf(MAIN_BUILDING)).toBe("true");
   });

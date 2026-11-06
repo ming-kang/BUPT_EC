@@ -58,9 +58,9 @@ function makeValue(
 
 function renderPicker({ value = makeValue() }: { value?: SelectionValue } = {}) {
   const view = render(
-    <SelectionContext.Provider value={value}>
+    <SelectionContext value={value}>
       <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
-    </SelectionContext.Provider>
+    </SelectionContext>
   );
   return { ...view, value };
 }
@@ -134,11 +134,11 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
     expect(pressedOf("03")).toBe("false");
 
     rerender(
-      <SelectionContext.Provider
+      <SelectionContext
         value={makeValue({ selectedClassTimes: [3] })}
       >
         <ClassTimePicker selectedCampusData={CAMPUS} todayDate={TODAY} />
-      </SelectionContext.Provider>
+      </SelectionContext>
     );
     expect(pressedOf("03")).toBe("true");
   });

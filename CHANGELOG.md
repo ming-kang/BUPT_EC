@@ -60,6 +60,10 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
 - Frontend tests now run on Vitest 4.1.12, fixing the Vitest file-read and
   mock-registration advisories; the tinypool override used by Vitest 3 is
   removed.
+- Frontend linting moves from the end-of-life ESLint 9 line to ESLint 10.
+  The unmaintained `eslint-plugin-react`, which cannot load under ESLint 10,
+  is replaced by `@eslint-react/eslint-plugin` (TSX `recommended-typescript`
+  preset; `eslint-plugin-react-hooks` still owns the hooks rules).
 
 ## [0.3.1] - 2026-09-02
 

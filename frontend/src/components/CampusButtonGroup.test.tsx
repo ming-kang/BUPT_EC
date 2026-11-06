@@ -51,13 +51,13 @@ function renderGroup({
   value?: SelectionValue;
 } = {}) {
   const view = render(
-    <SelectionContext.Provider value={value}>
+    <SelectionContext value={value}>
       <CampusButtonGroup
         campuses={CAMPUSES}
         todayData={TODAY_DATA}
         activeCampusId={activeCampusId}
       />
-    </SelectionContext.Provider>
+    </SelectionContext>
   );
   return { ...view, value };
 }
@@ -84,13 +84,13 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
     const { rerender } = renderGroup({ activeCampusId: "04" });
 
     rerender(
-      <SelectionContext.Provider value={makeValue()}>
+      <SelectionContext value={makeValue()}>
         <CampusButtonGroup
           campuses={CAMPUSES}
           todayData={TODAY_DATA}
           activeCampusId="02"
         />
-      </SelectionContext.Provider>
+      </SelectionContext>
     );
     expect(pressedOf(SHAHE)).toBe("false");
     expect(pressedOf(XITUCHENG)).toBe("true");
