@@ -57,6 +57,9 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   through lockfile refresh undici 7.30.2 and zod 4.6.7), clearing all
   high-severity development audit findings. The obsolete brace-expansion
   audit ignore is removed.
+- Frontend tests now run on Vitest 4.1.12, fixing the Vitest file-read and
+  mock-registration advisories; the tinypool override used by Vitest 3 is
+  removed.
 
 ## [0.3.1] - 2026-09-02
 

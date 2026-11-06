@@ -38,12 +38,11 @@
     "typescript": "~5.9",
     "typescript-eslint": "~8",
     "vite": "^7.3.7",
-    "vitest": "^3.2.7"
+    "vitest": "^4.1.12"
   },
   "pnpm": {
     "overrides": {
-      "browserslist": "4.28.7",
-      "tinypool": "2.1.2"
+      "browserslist": "4.28.7"
     }
   }
 }
