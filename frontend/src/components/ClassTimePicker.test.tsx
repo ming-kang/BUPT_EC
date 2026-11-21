@@ -1,10 +1,5 @@
 /**
  * @vitest-environment jsdom
- *
- * ClassTimePicker render-time pruning (R10) and clock resync on
- * visibilitychange (R11). The selection store is mocked through
- * SelectionContext so state is fully controlled and the convergence call can
- * be asserted without provider feedback.
  */
 import {
   act,
@@ -32,9 +27,9 @@ const CAMPUS: CampusInfo = {
   name: "沙河",
   buildings: [],
   nodes: [
-    { node: 1, time: "08:00-08:45", room_count: 0 }, // already ended at BASE_NOW
-    { node: 2, time: "15:00-15:45", room_count: 0 }, // ends between BASE_NOW and LATER_SAME_DAY
-    { node: 3, time: "19:00-19:45", room_count: 0 }, // never ends in these tests
+    { node: 1, time: "08:00-08:45", room_count: 0 },
+    { node: 2, time: "15:00-15:45", room_count: 0 },
+    { node: 3, time: "19:00-19:45", room_count: 0 },
   ],
 };
 
@@ -70,7 +65,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("ClassTimePicker derived pruning (R10)", () => {
+describe("ClassTimePicker derived pruning", () => {
   it("renders ended selections as unselected on the first frame", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
@@ -81,11 +76,8 @@ describe("ClassTimePicker derived pruning (R10)", () => {
     const ended = screen.getByRole("button", { name: "01" });
     const active = screen.getByRole("button", { name: "02" });
     expect((ended as HTMLButtonElement).disabled).toBe(true);
-    // Pruned during render: never flashes as selected while waiting for the
-    // convergence effect.
     expect(ended.className).not.toContain("ant-btn-primary");
     expect(active.className).toContain("ant-btn-primary");
-    // The thin convergence effect still reconciles the store.
     expect(value.setClassTimes).toHaveBeenCalledWith([2]);
   });
 
@@ -106,12 +98,11 @@ describe("ClassTimePicker derived pruning (R10)", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "02" }));
-    // Deselecting node 2 must not resurrect the ended node 1.
     expect(value.setClassTimes).toHaveBeenLastCalledWith([]);
   });
 });
 
-describe("ClassTimePicker aria-pressed (R12)", () => {
+describe("ClassTimePicker aria-pressed", () => {
   function pressedOf(name: string | RegExp) {
     return screen.getByRole("button", { name }).getAttribute("aria-pressed");
   }
@@ -121,7 +112,6 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
     vi.setSystemTime(BASE_NOW);
     renderPicker({ value: makeValue({ selectedClassTimes: [1, 2] }) });
 
-    // Node 1 has ended: pruned out during render, so not pressed.
     expect(pressedOf("01")).toBe("false");
     expect(pressedOf("02")).toBe("true");
     expect(pressedOf("03")).toBe("false");
@@ -144,20 +134,18 @@ describe("ClassTimePicker aria-pressed (R12)", () => {
   });
 });
 
-describe("ClassTimePicker clock resync (R11)", () => {
+describe("ClassTimePicker clock resync", () => {
   it("resyncs now when the tab becomes visible again", () => {
     vi.useFakeTimers();
     vi.setSystemTime(BASE_NOW);
     renderPicker();
     expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
 
-    // Background throttling: the wall clock jumps 8h but no timer fires.
     act(() => {
       vi.setSystemTime(LATER_SAME_DAY);
     });
     expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
 
-    // Tab becomes visible → clock resyncs immediately, node 2 is now ended.
     act(() => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
@@ -180,10 +168,8 @@ describe("ClassTimePicker clock resync (R11)", () => {
       act(() => {
         document.dispatchEvent(new Event("visibilitychange"));
       });
-      // No resync while hidden; the stale clock keeps node 2 enabled.
       expect((screen.getByRole("button", { name: "02" }) as HTMLButtonElement).disabled).toBe(false);
     } finally {
-      // Same cleanup pattern as the lifecycle suite (own property delete).
       Reflect.deleteProperty(document, "visibilityState");
     }
   });

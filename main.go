@@ -25,7 +25,6 @@ var version = "dev"
 // waiting handler is /api/get_data, bounded by service.ColdWaitTimeout.
 const httpWriteTimeout = 15 * time.Second
 
-// shutdownTimeout covers HTTP draining after the refresh loop is canceled.
 const shutdownTimeout = httpWriteTimeout + 5*time.Second
 
 func main() {
@@ -43,8 +42,6 @@ func main() {
 	jwClient := service.NewJWClient(cfg.JWUsername, cfg.JWPassword, service.NewJWHTTPClient())
 	classrooms := service.NewClassroomService(jwClient)
 
-	// The refresh loop owns all JW work; canceling appCtx stops it and any
-	// in-flight JW request.
 	appCtx, stopLoop := context.WithCancel(context.Background())
 	loopDone := make(chan struct{})
 	go func() {

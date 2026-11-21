@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# Self-contained BUPT_EC installer: download/verify -> stage -> snapshot ->
-# activate -> health-check, with automatic rollback on failure.
-#
-# This file is the single hand-maintained installer source; edit it directly
-# and keep it self-contained. Section map:
-#   1. Constants, paths, and test seams
-#   2. Modes and configuration state (safe env loading, validation)
-#   3. Release downloads (mirror policy, checksum verification)
-#   4. Candidate rendering (env file, systemd unit, nginx site)
-#   5. Transaction (snapshot, commit, rollback, health check)
-#   6. Entrypoint (mode dispatch)
 set -euo pipefail
 
 # shellcheck disable=SC2034
@@ -81,7 +70,6 @@ configure_installer_test_root() {
   ENV_FILE="${CONFIG_DIR}/bupt-ec.env"
   CLI_FILE="${root}/usr/local/bin/bupt-ec"
   DEPLOYMENT_METADATA_FILE="${CONFIG_DIR}/deployment.meta"
-  # Test fixtures are owned by the invoking test user rather than root.
   ENV_FILE_EXPECTED_UID="${EUID}"
   SERVICE_FILE="${root}/etc/systemd/system/${SERVICE_NAME}.service"
   SYSTEMD_ENABLED_LINK="${root}/etc/systemd/system/multi-user.target.wants/${SERVICE_NAME}.service"
@@ -90,9 +78,6 @@ configure_installer_test_root() {
   TRANSACTION_DIR="${root}/var/lib/bupt-ec/transaction"
 }
 
-# -----------------------------------------------------------------------------
-# Section 2: modes and configuration state
-# -----------------------------------------------------------------------------
 # shellcheck disable=SC2034
 
 installer_usage() {
@@ -209,28 +194,20 @@ capture_config_override() {
   fi
 }
 
-# Snapshot invocation values before reading the installed env. Explicitly set
-# empty values are retained through the paired *_SET flags.
 capture_invocation_overrides() {
   local key
 
   clear_invocation_overrides
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
-    # RELEASE_VERSION is saved deployment metadata, not an invocation input.
-    # VERSION is the sole explicit release-selection override.
     if [[ "${key}" != "RELEASE_VERSION" ]]; then
       capture_config_override "${key}" "${key}"
     fi
   done
 
-  # Keep the original command interface while storing canonical release
-  # metadata. A canonical RELEASE_REPO beats the legacy REPO alias when both
-  # are explicitly present.
   if [[ "${OVERRIDE_RELEASE_REPO_SET}" != "true" ]]; then
     capture_config_override RELEASE_REPO REPO
   fi
 
-  # VERSION is a one-shot release-selection override, not persisted config.
   if [[ -v VERSION ]]; then
     OVERRIDE_VERSION="${VERSION}"
     OVERRIDE_VERSION_SET=true
@@ -304,7 +281,7 @@ validate_config_directory_security() {
 # The trusted-directory, root-owned, mode-0600 env is evaluated in an isolated
 # child, whose registered values are synchronously framed into a mode-0600
 # temporary file before the parent accepts them.
-load_current_config() {
+load_env_if_root_owned() {
   local key snapshot="" owner mode
 
   clear_current_config
@@ -780,7 +757,6 @@ validate_config() {
     return 1
   fi
 
-  # Persist and download only the normalized form (no userinfo/query/fragment).
   if ! CFG_DOWNLOAD_BASE_URL="$(validate_download_base_url "${CFG_DOWNLOAD_BASE_URL}")"; then
     config_recovery_guidance
     return 1
@@ -800,15 +776,9 @@ validate_config() {
 
 reset_config_state
 
-# -----------------------------------------------------------------------------
-# Section 3: release downloads
-# -----------------------------------------------------------------------------
 # shellcheck disable=SC2034
 
-# normalize_download_base_url validates and normalizes DOWNLOAD_BASE_URL.
-# Empty input prints an empty string (official GitHub path). Invalid input exits
-# non-zero with a rule-only error that never echoes the raw URL (no secrets).
-# On success prints scheme://host[:port][/path] with trailing slashes stripped.
+# Error output is rule-only and never echoes the raw URL (may contain secrets).
 normalize_download_base_url() {
   local url="$1"
   local scheme rest authority path host port host_display normalized
@@ -926,7 +896,6 @@ normalize_download_base_url() {
   fi
 
   if [[ -n "${path}" ]]; then
-    # Strip trailing slashes; empty path after strip means authority only.
     while [[ "${path}" == */ ]]; do
       path="${path%/}"
     done
@@ -948,7 +917,6 @@ normalize_download_base_url() {
   return 0
 }
 
-# Scheme of a normalized download base (http or https). Empty → https default.
 download_base_scheme() {
   local url="${1:-}"
   case "${url}" in
@@ -961,7 +929,6 @@ download_base_scheme() {
   esac
 }
 
-# Safe host label from a normalized base: hostname, IPv4, or bracketed IPv6.
 download_base_safe_host() {
   local url="${1:-}"
   local rest authority
@@ -982,7 +949,6 @@ download_base_safe_host() {
   printf '%s' "${authority%%:*}"
 }
 
-# Return the normalized base on stdout; operator warnings stay on stderr.
 validate_download_base_url() {
   local normalized
 
@@ -1155,10 +1121,6 @@ stage_release() {
   chown root:root "${staging_dir}/bupt-ec" || return
 }
 
-# -----------------------------------------------------------------------------
-# Section 4: candidate rendering
-# -----------------------------------------------------------------------------
-
 render_env_file() {
   local destination="$1"
   local key value_name
@@ -1292,9 +1254,6 @@ prepare_staging() {
   render_nginx_site "${staging_dir}/${SERVICE_NAME}.conf" || return
 }
 
-# -----------------------------------------------------------------------------
-# Section 5: transaction
-# -----------------------------------------------------------------------------
 # shellcheck disable=SC2153
 
 # The transaction snapshots exactly what this run can overwrite — the binary,
@@ -1427,7 +1386,6 @@ rollback_installation() {
       failed=1
     fi
   fi
-  # Reload Nginx so the running proxy matches the restored or removed site.
   if ! nginx -t >/dev/null 2>&1; then
     echo "Rollback failed during nginx configuration test." >&2
     failed=1
@@ -1579,10 +1537,6 @@ initialize_installer_session() {
   trap 'installer_cleanup "$?"' EXIT
 }
 
-# -----------------------------------------------------------------------------
-# Section 6: entrypoint
-# -----------------------------------------------------------------------------
-
 require_update_tools() {
   local tool
   local -a required_tools=(curl tar sha256sum install systemctl nginx)
@@ -1664,7 +1618,7 @@ main() {
   require_root_environment || return
   recover_interrupted_transaction || return
   capture_invocation_overrides || return
-  if ! load_current_config; then
+  if ! load_env_if_root_owned; then
     current_config_load_guidance
     return 1
   fi

@@ -1,9 +1,7 @@
 import type { CampusInfo } from "./api/types";
 
-/** Preferred default campus name when multiple usable campuses exist. */
 const PREFERRED_CAMPUS_NAME = "沙河";
 
-/** Empty placeholders used for cold partial failures have no snapshot data. */
 function hasCampusSnapshot(campus: CampusInfo): boolean {
   return campus.buildings.length > 0 || campus.nodes.length > 0;
 }

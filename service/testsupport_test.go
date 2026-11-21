@@ -52,7 +52,6 @@ func (m *mockJWClient) FetchAPIURL(ctx context.Context) (string, error) {
 	return m.fetchAPIURL(ctx)
 }
 
-// fakeClock is a concurrency-safe settable clock for the refresh loop.
 type fakeClock struct {
 	mu  sync.Mutex
 	now time.Time
@@ -70,10 +69,8 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// testNoon is a fixed business-day instant far from midnight.
 var testNoon = time.Date(2026, 9, 1, 12, 0, 0, 0, businessLocation)
 
-// newTestService builds an isolated service on a fake clock at testNoon.
 func newTestService(t *testing.T, client JWClient) (*ClassroomService, *fakeClock) {
 	t.Helper()
 	clock := &fakeClock{now: testNoon}
@@ -82,7 +79,6 @@ func newTestService(t *testing.T, client JWClient) (*ClassroomService, *fakeCloc
 	return svc, clock
 }
 
-// startRun runs the refresh loop until the test ends.
 func startRun(t *testing.T, svc *ClassroomService) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())

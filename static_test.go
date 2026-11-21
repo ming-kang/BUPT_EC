@@ -43,10 +43,8 @@ func TestImmutableCacheSetsHeader(t *testing.T) {
 func TestAssetsMissingFileReturnsNotFound(t *testing.T) {
 	handler := newTestHTTPServer(nil).Routes()
 
-	// An /assets/ miss must be a true 404 from the file server, never the SPA
-	// fallback (previously a missing asset name incorrectly returned
-	// index.html with 200). Note: the stdlib file server error path strips
-	// Cache-Control on 404s (net/http serveError), so no header assertion.
+	// The stdlib file server error path strips Cache-Control on 404s
+	// (net/http serveError), so no header assertion.
 	recorder := serveStatic(t, handler, http.MethodGet, "/assets/missing.js", nil)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("/assets/missing.js status = %d, want %d", recorder.Code, http.StatusNotFound)
@@ -59,9 +57,6 @@ func TestAssetsMissingFileReturnsNotFound(t *testing.T) {
 func TestAssetsDirectoryListingIsRejected(t *testing.T) {
 	handler := newTestHTTPServer(nil).Routes()
 
-	// Directory paths under /assets/ must 404 instead of producing a file
-	// server listing: listings have no content hash, so neither the listing
-	// body nor the immutable Cache-Control header may ever be served.
 	recorder := serveStatic(t, handler, http.MethodGet, "/assets/", nil)
 	if recorder.Code != http.StatusNotFound {
 		t.Fatalf("/assets/ status = %d, want %d", recorder.Code, http.StatusNotFound)

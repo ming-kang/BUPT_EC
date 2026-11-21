@@ -12,7 +12,7 @@ const CampusSettingsModal = lazy(() => import("./CampusSettingsModal"));
 interface CampusButtonGroupProps {
   campuses: CampusInfo[];
   todayData: Envelope;
-  /** Render-time derived campus id from App (R10): first frame already
+  /** Render-time derived campus id from App: the first frame already
    * highlights the effective campus before the store reconciles. */
   activeCampusId: string;
 }
@@ -24,7 +24,7 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButton
 
   return (
     <div className="campus-button-group">
-      <div className="toggle-button-group campus-buttons">
+      <div className="toggle-button-group campus-buttons" role="radiogroup" aria-label="校区">
         {campuses.length === 0 ? (
           <Button
             className="settings-trigger"
@@ -44,9 +44,7 @@ function CampusButtonGroup({ campuses, todayData, activeCampusId }: CampusButton
                 />
               ) : null}
               <ToggleButton
-                // R12: single-select group, but kept on aria-pressed like the
-                // other pickers (design D10) instead of a radiogroup rewrite.
-                pressed={activeCampusId === campus.id}
+                checked={activeCampusId === campus.id}
                 onClick={() => setCampus(campus.id)}
               >
                 {campus.name}

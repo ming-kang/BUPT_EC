@@ -7,9 +7,7 @@ const STALE_POLL_MS = 15_000;
 const PARTIAL_POLL_MS = 30_000;
 const MIN_FRESH_DELAY_MS = 1_000;
 const FAILURE_RETRY_DELAYS_MS = [10_000, 20_000, 30_000, 60_000];
-/** Maximum positive relative jitter applied to a base delay. */
 const JITTER_RATIO = 0.1;
-/** Absolute cap on positive jitter so long fresh delays do not drift too far. */
 const JITTER_MAX_MS = 5_000;
 
 /**
@@ -39,7 +37,6 @@ export function nextReloadDelay(
   } else if (data === null) {
     return null;
   } else if (!usable) {
-    // Cross-day or expired snapshots must be revalidated promptly.
     base = MIN_FRESH_DELAY_MS;
   } else if (
     (data.partial_campuses?.length ?? 0) > 0 ||
@@ -54,8 +51,6 @@ export function nextReloadDelay(
       STALE_POLL_MS;
   }
 
-  // One bounded positive jitter sample desyncs multi-tab reloads without
-  // ever shortening the documented minimum intervals.
   const jittered = Math.round(
     base + random() * Math.min(base * JITTER_RATIO, JITTER_MAX_MS),
   );

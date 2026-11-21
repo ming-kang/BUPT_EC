@@ -149,8 +149,6 @@ func TestGetDataWarmingErrorsCarryRetryAfter(t *testing.T) {
 }
 
 func TestGetDataNonWarmingErrorHasNoRetryAfter(t *testing.T) {
-	// A generic upstream failure is transient too, but it is not a cold-start
-	// warming state; the retry hint must not mask real misconfiguration.
 	httpServer := newTestHTTPServer(&fakeClassroomService{todayError: errors.New("raw upstream detail")})
 	handler := httpServer.Routes()
 
@@ -371,7 +369,6 @@ func TestGzipCompressesAPIAndSkipsHealthz(t *testing.T) {
 	})
 	handler := httpServer.Routes()
 
-	// Identity baseline: no Accept-Encoding means no compression.
 	identityRecorder := httptest.NewRecorder()
 	identityRequest := httptest.NewRequest(http.MethodGet, "/api/get_data", nil)
 	handler.ServeHTTP(identityRecorder, identityRequest)

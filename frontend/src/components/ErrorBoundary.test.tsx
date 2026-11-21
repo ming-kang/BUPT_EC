@@ -1,8 +1,5 @@
 /**
  * @vitest-environment jsdom
- *
- * ErrorBoundary (R13): renders the fallback on a child render error and no
- * longer swallows the error silently (componentDidCatch logs it).
  */
 import { cleanup, render, screen } from "@testing-library/react";
 import {

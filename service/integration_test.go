@@ -38,12 +38,10 @@ func TestRefreshAgainstLiveJW(t *testing.T) {
 }
 
 // TestJWRoomTokensCarryPositiveCapacitySuffix is the live wire-contract guard
-// for the classroom display semantics (F-05): RoomInfo.Capacity is parsed from
+// for the classroom display semantics: RoomInfo.Capacity is parsed from
 // the trailing `(N)` of each CLASSROOMS token (classroom_builder.go), and the
 // frontend's 未知 fallback is only meant for malformed tokens — which also land
-// in the 未分组 building. If JW ever emits suffix-less or zero-capacity tokens,
-// this test fails and both the builder assumptions and api-contract.md need
-// revisiting.
+// in the 未分组 building.
 func TestJWRoomTokensCarryPositiveCapacitySuffix(t *testing.T) {
 	username, password := requireJWCredentials(t)
 	client := newHTTPJWClientForTest(t, username, password)

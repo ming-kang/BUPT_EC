@@ -22,8 +22,6 @@ function BuildingPicker({ selectedCampusData }: BuildingPickerProps) {
       <ToggleButtonGroup
         options={buildings.map((building) => ({
           value: building.name,
-          // decode() guarantees display_name (falling back to name), so the
-          // pre-0.3.x missing-field case never reaches this point.
           label: building.display_name,
         }))}
         selectedValues={selectedBuildings}

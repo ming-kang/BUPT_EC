@@ -1,8 +1,4 @@
 /**
- * CampusSettingsModal: the data-updated timestamp renders in Asia/Shanghai
- * regardless of the visitor's local timezone (F-06), the running-version row
- * follows the envelope, and the preference switches report through the
- * useSelection() setters.
  * @vitest-environment jsdom
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -63,9 +59,8 @@ afterEach(() => {
   cleanup();
 });
 
-describe("CampusSettingsModal updated time (F-06)", () => {
+describe("CampusSettingsModal updated time", () => {
   it("renders updated_at in Asia/Shanghai", () => {
-    // 2026-08-15T16:00:00Z is 2026-08-16 00:00 in Asia/Shanghai (UTC+8).
     renderModal(envelope({ data: snapshotWith() }));
     expect(screen.getByText(/2026-08-16 00:00/)).not.toBeNull();
   });
@@ -82,7 +77,6 @@ describe("CampusSettingsModal running version", () => {
 
     const versionRow = screen.getByText(/当前运行版本：v0\.3\.0/);
     const repositoryRow = screen.getByText(/项目已开源/);
-    // Order only, not structure: the row must precede the repository link.
     expect(
       versionRow.compareDocumentPosition(repositoryRow) &
         Node.DOCUMENT_POSITION_FOLLOWING
@@ -90,8 +84,6 @@ describe("CampusSettingsModal running version", () => {
   });
 
   it("omits the row when the server sent no version", () => {
-    // Pre-0.3.0 backend: an empty "未知" would tell the user nothing, and the
-    // row appears on its own once the server is upgraded.
     renderModal(envelope());
     expect(screen.queryByText(/当前运行版本/)).toBeNull();
   });

@@ -64,10 +64,10 @@ func TestBuildingDisplayNameNormalization(t *testing.T) {
 		raw  string
 		want string
 	}{
-		{"未来学习大楼", "主楼"}, // alias table (F-07)
-		{"1", "教1"},      // numeric prefix rule
+		{"未来学习大楼", "主楼"},
+		{"1", "教1"},
 		{"12", "教12"},
-		{"教学实验综合楼", "教学实验综合楼"}, // passthrough
+		{"教学实验综合楼", "教学实验综合楼"},
 	}
 	for _, tc := range cases {
 		if got := buildingDisplayName(tc.raw); got != tc.want {

@@ -33,8 +33,6 @@ describe("ApiError", () => {
   });
 });
 
-/* --------------------------- fixtures --------------------------- */
-
 function snapshot(overrides: Record<string, unknown> = {}) {
   return {
     date: "2026-07-10",
@@ -70,8 +68,6 @@ function snapshot(overrides: Record<string, unknown> = {}) {
 }
 
 const now = Date.parse("2026-07-10T12:00:00+08:00");
-
-/* --------------------------- decodeGetData --------------------------- */
 
 describe("decodeGetData", () => {
   it("decodes a fully valid success envelope", () => {
@@ -121,7 +117,7 @@ describe("decodeGetData", () => {
   it("rejects shallow-valid containers with broken nested items", () => {
     const brokenCases: unknown[] = [
       { ...snapshot(), campuses: [null] },
-      { ...snapshot(), campuses: [{ id: "01" }] }, // missing name/buildings/nodes
+      { ...snapshot(), campuses: [{ id: "01" }] },
       { ...snapshot(), campuses: [{ id: "01", name: "x", buildings: [{}], nodes: [] }] },
       { ...snapshot(), campuses: [{ id: "01", name: "x", buildings: [], nodes: [{}] }] },
       {
@@ -136,7 +132,7 @@ describe("decodeGetData", () => {
                 rooms: [
                   {
                     name: "r",
-                    capacity: "60", // capacity must be a number
+                    capacity: "60",
                     free_nodes: [1],
                     free_times: [],
                   },
@@ -160,7 +156,7 @@ describe("decodeGetData", () => {
                   {
                     name: "r",
                     capacity: 60,
-                    free_nodes: ["1"], // free_nodes must be numbers
+                    free_nodes: ["1"],
                     free_times: [],
                   },
                 ],
@@ -201,7 +197,7 @@ describe("decodeGetData", () => {
       { ...snapshot(), expires_at: null },
       { ...snapshot(), stale_until: "not-a-time" },
       { ...snapshot(), stale: "false" },
-      { ...snapshot(), error: { type: "jw_query_failed" } }, // missing message
+      { ...snapshot(), error: { type: "jw_query_failed" } },
       { ...snapshot(), error: "boom" },
       { ...snapshot(), partial_campuses: [null] },
       { ...snapshot(), partial_campuses: "04" },
@@ -216,7 +212,6 @@ describe("decodeGetData", () => {
   });
 
   it("accepts degraded-but-valid shapes the backend can emit", () => {
-    // Capacity 0 (unknown), empty rooms/free lists, absent optional fields.
     const data = {
       ...snapshot(),
       campuses: [
@@ -339,8 +334,6 @@ describe("decodeGetData", () => {
   });
 });
 
-/* -------------------- isUsableBusinessDaySnapshot -------------------- */
-
 describe("isUsableBusinessDaySnapshot", () => {
   it("accepts a same-day snapshot inside its stale window", () => {
     expect(
@@ -368,8 +361,6 @@ describe("isUsableBusinessDaySnapshot", () => {
     expect(isUsableBusinessDaySnapshot(undefined, now)).toBe(false);
   });
 });
-
-/* ---------------------- classroomWarningMessage ---------------------- */
 
 describe("classroomWarningMessage", () => {
   it("names affected campuses and falls back to ids", () => {

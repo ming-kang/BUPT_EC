@@ -1,11 +1,5 @@
 /**
  * @vitest-environment jsdom
- *
- * Real mount/unmount harness for useTodayClassrooms: scheduling (fresh /
- * stale / failure ladder / stale_until clamp), visibility and focus
- * revalidation, snapshot retention, timeout + transport mapping, and the
- * abort-on-unmount contract. Pure schedule cases stay in
- * reloadSchedule.test.ts; decode cases stay in api/decode.test.ts.
  */
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vitest";
@@ -100,7 +94,6 @@ describe("useTodayClassrooms lifecycle", () => {
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    // Deterministic schedules: positive jitter samples of 0 keep base delays.
     vi.spyOn(Math, "random").mockReturnValue(0);
     fetchMock = vi.fn(() => Promise.resolve(jsonResponse(usablePayload())));
     vi.stubGlobal("fetch", fetchMock);
@@ -121,7 +114,6 @@ describe("useTodayClassrooms lifecycle", () => {
     fetchMock.mockImplementation(() => pending.promise);
 
     render(<HookProbe />);
-    // Initial load with no usable data: full-page spinner + loading envelope.
     expect(screen.getByTestId("spinning").textContent).toBe("true");
     expect(screen.getByTestId("code").textContent).toBe("1");
     expect(fetchMock).toHaveBeenCalledWith(
@@ -176,7 +168,6 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     const callsAfterLoad = fetchMock.mock.calls.length;
 
-    // 14s: quiet. 15s: the stale poll fires.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(14_000);
     });
@@ -212,8 +203,6 @@ describe("useTodayClassrooms lifecycle", () => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
 
-    // ~3s: poll hits failure #1 → ladder rung 1 (10s). Snapshot stays visible.
-    // (3.5s crosses the 3s poll delay; failure #1 lands ≈0.5s into it.)
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_500);
     });
@@ -227,25 +216,21 @@ describe("useTodayClassrooms lifecycle", () => {
     let calls = fetchMock.mock.calls.length;
     expect(calls).toBe(2);
 
-    // 8.5s into the 10s backoff: quiet.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(8_000);
     });
     expect(fetchMock.mock.calls.length).toBe(calls);
 
-    // Rung 1 fires and fails again → rung 2 (20s).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(2_500);
     });
     expect(fetchMock.mock.calls.length).toBe(calls + 1);
 
-    // 18.5s into the 20s backoff: quiet.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(18_000);
     });
     expect(fetchMock.mock.calls.length).toBe(calls + 1);
 
-    // Rung 2 fires and succeeds → the ladder resets.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(1_500);
     });
@@ -254,8 +239,6 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     expect(fetchMock.mock.calls.length).toBe(calls + 2);
 
-    // ~3s later the next poll fails again: a brand-new ladder starts at rung
-    // 1 (10s), never at the old rung 3 (30s).
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_500);
     });
@@ -282,13 +265,11 @@ describe("useTodayClassrooms lifecycle", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
-    // No timer is armed while a request is in flight: long advances stay quiet.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(120_000);
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    // A manual retry during the in-flight request is absorbed (never overlap).
     await act(async () => {
       screen.getByRole("button", { name: "retry" }).click();
     });
@@ -318,7 +299,6 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(seenSignal!.aborted).toBe(false);
 
     view.unmount();
-    // New contract: the in-flight request dies with the component.
     expect(seenSignal!.aborted).toBe(true);
 
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -381,7 +361,6 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("times out hanging fetches with a safe message (AbortController + setTimeout)", async () => {
-    // Hangs until the signal aborts, like a real fetch.
     fetchMock.mockImplementation(
       (_url: string, init?: { signal?: AbortSignal }) =>
         new Promise((_resolve, reject) => {
@@ -400,7 +379,6 @@ describe("useTodayClassrooms lifecycle", () => {
     );
 
     render(<HookProbe />);
-    // Just short of the 40s budget: still waiting, no error yet.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(39_000);
     });
@@ -424,7 +402,6 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
-    // Raw exception text ("Failed to fetch") never reaches the UI.
     expect(screen.getByTestId("msg").textContent).toBe(TRANSPORT_MESSAGE);
   });
 
@@ -460,8 +437,6 @@ describe("useTodayClassrooms lifecycle", () => {
   });
 
   it("surfaces the build version on the hard error envelope", async () => {
-    // The settings dialog is reachable from the empty state, so a failure
-    // must still name the running build.
     fetchMock.mockImplementation(async () =>
       jsonResponse(
         { code: 503, msg: "暂无数据", version: "v0.3.0", data: null },
@@ -556,8 +531,6 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("stale").textContent).toBe("true");
     });
-    // The transport failure carried no version of its own, so this can only
-    // come from the retained snapshot.
     expect(screen.getByTestId("code").textContent).toBe("0");
     expect(screen.getByTestId("version").textContent).toBe("v0.3.0");
   });
@@ -585,8 +558,6 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledTimes(2);
     });
-    // The poll revalidation is background: indicator yes, full-page spin no,
-    // and the campuses stay on screen.
     expect(screen.getByTestId("reloading").textContent).toBe("true");
     expect(screen.getByTestId("spinning").textContent).toBe("false");
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
@@ -604,8 +575,6 @@ describe("useTodayClassrooms lifecycle", () => {
       configurable: true,
       get: () => "hidden",
     });
-    // First payload is near expiry; the reload after becoming visible gets a
-    // long-lived day (no further rapid polls inside this window).
     let fetchCount = 0;
     fetchMock.mockImplementation(async () => {
       fetchCount += 1;
@@ -623,17 +592,14 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("code").textContent).toBe("0");
     });
-    // The initial mount load still happened (background-opened tab).
     const callsAfterLoad = fetchMock.mock.calls.length;
     expect(callsAfterLoad).toBe(1);
 
-    // Hidden: timers re-arm but never fetch.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
 
-    // Visible again: exactly one reload.
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
       get: () => "visible",
@@ -666,7 +632,6 @@ describe("useTodayClassrooms lifecycle", () => {
         new Promise((resolve) => {
           fetchCount += 1;
           if (fetchCount === 1) {
-            // Near expiry: expires_at in 1s, hard deadline in 2s.
             resolve(
               jsonResponse(
                 usablePayload({
@@ -690,7 +655,6 @@ describe("useTodayClassrooms lifecycle", () => {
     expect(screen.getByTestId("campus-count").textContent).toBe("1");
     const callsAfterLoad = fetchMock.mock.calls.length;
 
-    // Hide and let the hard deadline pass while hidden.
     await act(async () => {
       visibility = "hidden";
       document.dispatchEvent(new Event("visibilitychange"));
@@ -700,8 +664,6 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad);
 
-    // Become visible after stale_until: a single background reload fires and
-    // the expired campuses are already gone from the render.
     await act(async () => {
       visibility = "visible";
       document.dispatchEvent(new Event("visibilitychange"));
@@ -711,7 +673,6 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     expect(screen.getByTestId("campus-count").textContent).toBe("0");
     expect(screen.getByTestId("msg").textContent).toBe(EXPIRED_MESSAGE);
-    // Background reload: no full-page spin over the expired-state card.
     expect(screen.getByTestId("spinning").textContent).toBe("false");
 
     await act(async () => {
@@ -761,7 +722,6 @@ describe("useTodayClassrooms lifecycle", () => {
     await waitFor(() => {
       expect(screen.getByTestId("is-error").textContent).toBe("true");
     });
-    // No usable snapshot left to keep: hard error, campuses cleared.
     expect(screen.getByTestId("campus-count").textContent).toBe("0");
     expect(screen.getByTestId("code").textContent).toBe("500");
     expect(screen.getByTestId("msg").textContent).toBe(TRANSPORT_MESSAGE);
@@ -774,7 +734,6 @@ describe("useTodayClassrooms lifecycle", () => {
     });
     const callsAfterLoad = fetchMock.mock.calls.length;
 
-    // First focus revalidates immediately (nothing foreground since mount).
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
     });
@@ -782,15 +741,12 @@ describe("useTodayClassrooms lifecycle", () => {
       expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
     });
 
-    // Rapid refocuses inside the throttle window are absorbed.
     await act(async () => {
       window.dispatchEvent(new Event("focus"));
       document.dispatchEvent(new Event("visibilitychange"));
     });
     expect(fetchMock.mock.calls.length).toBe(callsAfterLoad + 1);
 
-    // Past the 15s window a new focus revalidates — and a paired
-    // visibilitychange still cannot double-fire it.
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15_500);
     });

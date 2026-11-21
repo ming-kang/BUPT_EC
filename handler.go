@@ -45,6 +45,10 @@ func NewHTTPServer(classrooms classroomService) *HTTPServer {
 	return &HTTPServer{classrooms: classrooms}
 }
 
+func isWarmingError(err error) bool {
+	return errors.Is(err, service.ErrNoTodayCache) || errors.Is(err, service.ErrRefreshWaitTimeout)
+}
+
 func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	slog.InfoContext(ctx, "GetData")
@@ -52,9 +56,7 @@ func (server *HTTPServer) GetData(w http.ResponseWriter, r *http.Request) {
 
 	data, err := server.classrooms.GetTodayClassrooms(ctx)
 	if err != nil {
-		// Warming states are transient by design; other 503 causes stay
-		// header-free so retry hints never mask real misconfiguration.
-		if errors.Is(err, service.ErrNoTodayCache) || errors.Is(err, service.ErrRefreshWaitTimeout) {
+		if isWarmingError(err) {
 			w.Header().Set("Retry-After", "5")
 		}
 		writeJSON(w, http.StatusServiceUnavailable, &getDataResponse{

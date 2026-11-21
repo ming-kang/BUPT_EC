@@ -13,7 +13,7 @@ var roomPattern = regexp.MustCompile(`^(.+)[(（](\d+)[)）]$`)
 var numericBuildingPattern = regexp.MustCompile(`^\d+$`)
 
 // buildingDisplayAliases single-sources the user-facing building labels that
-// used to be hardcoded in the frontend picker (F-07). Keys are raw upstream
+// used to be hardcoded in the frontend picker. Keys are raw upstream
 // names; BuildingInfo.Name stays raw so selection state and table filters
 // remain stable across alias changes.
 var buildingDisplayAliases = map[string]string{

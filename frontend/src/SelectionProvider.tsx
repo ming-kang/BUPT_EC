@@ -8,10 +8,6 @@ import {
   type SelectionValue,
 } from "./selectionContext";
 
-/**
- * Owns the selection state. Preferences persist to localStorage directly in
- * their setters; the campus setter clears the dependent selections.
- */
 export default function SelectionProvider({
   children,
 }: {
@@ -30,8 +26,6 @@ export default function SelectionProvider({
 
   const setCampus = useCallback((id: string) => {
     setSelectedCampus(id);
-    // Buildings and class times are campus-scoped; a campus change resets
-    // both so no stale filters survive the switch.
     setSelectedBuildings([]);
     setSelectedClassTimes([]);
   }, []);

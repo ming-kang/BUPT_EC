@@ -120,7 +120,6 @@ test_version_policy() {
 test_download_base_url_matrix() {
   local url normalized status output_file
 
-  # Accepted shapes (normalization strips trailing slash).
   for url in \
     "https://mirror.example" \
     "https://mirror.example/releases/v0.1.4" \
@@ -156,7 +155,6 @@ test_download_base_url_matrix() {
   assert_eq "http://mirror.local/releases" "${normalized}" "HTTP opt-in normalizes"
   unset ALLOW_INSECURE_DOWNLOAD_BASE_URL || true
 
-  # Rejected shapes: never accept non-HTTP(S) even with insecure opt-in.
   for url in \
     "file:///srv/releases" \
     "ftp://mirror.example/releases" \
@@ -210,8 +208,6 @@ test_download_base_url_secret_redaction() {
   assert_contains "${output_file}" "query" "query rejection names the rule"
 }
 
-# Assert the actual curl calls for both the archive and checksums, rather than
-# testing an intermediate argument-encoding helper.
 test_download_protocol_policy() (
   local case_dir work_dir scheme protocols base_url
   case_dir="${TEST_TMP}/download-protocol-policy"

@@ -37,7 +37,7 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
       }, msUntilNextFiveMinuteTick(new Date()));
     }
 
-    // R11: browsers throttle background-tab timers, so `now` can lag tens of
+    // Browsers throttle background-tab timers, so `now` can lag tens of
     // minutes after the tab was hidden. When it becomes visible again, drop
     // the stale alarm, resync immediately, and re-align to the 5-minute grid.
     function onVisibilityChange() {
@@ -60,9 +60,8 @@ function ClassTimePicker({ selectedCampusData, todayDate }: ClassTimePickerProps
   const nowTime = formatShanghaiTime(now);
   const isToday = todayDate === formatShanghaiDate(now);
 
-  // R10: prune during render so ended nodes never flash as selected while
-  // waiting for the convergence effect below. The store still converges via
-  // that effect (guards unchanged), keeping TodayClassroomTable consistent.
+  // Prune during render so ended nodes never flash as selected while
+  // waiting for the convergence effect below.
   const prunedSelected = pruneEndedClassTimes(selectedClassTimes, options, {
     nowTime,
     isToday,

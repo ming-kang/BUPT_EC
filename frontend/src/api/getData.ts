@@ -24,10 +24,6 @@ const TODAY_CLASSROOMS_URL = "/api/get_data";
 const CLIENT_FETCH_TIMEOUT_MS = 40_000;
 const CLIENT_FETCH_TIMEOUT_MESSAGE = "请求超时，请稍后重试";
 
-/**
- * Loose pre-decode reads for failure envelopes (decode itself may have
- * thrown before producing an envelope). Values stay unknown until checked.
- */
 function wireRecord(payload: unknown): Record<string, unknown> | null {
   if (
     typeof payload !== "object" ||
@@ -56,10 +52,6 @@ function wireCode(record: Record<string, unknown> | null): number | undefined {
     : undefined;
 }
 
-/**
- * fetch() with the timeout enforced through AbortController + setTimeout.
- * The parent signal (unmount abort) forwards into the child controller.
- */
 async function fetchWithTimeout(
   url: string,
   parent: AbortSignal
@@ -82,8 +74,6 @@ async function fetchWithTimeout(
       signal: controller.signal,
     });
   } catch (error) {
-    // A parent abort (unmount) rethrows untouched: the hook's disposed guard
-    // discards it. Only the timeout converts into an ApiError here.
     if (timedOut) {
       throw new ApiError(CLIENT_FETCH_TIMEOUT_MESSAGE);
     }
@@ -109,8 +99,6 @@ export async function requestTodayClassrooms(
 
   const payload = await readJson(response);
   const record = wireRecord(payload);
-  // Request id: body log_id wins, else the X-Log-Id header. Rides along on
-  // every throw so the error card can name the server-side log.
   const logId =
     wireString(record, "log_id") || response.headers?.get("X-Log-Id") || "";
   // Same rule as decodeGetData: absent rather than empty, so envelope shape
@@ -129,15 +117,11 @@ export async function requestTodayClassrooms(
     envelope = decodeGetData(payload);
   } catch (error) {
     if (error instanceof ApiError) {
-      // Malformed payload under HTTP 2xx: fail closed as a client failure
-      // (a status here would shadow the business code the UI never got).
       throw new ApiError(error.message, { status: response.status, logId, version });
     }
     throw error;
   }
   if (envelope.code !== 0) {
-    // Legitimate service error envelope over HTTP 2xx: the business code is
-    // the envelope code (no status attached — 2xx would shadow it).
     throw new ApiError(envelope.msg, {
       code: envelope.code,
       logId: envelope.logId || logId,

@@ -69,8 +69,6 @@ export class ApiError extends Error {
   }
 }
 
-/* ---------- guarded readers (values stay `unknown` until checked) ---------- */
-
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -85,8 +83,7 @@ function readNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-/** Strict array decode: every item must pass, or the whole field is null. */
-function readArray<T>(
+function decodeEachOrNull<T>(
   value: unknown,
   decode: (item: unknown) => T | null,
 ): T[] | null {
@@ -103,8 +100,6 @@ function readArray<T>(
   }
   return out;
 }
-
-/* ------------------------- nested payload decoders ------------------------- */
 
 function decodeFreeTime(value: unknown): FreeTime | null {
   if (!isRecord(value)) {
@@ -124,7 +119,7 @@ function decodeRoom(value: unknown): RoomInfo | null {
   }
   const name = readString(value.name);
   const capacity = readNumber(value.capacity);
-  const freeNodes = readArray(value.free_nodes, readNumber);
+  const freeNodes = decodeEachOrNull(value.free_nodes, readNumber);
   if (name === null || capacity === null || freeNodes === null) {
     return null;
   }
@@ -132,7 +127,7 @@ function decodeRoom(value: unknown): RoomInfo | null {
   // Pre-0.3.x same-day caches may lack display_name — fall back to the raw
   // name instead of rejecting an otherwise usable payload.
   const displayName = readString(value.display_name) ?? name;
-  const freeTimes = readArray(value.free_times, decodeFreeTime);
+  const freeTimes = decodeEachOrNull(value.free_times, decodeFreeTime);
   if (freeTimes === null) {
     return null;
   }
@@ -153,7 +148,7 @@ function decodeBuilding(value: unknown): BuildingInfo | null {
   if (name === null) {
     return null;
   }
-  const rooms = readArray(value.rooms, decodeRoom);
+  const rooms = decodeEachOrNull(value.rooms, decodeRoom);
   if (rooms === null) {
     return null;
   }
@@ -186,8 +181,8 @@ function decodeCampus(value: unknown): CampusInfo | null {
   if (id === null || name === null) {
     return null;
   }
-  const buildings = readArray(value.buildings, decodeBuilding);
-  const nodes = readArray(value.nodes, decodeNodeInfo);
+  const buildings = decodeEachOrNull(value.buildings, decodeBuilding);
+  const nodes = decodeEachOrNull(value.nodes, decodeNodeInfo);
   if (buildings === null || nodes === null) {
     return null;
   }
@@ -247,9 +242,7 @@ function decodeSnapshotData(value: unknown): TodayClassroomsData {
   if (typeof value.stale !== "boolean") {
     throw new ApiError("服务返回数据格式异常");
   }
-  // Reject shallow-valid containers with broken items (e.g. campuses:
-  // [null]) instead of letting a cast slip them into the UI.
-  const campuses = readArray(value.campuses, decodeCampus);
+  const campuses = decodeEachOrNull(value.campuses, decodeCampus);
   if (campuses === null) {
     throw new ApiError("服务返回校区数据异常");
   }
@@ -328,8 +321,6 @@ export async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-/* ------------------------- snapshot usability rule ------------------------- */
-
 /**
  * True when a decoded snapshot is still safe to display for the current
  * Asia/Shanghai business day: `date` matches today and `stale_until` is
@@ -345,8 +336,6 @@ export function isUsableBusinessDaySnapshot(
     nowMs < Date.parse(data.stale_until)
   );
 }
-
-/* ------------------------------ UI text helpers ------------------------------ */
 
 /**
  * Warning text for the stale/partial Alert. Fully typed input: only decoded

@@ -8,9 +8,10 @@ type RoomRecord = RoomInfo & {
   building: string;
 };
 
+type CampusBuildings = Pick<CampusInfo, "buildings">;
+
 interface TodayClassroomTableProps {
-  /** decode() guarantees the full CampusInfo shape before it reaches here. */
-  selectedCampusData?: Pick<CampusInfo, "buildings"> | null;
+  selectedCampusData?: CampusBuildings | null;
   selectedBuildings: string[];
   selectedClassTimes: number[];
 }
@@ -20,19 +21,29 @@ function roomKey(room: RoomRecord) {
   return `${room.building}-${room.display_name}`;
 }
 
+function useOpenedRoom(rooms: RoomRecord[]) {
+  const [openedRoom, setOpenedRoom] = useState<{
+    key: string;
+    displayName: string;
+  } | null>(null);
+  const activeRoom = useMemo(
+    () => rooms.find((room) => roomKey(room) === openedRoom?.key),
+    [rooms, openedRoom]
+  );
+  return {
+    openedRoom,
+    activeRoom,
+    openRoom: setOpenedRoom,
+    closeRoom: () => setOpenedRoom(null),
+  };
+}
+
 function TodayClassroomTable({
   selectedCampusData,
   selectedBuildings,
   selectedClassTimes,
 }: TodayClassroomTableProps) {
-  // Holds the opened room's identity (stable key + display name), never its
-  // data: capacity and free_times always come from the latest payload below.
-  const [openedRoom, setOpenedRoom] = useState<{
-    key: string;
-    displayName: string;
-  } | null>(null);
   const buildings = selectedCampusData?.buildings;
-  // One full room list drives both filtering and the open modal.
   const rooms = useMemo(
     () =>
       buildings?.flatMap((building) =>
@@ -40,6 +51,7 @@ function TodayClassroomTable({
       ) ?? [],
     [buildings]
   );
+  const { openedRoom, activeRoom, openRoom, closeRoom } = useOpenedRoom(rooms);
 
   const emptyClassrooms = useMemo(() => {
     if (selectedClassTimes.length === 0) {
@@ -53,13 +65,6 @@ function TodayClassroomTable({
       )
       .sort((a, b) => a.display_name.localeCompare(b.display_name));
   }, [rooms, selectedBuildings, selectedClassTimes]);
-
-  // Use the full list so refreshes update an open modal even when its room
-  // no longer matches the current building/time filters.
-  const activeRoom = useMemo(
-    () => rooms.find((room) => roomKey(room) === openedRoom?.key),
-    [rooms, openedRoom]
-  );
 
   if (!selectedCampusData) {
     return null;
@@ -77,9 +82,7 @@ function TodayClassroomTable({
       title={activeRoom?.display_name ?? openedRoom?.displayName ?? ""}
       open={openedRoom != null}
       footer={null}
-      onCancel={() => {
-        setOpenedRoom(null);
-      }}
+      onCancel={closeRoom}
     >
       <div className="room-info">
         <div className="room-info__capacity">
@@ -165,7 +168,7 @@ function TodayClassroomTable({
                         type="button"
                         className="room-name"
                         onClick={() => {
-                          setOpenedRoom({
+                          openRoom({
                             key: roomKey(record),
                             displayName: record.display_name,
                           });

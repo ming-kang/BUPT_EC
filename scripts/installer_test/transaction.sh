@@ -314,7 +314,6 @@ test_incomplete_rollback_preserves_recovery_backup() {
   assert_contains "${output}" "${TRANSACTION_DIR}" "incomplete rollback recovery path"
   assert_path_absent "${session_dir}" "incomplete rollback still removes the temporary session"
 
-  # Rerunning the installer retries the restore from the preserved journal.
   reset_mock_state "${case_dir}"
   rm -f -- "${MOCK_STATE_DIR}/service.active"
   recover_interrupted_transaction > "${output}" 2>&1 || fail "recovery retry failed"

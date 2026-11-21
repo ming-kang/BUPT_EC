@@ -4,27 +4,32 @@ import "./ToggleButtonGroup.css";
 
 /**
  * ToggleButton is the single toggle-button primitive: selection is conveyed
- * by antd primary/default styling plus aria-pressed (design D10 / a11y R12).
- * aria-pressed is only rendered when `pressed` is provided as a boolean, so
- * non-toggle buttons (select-all, settings trigger) stay plain buttons.
+ * by antd primary/default styling plus aria-pressed, or role=radio +
+ * aria-checked when `checked` is provided for a single-select group.
+ * Neither attribute is rendered without its prop, so non-toggle buttons
+ * (select-all, settings trigger) stay plain buttons.
  */
-interface ToggleButtonProps {
-  /** Omitted `pressed` keeps the button a plain action button (no aria-pressed). */
-  pressed?: boolean;
+type ToggleButtonProps = {
   className?: string;
   disabled?: boolean;
   onClick?: () => void;
   children?: ReactNode;
-}
+} & (
+  | { pressed: boolean; checked?: never }
+  | { checked: boolean; pressed?: never }
+  | { pressed?: never; checked?: never }
+);
 
-function ToggleButton({ pressed, className, disabled, onClick, children }: ToggleButtonProps) {
+function ToggleButton({ pressed, checked, className, disabled, onClick, children }: ToggleButtonProps) {
   return (
     <Button
       className={className}
       disabled={disabled}
       onClick={onClick}
-      type={pressed ? "primary" : "default"}
-      aria-pressed={pressed}
+      type={pressed || checked ? "primary" : "default"}
+      {...(checked !== undefined
+        ? { role: "radio", "aria-checked": checked }
+        : { "aria-pressed": pressed })}
     >
       {children}
     </Button>

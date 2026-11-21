@@ -53,7 +53,7 @@ test_config_registry_precedence_and_isolation() (
   write_current_config_fixture true
   reset_config_state
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
 
   assert_eq install "${INSTALLER_MODE}" "installed env cannot change installer mode"
   assert_eq "" "${ALLOW_INSECURE_DOWNLOAD_BASE_URL+x}" "installed env cannot enable insecure download"
@@ -82,7 +82,7 @@ test_config_registry_precedence_and_isolation() (
     printf -v "${key}" '%s' "invocation ${key}"
   done
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
     set_cfg_from_precedence "${key}" "default ${key}"
     value_name="CFG_${key}"
@@ -94,8 +94,6 @@ test_config_registry_precedence_and_isolation() (
     fi
   done
 
-  # The original REPO and VERSION inputs remain compatible aliases, while the
-  # canonical fields still have their own lifecycle variables.
   reset_config_state
   unset_deployment_invocation_environment
   REPO="legacy/repository"
@@ -106,9 +104,6 @@ test_config_registry_precedence_and_isolation() (
   assert_eq true "${OVERRIDE_VERSION_SET}" "VERSION override presence"
   assert_eq v1.2.3 "${OVERRIDE_VERSION}" "VERSION override value"
 
-  # Every direct deployment field except saved RELEASE_VERSION treats an
-  # explicitly empty invocation variable as an override rather than silently
-  # falling back to the saved value.
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
     if [[ "${key}" == "RELEASE_VERSION" ]]; then
       continue
@@ -117,7 +112,7 @@ test_config_registry_precedence_and_isolation() (
     unset_deployment_invocation_environment
     printf -v "${key}" '%s' ""
     capture_invocation_overrides
-    load_current_config
+    load_env_if_root_owned
     set_cfg_from_precedence "${key}" "default ${key}"
     value_name="CFG_${key}"
     override_set_name="OVERRIDE_${key}_SET"
@@ -129,17 +124,16 @@ test_config_registry_precedence_and_isolation() (
   unset_deployment_invocation_environment
   RELEASE_VERSION=""
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   set_cfg_from_precedence RELEASE_VERSION "default RELEASE_VERSION"
   assert_eq false "${OVERRIDE_RELEASE_VERSION_SET}" "empty RELEASE_VERSION is not captured"
   assert_eq "current RELEASE_VERSION" "${CFG_RELEASE_VERSION}" "empty RELEASE_VERSION keeps saved metadata"
 
-  # With neither source configured, each field reaches its supplied default.
   reset_config_state
   unset_deployment_invocation_environment
   rm -f "${ENV_FILE}"
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
     set_cfg_from_precedence "${key}" "default ${key}"
     value_name="CFG_${key}"
@@ -185,7 +179,7 @@ test_current_config_load_security_and_snapshot() (
     fi
     command chmod "$@"
   }
-  load_current_config
+  load_env_if_root_owned
   unset -f chmod
   assert_contains "${chmod_log}" "0600 ${temp_dir}/" "current config snapshot mode"
   assert_temp_dir_empty
@@ -196,7 +190,7 @@ test_current_config_load_security_and_snapshot() (
     chmod 0777 "${CONFIG_DIR}"
     output_file="${case_dir}/directory-mode.log"
     set +e
-    load_current_config > "${output_file}" 2>&1
+    load_env_if_root_owned > "${output_file}" 2>&1
     status=$?
     set -e
     if (( status == 0 )); then
@@ -212,7 +206,7 @@ test_current_config_load_security_and_snapshot() (
     INSTALLER_MODE=install
     output_file="${case_dir}/empty-unsafe-directory.log"
     set +e
-    load_current_config > "${output_file}" 2>&1
+    load_env_if_root_owned > "${output_file}" 2>&1
     status=$?
     set -e
     if (( status == 0 )); then
@@ -238,7 +232,7 @@ test_current_config_load_security_and_snapshot() (
   if [[ "${POSIX_MODES_SUPPORTED}" == "true" ]]; then
     output_file="${case_dir}/symlink.log"
     set +e
-    load_current_config > "${output_file}" 2>&1
+    load_env_if_root_owned > "${output_file}" 2>&1
     status=$?
     set -e
     if (( status == 0 )); then
@@ -261,7 +255,7 @@ test_current_config_load_security_and_snapshot() (
   fi
   output_file="${case_dir}/mode.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -275,7 +269,7 @@ test_current_config_load_security_and_snapshot() (
   ENV_FILE_EXPECTED_UID=$((EUID + 1))
   output_file="${case_dir}/owner.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -294,7 +288,7 @@ EOF
   chmod 0600 "${ENV_FILE}"
   output_file="${case_dir}/source-failure.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -311,7 +305,7 @@ EOF
   chmod 0600 "${ENV_FILE}"
   output_file="${case_dir}/malformed.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -328,7 +322,7 @@ EOF
   chmod 0600 "${ENV_FILE}"
   output_file="${case_dir}/trailing.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status == 0 )); then
@@ -346,7 +340,7 @@ EOF
   chmod 0600 "${ENV_FILE}"
   output_file="${case_dir}/exit-trap-stderr.log"
   set +e
-  load_current_config > "${output_file}" 2>&1
+  load_env_if_root_owned > "${output_file}" 2>&1
   status=$?
   set -e
   if (( status != 0 )); then

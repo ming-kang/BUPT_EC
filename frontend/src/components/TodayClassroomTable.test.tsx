@@ -1,9 +1,5 @@
 /**
  * @vitest-environment jsdom
- *
- * TodayClassroomTable native-table rendering (R6): header semantics, row
- * filtering/sorting, free_nodes tag rendering, and the empty-state branches.
- * Plus the room-info modal (R9): content derived from props at render time.
  */
 import {
   cleanup,
@@ -117,7 +113,6 @@ describe("TodayClassroomTable", () => {
 
   it("renders only rooms free for every selected node, sorted by name", () => {
     const { container } = renderTable();
-    // 4-103 lacks nodes 2 and 3 and must be filtered out.
     const rows = container.querySelectorAll("tbody tr");
     expect(rows.length).toBe(3);
     const names = [...rows].map(
@@ -131,7 +126,6 @@ describe("TodayClassroomTable", () => {
     const button = screen.getByRole("button", { name: "3-101" });
     expect(button.className).toBe("room-name");
     const rows = container.querySelectorAll("tbody tr");
-    // Rows are sorted: 3-101 (capacity 0), 3-201 (120), 4-102 (60).
     const capacities = [...rows].map(
       (row) => row.querySelectorAll("td")[1].textContent
     );
@@ -144,7 +138,6 @@ describe("TodayClassroomTable", () => {
     const row3201 = [...rows].find(
       (row) => row.querySelector(".room-name")!.textContent === "3-201"
     )!;
-    // free_nodes [1,2,3,5] intersect selected [2,3] -> 02, 03 only.
     const tags = [...row3201.querySelectorAll("td")[2].children].map(
       (tag) => tag.textContent
     );
@@ -175,7 +168,7 @@ describe("TodayClassroomTable", () => {
   });
 });
 
-describe("TodayClassroomTable room modal (R9)", () => {
+describe("TodayClassroomTable room modal", () => {
   afterEach(() => {
     cleanup();
   });
@@ -205,7 +198,6 @@ describe("TodayClassroomTable room modal (R9)", () => {
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByText("10:25-11:10")).toBeTruthy();
 
-    // Background refresh: 3-201's free times move to the evening.
     rerenderTable(rerender, {
       buildings: [
         {
@@ -232,7 +224,6 @@ describe("TodayClassroomTable room modal (R9)", () => {
     fireEvent.click(screen.getByRole("button", { name: "3-201" }));
     const dialog = screen.getByRole("dialog");
 
-    // Refresh drops 教三 entirely; 教四 still fills the table.
     rerenderTable(rerender, {
       buildings: [
         {
@@ -255,8 +246,6 @@ describe("TodayClassroomTable room modal (R9)", () => {
     expect((document.querySelector(".ant-modal-wrap") as HTMLElement).style.display).not.toBe(
       "none"
     );
-    // The title comes from the opened room's identity, so the user can still
-    // tell which room the now-empty dialog refers to.
     expect(within(dialog).getByText("3-201")).toBeTruthy();
   });
 
@@ -265,8 +254,6 @@ describe("TodayClassroomTable room modal (R9)", () => {
     fireEvent.click(screen.getByRole("button", { name: "3-201" }));
     const dialog = screen.getByRole("dialog");
 
-    // Refresh leaves no room matching the selected nodes → empty-state card,
-    // but the modal must stay mounted and keep following the room's data.
     rerenderTable(rerender, {
       buildings: [
         {
@@ -292,7 +279,6 @@ describe("TodayClassroomTable room modal (R9)", () => {
     const { rerender } = renderTable();
     fireEvent.click(screen.getByRole("button", { name: "3-101" }));
     const dialog = screen.getByRole("dialog");
-    // capacity 0 renders as 未知 (converted at render, not stored).
     expect(within(dialog).getByText("未知")).toBeTruthy();
 
     rerenderTable(rerender, {

@@ -5,7 +5,7 @@ import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./index.css";
 
-// R13: last-resort boundary. The fallback is plain HTML with inline styles on
+// Last-resort boundary. The fallback is plain HTML with inline styles on
 // purpose — a crash can originate inside ConfigProvider/antd itself, so the
 // fallback must not depend on them. Component-level boundaries (App.tsx) still
 // handle local degradation first.

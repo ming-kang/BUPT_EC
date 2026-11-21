@@ -24,6 +24,7 @@ Add user-visible changes to the `[Unreleased]` section as part of the change its
   requests on unmount, shows a fixed safe message for network errors, and
   uses a Safari 14-compatible request timeout.
 - The Release workflow runs on `v*` tags and manual dispatch. Pushes to `main` no longer start a packaging dry-run.
+- Campus buttons now expose single-select radio semantics (radiogroup + aria-checked) to assistive technology.
 
 ### Fixed
 

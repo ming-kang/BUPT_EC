@@ -70,9 +70,9 @@ type ClassroomService struct {
 	kick  chan struct{}
 
 	mu          sync.Mutex
-	lastErr     error         // last total refresh failure; nil after any usable result
-	nextAllowed time.Time     // request nudges before this instant are ignored
-	refreshed   chan struct{} // closed (and replaced) after each refresh attempt
+	lastErr     error
+	nextAllowed time.Time
+	refreshDone chan struct{} // closed (and replaced) after each refresh attempt
 
 	// Owned by the Run goroutine.
 	apiURL string
@@ -81,12 +81,12 @@ type ClassroomService struct {
 
 func NewClassroomService(jw JWClient) *ClassroomService {
 	return &ClassroomService{
-		jw:        jw,
-		campuses:  defaultCampuses,
-		clock:     time.Now,
-		coldWait:  ColdWaitTimeout,
-		kick:      make(chan struct{}, 1),
-		refreshed: make(chan struct{}),
+		jw:          jw,
+		campuses:    defaultCampuses,
+		clock:       time.Now,
+		coldWait:    ColdWaitTimeout,
+		kick:        make(chan struct{}, 1),
+		refreshDone: make(chan struct{}),
 	}
 }
 
@@ -119,7 +119,7 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 	}
 
 	s.mu.Lock()
-	refreshed, lastErr, backingOff := s.refreshed, s.lastErr, now.Before(s.nextAllowed)
+	refreshDone, lastErr, backingOff := s.refreshDone, s.lastErr, now.Before(s.nextAllowed)
 	s.mu.Unlock()
 	if backingOff && lastErr != nil {
 		return nil, lastErr
@@ -129,7 +129,7 @@ func (s *ClassroomService) GetTodayClassrooms(ctx context.Context) (*model.Today
 	timer := time.NewTimer(s.coldWait)
 	defer timer.Stop()
 	select {
-	case <-refreshed:
+	case <-refreshDone:
 		if cached := s.todayCache(s.now()); cached != nil {
 			return cached, nil
 		}
@@ -149,7 +149,6 @@ func (s *ClassroomService) Ready() bool {
 	return s.todayCache(s.now()) != nil
 }
 
-// todayCache returns the published snapshot if it belongs to now's business day.
 func (s *ClassroomService) todayCache(now time.Time) *model.TodayClassrooms {
 	cached := s.cache.Load()
 	if cached == nil || cached.Date != now.Format(time.DateOnly) {
@@ -200,8 +199,8 @@ func (s *ClassroomService) Run(ctx context.Context) {
 		s.mu.Lock()
 		s.lastErr = err
 		s.nextAllowed = now.Add(block)
-		close(s.refreshed)
-		s.refreshed = make(chan struct{})
+		close(s.refreshDone)
+		s.refreshDone = make(chan struct{})
 		s.mu.Unlock()
 
 		if !s.sleep(ctx, wait) {
@@ -210,7 +209,6 @@ func (s *ClassroomService) Run(ctx context.Context) {
 	}
 }
 
-// sleep waits for the scheduled delay or an admissible request nudge.
 func (s *ClassroomService) sleep(ctx context.Context, wait time.Duration) bool {
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
@@ -244,16 +242,12 @@ func failureBackoff(failures int) time.Duration {
 	}
 }
 
-// endOfDay returns the next Asia/Shanghai midnight after t.
 func endOfDay(t time.Time) time.Time {
 	t = t.In(businessLocation)
 	year, month, day := t.Date()
 	return time.Date(year, month, day+1, 0, 0, 0, 0, businessLocation)
 }
 
-// refresh queries every campus and publishes a snapshot when at least one
-// campus succeeded. Failed campuses keep their previous same-day data. The
-// returned error is non-nil only when every campus failed.
 func (s *ClassroomService) refresh(parent context.Context) error {
 	ctx, cancel := context.WithTimeout(parent, refreshTimeout)
 	defer cancel()
@@ -276,10 +270,9 @@ func (s *ClassroomService) refresh(parent context.Context) error {
 		return err
 	}
 
-	// Stamp at completion so a refresh straddling midnight belongs to the new day.
-	now := s.now()
+	finishedAt := s.now()
 	previous := map[string]model.CampusInfo{}
-	if cached := s.todayCache(now); cached != nil {
+	if cached := s.todayCache(finishedAt); cached != nil {
 		for _, info := range cached.Campuses {
 			previous[info.ID] = info
 		}
@@ -297,10 +290,10 @@ func (s *ClassroomService) refresh(parent context.Context) error {
 	}
 
 	today := &model.TodayClassrooms{
-		Date:            now.Format(time.DateOnly),
-		UpdatedAt:       now,
-		ExpiresAt:       now.Add(freshTTL),
-		StaleUntil:      endOfDay(now),
+		Date:            finishedAt.Format(time.DateOnly),
+		UpdatedAt:       finishedAt,
+		ExpiresAt:       finishedAt.Add(freshTTL),
+		StaleUntil:      endOfDay(finishedAt),
 		Campuses:        campuses,
 		PartialCampuses: partial,
 	}
@@ -320,8 +313,6 @@ type campusResult struct {
 	err  error
 }
 
-// queryCampuses queries all campuses in parallel with the cached token. Campuses
-// rejected for authentication are retried once after a fresh login.
 func (s *ClassroomService) queryCampuses(ctx context.Context) []campusResult {
 	results := make([]campusResult, len(s.campuses))
 	fail := func(indexes []int, err error) {

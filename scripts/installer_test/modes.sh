@@ -152,7 +152,7 @@ test_mode_version_semantics() (
   done
   VERSION=v2.3.4
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   adopt_current_config
   assert_eq v2.3.4 "${CFG_RELEASE_VERSION}" "update VERSION override wins"
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
@@ -168,7 +168,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   RELEASE_VERSION=v9.9.9
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   assert_eq false "${OVERRIDE_RELEASE_VERSION_SET}" "direct RELEASE_VERSION is not captured"
   adopt_current_config
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "update ignores RELEASE_VERSION override"
@@ -179,7 +179,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   RELEASE_VERSION=v9.9.9
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   set_install_release_version
   assert_eq false "${OVERRIDE_RELEASE_VERSION_SET}" "install ignores direct RELEASE_VERSION"
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "install keeps saved release version"
@@ -188,7 +188,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   RELEASE_VERSION=""
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   set_install_release_version
   assert_eq false "${OVERRIDE_RELEASE_VERSION_SET}" "empty direct RELEASE_VERSION is ignored"
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "empty direct RELEASE_VERSION cannot clear saved version"
@@ -205,7 +205,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   VERSION=v2.3.4
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   set_install_release_version
   assert_eq v2.3.4 "${CFG_RELEASE_VERSION}" "install VERSION override wins"
 
@@ -229,7 +229,7 @@ test_mode_version_semantics() (
   VERSION=v2.3.4
   DOWNLOAD_BASE_URL=""
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   for key in "${DEPLOYMENT_CONFIG_KEYS[@]}"; do
     set_cfg_from_precedence "${key}" ""
   done
@@ -243,7 +243,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   VERSION=""
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   set_install_release_version
   assert_eq true "${OVERRIDE_VERSION_SET}" "empty VERSION remains explicit"
   assert_eq "" "${CFG_RELEASE_VERSION}" "empty VERSION does not fall back to saved version"
@@ -252,7 +252,7 @@ test_mode_version_semantics() (
   unset_deployment_invocation_environment
   VERSION=v2.3.4
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   collect_config reconfigure
   assert_eq v1.2.3 "${CFG_RELEASE_VERSION}" "reconfigure ignores VERSION"
 
@@ -333,7 +333,7 @@ test_runtime_flags_across_modes() (
   unset_deployment_invocation_environment
   LOG_CALLER="install-log-caller"
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   collect_config install
   assert_eq install-log-caller "${CFG_LOG_CALLER}" "install LOG_CALLER override"
   env_file="${case_dir}/install.env"
@@ -344,7 +344,7 @@ test_runtime_flags_across_modes() (
   unset_deployment_invocation_environment
   LOG_CALLER="reconfigure-log-caller"
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   collect_config reconfigure
   assert_eq reconfigure-log-caller "${CFG_LOG_CALLER}" "reconfigure LOG_CALLER override"
   env_file="${case_dir}/reconfigure.env"
@@ -355,7 +355,7 @@ test_runtime_flags_across_modes() (
   unset_deployment_invocation_environment
   LOG_CALLER="ignored-update-log-caller"
   capture_invocation_overrides
-  load_current_config
+  load_env_if_root_owned
   adopt_current_config
   assert_eq current-log-caller "${CFG_LOG_CALLER}" "update keeps saved LOG_CALLER"
   env_file="${case_dir}/update.env"

@@ -152,9 +152,7 @@ describe("SelectionProvider", () => {
       },
     });
     renderProbe();
-    // Defaults apply when reads are blocked.
     expect(screen.getByTestId("show-time").textContent).toBe("true");
-    // In-memory state still updates when writes are blocked.
     fireEvent.click(screen.getByRole("button", { name: "hide-time" }));
     expect(screen.getByTestId("show-time").textContent).toBe("false");
   });

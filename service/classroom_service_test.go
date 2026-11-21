@@ -11,7 +11,6 @@ import (
 	"BUPT_EC/service/model"
 )
 
-// campusClient answers QueryCampus per campus ID; nil entries succeed.
 func campusClient(failures map[string]error) *mockJWClient {
 	return &mockJWClient{
 		queryCampus: func(_ context.Context, _ string, campusID string, _ string) ([]model.JWClassInfo, error) {

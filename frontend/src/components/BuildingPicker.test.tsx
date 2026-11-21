@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * BuildingPicker: aria-pressed reflects the selected buildings (R12) and the
+ * BuildingPicker: aria-pressed reflects the selected buildings and the
  * toggle reports add/remove through the setBuildings setter.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -61,11 +61,10 @@ afterEach(() => {
   cleanup();
 });
 
-describe("BuildingPicker aria-pressed (R12)", () => {
+describe("BuildingPicker aria-pressed", () => {
   it("marks only the selected buildings as pressed", () => {
     renderPicker({ value: makeValue({ selectedBuildings: ["1"] }) });
 
-    // "1" renders through the numeric alias as 教1, 未来学习大楼 as 主楼.
     expect(pressedOf("教1")).toBe("true");
     expect(pressedOf(MAIN_BUILDING)).toBe("false");
   });

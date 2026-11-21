@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * CampusButtonGroup: aria-pressed tracks the render-derived activeCampusId
- * (R12/R10); the settings trigger stays outside the toggle semantics.
+ * CampusButtonGroup: aria-checked radios track the render-derived
+ * activeCampusId; the settings trigger stays a plain button.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -62,22 +62,24 @@ function renderGroup({
   return { ...view, value };
 }
 
-function pressedOf(name: string | RegExp) {
-  return screen.getByRole("button", { name }).getAttribute("aria-pressed");
+function checkedOf(name: string | RegExp) {
+  return screen.getByRole("radio", { name }).getAttribute("aria-checked");
 }
 
 afterEach(() => {
   cleanup();
 });
 
-describe("CampusButtonGroup aria-pressed (R12)", () => {
-  it("presses only the active campus button", () => {
+describe("CampusButtonGroup radio group", () => {
+  it("checks only the active campus radio", () => {
     renderGroup({ activeCampusId: "04" });
 
-    expect(pressedOf(SHAHE)).toBe("true");
-    expect(pressedOf(XITUCHENG)).toBe("false");
-    // The settings trigger is not a toggle: no aria-pressed at all.
-    expect(pressedOf("设置")).toBeNull();
+    expect(screen.getByRole("radiogroup")).not.toBeNull();
+    expect(checkedOf(SHAHE)).toBe("true");
+    expect(checkedOf(XITUCHENG)).toBe("false");
+    const settingsTrigger = screen.getByRole("button", { name: "设置" });
+    expect(settingsTrigger.hasAttribute("aria-pressed")).toBe(false);
+    expect(settingsTrigger.hasAttribute("aria-checked")).toBe(false);
   });
 
   it("follows activeCampusId when it changes", () => {
@@ -92,13 +94,13 @@ describe("CampusButtonGroup aria-pressed (R12)", () => {
         />
       </SelectionContext>
     );
-    expect(pressedOf(SHAHE)).toBe("false");
-    expect(pressedOf(XITUCHENG)).toBe("true");
+    expect(checkedOf(SHAHE)).toBe("false");
+    expect(checkedOf(XITUCHENG)).toBe("true");
   });
 
   it("selects the campus on click", () => {
     const { value } = renderGroup({ activeCampusId: "04" });
-    fireEvent.click(screen.getByRole("button", { name: XITUCHENG }));
+    fireEvent.click(screen.getByRole("radio", { name: XITUCHENG }));
     expect(value.setCampus).toHaveBeenLastCalledWith("02");
   });
 });

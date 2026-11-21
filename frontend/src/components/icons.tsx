@@ -1,7 +1,7 @@
 /*
- * Inline SVG icons replacing @ant-design/icons (R7). Path data extracted
- * from @ant-design/icons-svg@4.3.1 (outlined theme). fill="currentColor"
- * plus 1em sizing inherit the surrounding button's color and font size.
+ * Inline SVG icons replacing @ant-design/icons. Path data extracted from
+ * @ant-design/icons-svg@4.3.1 (outlined theme). fill="currentColor" plus
+ * 1em sizing inherit the surrounding button's color and font size.
  */
 
 const SETTING_PATH =

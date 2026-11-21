@@ -20,7 +20,7 @@ export function formatShanghaiTime(date: Date = new Date()): string {
   }).format(date);
 }
 
-/** YYYY-MM-DD HH:mm in Asia/Shanghai for user-facing timestamps (F-06). */
+/** YYYY-MM-DD HH:mm in Asia/Shanghai for user-facing timestamps. */
 export function formatShanghaiDateTime(date: Date = new Date()): string {
   return new Intl.DateTimeFormat("sv-SE", {
     timeZone: SHANGHAI_TZ,

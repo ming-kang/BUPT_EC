@@ -2,8 +2,8 @@
  * @vitest-environment jsdom
  *
  * ToggleButtonGroup: shared toggle-button presentation for the pickers.
- * aria-pressed is rendered only for boolean `pressed` (R12); plain action
- * buttons (select-all, settings trigger) must stay attribute-free.
+ * aria-pressed (or aria-checked for radio mode) is rendered only for boolean
+ * `pressed`/`checked`; plain action buttons stay attribute-free.
  */
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,6 +32,26 @@ describe("ToggleButton", () => {
     );
     expect(button.getAttribute("aria-pressed")).toBe("false");
     expect(button.classList.contains("ant-btn-primary")).toBe(false);
+  });
+
+  it("maps checked to type, role=radio and aria-checked", () => {
+    const { rerender } = render(
+      <ToggleButton checked onClick={() => {}}>
+        沙河
+      </ToggleButton>
+    );
+    const radio = screen.getByRole("radio", { name: /沙\s*河/ });
+    expect(radio.getAttribute("aria-checked")).toBe("true");
+    expect(radio.hasAttribute("aria-pressed")).toBe(false);
+    expect(radio.classList.contains("ant-btn-primary")).toBe(true);
+
+    rerender(
+      <ToggleButton checked={false} onClick={() => {}}>
+        沙河
+      </ToggleButton>
+    );
+    expect(radio.getAttribute("aria-checked")).toBe("false");
+    expect(radio.classList.contains("ant-btn-primary")).toBe(false);
   });
 
   it("renders no aria-pressed when pressed is not provided", () => {

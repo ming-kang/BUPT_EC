@@ -16,11 +16,6 @@ const TRANSPORT_FAILURE_MESSAGE = "网络连接异常，请检查网络后重试
 
 type RequestReason = "initial" | "poll" | "foreground" | "manual";
 
-/**
- * The effect owns the request, timer, and retry schedule for its lifetime.
- * React state holds only what rendering needs: the last good envelope,
- * the last error, and the current request reason.
- */
 export default function useTodayClassrooms() {
   const [data, setData] = useState<Envelope | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
@@ -49,12 +44,15 @@ export default function useTodayClassrooms() {
       }, delay);
     }
 
+    function canStart(reason: RequestReason) {
+      return (
+        controller === null &&
+        (reason === "initial" || document.visibilityState !== "hidden")
+      );
+    }
+
     async function request(reason: RequestReason) {
-      // One request at a time. Only the initial load may run in a hidden tab.
-      if (
-        controller !== null ||
-        (reason !== "initial" && document.visibilityState === "hidden")
-      ) {
+      if (!canStart(reason)) {
         return;
       }
       window.clearTimeout(timer);
@@ -75,7 +73,6 @@ export default function useTodayClassrooms() {
           return;
         }
         failureCount += 1;
-        // Raw transport exception text never reaches the UI.
         setError(
           rawError instanceof ApiError
             ? rawError
@@ -121,9 +118,6 @@ export default function useTodayClassrooms() {
 
   const retry = useCallback(() => retryRef.current(), []);
 
-  // Drop expired / previous-day snapshots at render time, including while a
-  // background request is still running. The last good snapshot otherwise
-  // survives failures and is decorated without mutating it.
   const usableData =
     data !== null && isUsableBusinessDaySnapshot(data.data) ? data : null;
   const neverResolved = data === null && error === null;
@@ -150,8 +144,6 @@ export default function useTodayClassrooms() {
       },
     };
   } else if (error) {
-    // HTTP status wins over a non-zero business code; transport failures
-    // have neither and use 500. Keep the version even without usable data.
     const status = Number.isFinite(error.status) ? error.status : null;
     const businessCode =
       Number.isFinite(error.code) && error.code !== 0 ? error.code : null;

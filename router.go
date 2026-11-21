@@ -23,8 +23,6 @@ func isAPIPath(path string) bool {
 	return path == "/api" || strings.HasPrefix(path, "/api/")
 }
 
-// writeJSON writes v as the JSON response body. Encode errors are
-// unreachable for the typed envelope structs used by all callers.
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	body, err := json.Marshal(v)
 	if err != nil {
@@ -36,11 +34,6 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_, _ = w.Write(body)
 }
 
-// newGzipWrapper builds the production compression wrapper. It is shared with
-// the endpoint tests so test assemblies cannot drift from production gzip
-// behavior. Contract: content-type allowlist + 1KB minimum size +
-// single-layer compression (responses that already carry Content-Encoding
-// pass through untouched).
 func newGzipWrapper() func(http.Handler) http.HandlerFunc {
 	wrapper, err := gzhttp.NewWrapper(
 		gzhttp.EnableZstd(false),
@@ -58,17 +51,13 @@ func newGzipWrapper() func(http.Handler) http.HandlerFunc {
 			"application/xml",
 			"application/wasm",
 		}),
-		gzhttp.MinSize(gzhttp.DefaultMinSize), // 1024; explicit as documentation
 	)
 	if err != nil {
-		// Unreachable: all options above are statically valid.
 		panic(fmt.Sprintf("gzhttp.NewWrapper: %v", err))
 	}
 	return wrapper
 }
 
-// gzipSkipProbes routes /healthz and /readyz around the gzhttp wrapper so
-// probe responses are never compressed and never carry a Vary header.
 func gzipSkipProbes(compressed, uncompressed http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/healthz" || r.URL.Path == "/readyz" {
